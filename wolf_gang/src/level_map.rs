@@ -1,12 +1,16 @@
-use crate::Point;
 use crate::custom_mesh; 
-use crate::geometry::aabb::Int32AABB;
+use crate::geometry::aabb;
 
 use gdnative::*;
+
+use nalgebra;
 
 use legion::prelude::*;
 
 use std::collections::HashMap;
+
+type AABB = aabb::AABB<i32>;
+type Point = nalgebra::Vector3<i32>;
 
 pub fn create_system() -> Box<dyn Schedulable> {
     SystemBuilder::<()>::new("map_system")
@@ -43,7 +47,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
 } 
 
 pub struct Map {
-    chunk_dimensions: Int32AABB,
+    chunk_dimensions: AABB,
     map_chunk_pool: HashMap<Point, MapChunkData>
 }
 
@@ -51,7 +55,7 @@ impl Map {
     pub fn new() -> Self {
         Map { 
             map_chunk_pool: HashMap::new(),
-            chunk_dimensions: Int32AABB::new(Point(0,0,0), Point(10,10,10))
+            chunk_dimensions: AABB::new(Point::new(0,0,0), Point::new(10,10,10))
         }
     }
 
@@ -144,6 +148,28 @@ impl MapChunkData {
         MapChunkData {
             tiles: Vec::<Vector3>::new(),
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct TileData {
+    point: Point
+}
+
+impl Copy for TileData {}
+
+impl TileData {
+    pub fn new(point: Point) -> Self {
+        TileData {
+            point
+        }
+    }
+}
+
+impl crate::collections::octree::PointData<i32> for TileData {
+
+    fn get_point(&self) -> Point {
+        self.point
     }
 }
 

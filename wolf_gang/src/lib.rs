@@ -10,8 +10,8 @@ mod geometry;
 mod level_map;
 mod custom_mesh;
 
-#[derive(Hash, Eq, PartialEq)]
-pub struct Point(i32,i32,i32);
+#[cfg(test)]
+mod tests;
 
 /// The WolfGang "class"
 #[derive(NativeClass)]
