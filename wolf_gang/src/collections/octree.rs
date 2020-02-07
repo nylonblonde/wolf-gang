@@ -19,7 +19,7 @@ enum Paternity {
 #[allow(dead_code)]
 pub struct Octree <N: Scalar, T: PointData<N>>{
     aabb: AABB<N>,
-    num_elements: u32,
+    num_elements: usize,
     elements: [Option<T>; 8],
     children: Vec<Option<Octree<N, T>>>,
     paternity: Paternity
@@ -27,9 +27,10 @@ pub struct Octree <N: Scalar, T: PointData<N>>{
 
 #[allow(dead_code)]
 impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N>> Octree<N, T> {
-    const MAX_SIZE: u32 = 8;
 
     pub fn new(aabb: AABB<N>) -> Octree<N, T> {
+        println!("Creating new Octree with a min of {:?} and a max of {:?}", aabb.get_min(), aabb.get_max());
+
         Octree {
             aabb,
             num_elements: 0,
@@ -41,45 +42,70 @@ impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: Poi
     }
 
     fn subdivide(&mut self) {
-        
-        println!("Subdividing {:?} ", self.aabb.center);
 
         let min = self.aabb.get_min();
         let max = self.aabb.get_max();
 
         let half_dimensions = self.aabb.dimensions/NumCast::from(2).unwrap();
+        let larger_half = self.aabb.dimensions - half_dimensions;
+
+        //This gets very complicated as we need to account for if the format is integer, and can't
+        //be halved properly. Any max values have to be the full dimensions minus the small side's max
 
         let downbackleft = AABB::<N>::new(
-            self.aabb.center + (min - self.aabb.center)/NumCast::from(2).unwrap()
-            , half_dimensions);
+            self.aabb.center + (min - self.aabb.center)/NumCast::from(2).unwrap(), 
+            half_dimensions
+        );
 
+        println!("subdividing at center {:?} : {:?} {:?}", self.aabb.center, min, max);
+        println!("half_dimensions.x: {:?}, larger_half.x: {:?}", half_dimensions.x, larger_half.x);
+                
         let downbackright = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(max.x, min.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap()
-            , half_dimensions);
+            self.aabb.center + (Vector3::new(max.x, min.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
+            Vector3::new(
+                larger_half.x, half_dimensions.y, half_dimensions.z
+            )
+        );
 
         let downforwardleft = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(min.x, min.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap()
-            , half_dimensions);
+            self.aabb.center + (Vector3::new(min.x, min.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
+            Vector3::new(
+                half_dimensions.x, half_dimensions.y, larger_half.z
+            )
+        );
 
         let downforwardright = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(max.x, min.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap()
-            , half_dimensions);
+            self.aabb.center + (Vector3::new(max.x, min.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
+            Vector3::new(
+                larger_half.x, half_dimensions.y, larger_half.z
+            )
+        );
 
         let upbackleft = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(min.x, max.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap()
-            , half_dimensions);
+            self.aabb.center + (Vector3::new(min.x, max.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
+            Vector3::new(
+                half_dimensions.x, larger_half.y, half_dimensions.z
+            )
+        );
 
         let upbackright = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(max.x, max.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap()
-            , half_dimensions);
+            self.aabb.center + (Vector3::new(max.x, max.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
+            Vector3::new(
+                larger_half.x, larger_half.y, half_dimensions.z
+            )
+        );
 
         let upforwardleft = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(min.x, max.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap()
-            , half_dimensions);
+            self.aabb.center + (Vector3::new(min.x, max.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
+            Vector3::new(
+                half_dimensions.x, larger_half.y, larger_half.z
+            )
+        );
 
         let upforwardright = AABB::<N>::new(
-            self.aabb.center + (max - self.aabb.center)/NumCast::from(2).unwrap()
-            , half_dimensions);
+            self.aabb.center + (max - self.aabb.center)/NumCast::from(2).unwrap(), 
+            larger_half
+        );
 
         self.children[0] = Some(Octree::new(downbackleft));
         self.children[1] = Some(Octree::new(downbackright));
@@ -97,23 +123,22 @@ impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: Poi
     pub fn insert(&mut self, element: T) -> bool{  
 
         if !self.aabb.contains_point(element.get_point()) {
+            // println!("{:?} didn't fit between {:?} and {:?}",element.get_point(), self.aabb.get_min(), self.aabb.get_max());
             return false
         }
         
         match &self.paternity { //do first match because you still need to insert into children after subdividing, not either/or
 
-            Paternity::ChildFree if self.num_elements < Octree::<N, T>::MAX_SIZE => {
+            Paternity::ChildFree if self.num_elements < self.elements.len() => {
                 self.elements[self.num_elements as usize] = Some(element);
-                println!("Inserted {:?} as element number {} in center: {:?}, dimensions: {:?}", self.elements[self.num_elements as usize].unwrap().get_point(), self.num_elements, self.aabb.center, self.aabb.dimensions);
-
                 self.num_elements = self.num_elements + 1;
+                // println!("Inserted {:?} between {:?} and {:?} at position {}", element.get_point(), self.aabb.get_min(), self.aabb.get_max(), self.num_elements);
 
                 return true;
             }
 
             Paternity::ChildFree => { 
                 self.subdivide();
-                return false;
             }
             
             _ => {}
@@ -125,11 +150,13 @@ impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: Poi
             Paternity::ProudParent => {
                 for i in 0..self.children.len() {
                     
+                    //only return true if true because we need to check all of them
                     if self.children[i].as_mut().unwrap().insert(element) == true {
-                        return true
-                    } 
+                        return true;
+                    }
                             
                 }
+
                 false
             }
 
