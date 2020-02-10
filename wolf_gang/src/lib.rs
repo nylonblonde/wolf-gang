@@ -1,6 +1,7 @@
 use gdnative::*;
 
 use legion::prelude::*;
+use lazy_static::*;
 
 use std::collections::HashMap;
 
@@ -9,6 +10,7 @@ mod geometry;
 
 mod level_map;
 mod custom_mesh;
+mod selection_box;
 
 #[cfg(test)]
 mod tests;
@@ -16,12 +18,16 @@ mod tests;
 /// The WolfGang "class"
 #[derive(NativeClass)]
 #[inherit(Node)]
-#[user_data(user_data::MutexData<WolfGang>)]
+#[user_data(user_data::LocalCellData<WolfGang>)]
 pub struct WolfGang {
     universe: Option<Universe>,
     world: Option<legion::world::World>,
-    executor: Option<Executor>,
+    schedule: Option<Schedule>,
 }
+
+use std::sync::Mutex;
+
+static mut OWNER_NODE: Option<Mutex<Node>> = None;
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
 // code to automatically bind any exported methods to Godot.
@@ -29,11 +35,13 @@ pub struct WolfGang {
 impl WolfGang {
     
     /// The "constructor" of the class.
-    fn _init(_owner: Node) -> Self {
+    fn _init(owner: Node) -> Self {
+        unsafe { OWNER_NODE = Some(Mutex::new(owner)); }
+
         WolfGang {
             universe: None,
             world: None,
-            executor: None,
+            schedule: None,
         }
     }
     
@@ -43,6 +51,7 @@ impl WolfGang {
     // The owner is passed to every single exposed method.
     #[export]
     fn _ready(&mut self, mut owner: Node) {
+
         godot_print!("hello, world.");
 
         self.universe = Some(Universe::new());
@@ -52,7 +61,7 @@ impl WolfGang {
 
         world.insert(
             (),
-            (0..1).map(|_| (level_map::MapChunkData::new(), level_map::MapMesh::new(), custom_mesh::MeshData::new(),))
+            (0..1).map(|_| (level_map::MapChunkData::new(), custom_mesh::MeshName::new(), custom_mesh::MeshData::new(),))
         );
 
         world.insert(
@@ -60,23 +69,34 @@ impl WolfGang {
             (0..1).map(|_| (level_map::Map::new(),))
         );
 
-        let systems = vec![
-            level_map::create_system(),
-        ];
+        world.insert(
+            (),
+            (0..1).map(|_| (selection_box::SelectionBox::new(), custom_mesh::MeshData::new(), custom_mesh::MeshName::new(), custom_mesh::Material::from_str("res://select_box.material"),))
+        );
 
-        self.executor = Some(Executor::new(systems));
-        
+        // self.executor = Some(Executor::new(systems));
+        let schedule = Schedule::builder()
+            .add_system(level_map::create_system())
+            .add_system(selection_box::create_system())
+            .add_thread_local(custom_mesh::create_system())
+            .build();
+
+        self.schedule = Some(schedule);
     }
 
     #[export]
     fn _process(&mut self, mut owner: Node, delta: f64) {
-        let executor = self.executor.as_mut().unwrap();
+        // let executor = self.executor.as_mut().unwrap();
 
         let world = self.world.as_mut().unwrap();
         
-        executor.execute(world);
 
-        level_map::Map::local_process(world, &mut owner);
+        let schedule = self.schedule.as_mut().unwrap();
+        schedule.execute(world);
+
+        // executor.execute(world);
+
+        // custom_mesh::local_process(world, &mut owner);
 
     }
 }

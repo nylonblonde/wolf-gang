@@ -1,16 +1,11 @@
-use core::fmt::Debug;
 use nalgebra::{Vector3, Scalar};
 use num::{Num, NumCast};
 
-use std::ops::*;
-
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct AABB<F: Scalar> {
     pub center: Vector3<F>,
     pub dimensions: Vector3<F>,
 }
-
-impl<F: Scalar> Copy for AABB<F>{}
 
 impl<F: Scalar + Num + NumCast + Ord> AABB<F> {
     pub fn new(center: Vector3<F>, dimensions: Vector3<F>) -> Self {

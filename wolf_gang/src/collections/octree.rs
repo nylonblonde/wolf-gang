@@ -1,9 +1,7 @@
 use std::ops::{AddAssign, SubAssign, DivAssign};
 
-use std::collections::HashMap;
-
 use nalgebra::{Scalar, Vector3};
-use num::{Num, NumCast, Zero};
+use num::{Num, NumCast};
 use crate::geometry::aabb::AABB;
 
 pub trait PointData<N: Scalar> : Copy {
