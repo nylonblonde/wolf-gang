@@ -12,6 +12,14 @@ use std::collections::HashMap;
 type AABB = aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;
 
+pub struct TileDimensions {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32
+}
+
+pub const TILE_DIMENSIONS: TileDimensions = TileDimensions {x: 1.0, y: 0.2, z: 1.0};
+
 pub fn create_system() -> Box<dyn Schedulable> {
     SystemBuilder::<()>::new("map_system")
             .with_query(<(Read<MapChunkData>, Write<custom_mesh::MeshData>)>::query()
