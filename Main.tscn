@@ -18,7 +18,18 @@ func _ready():
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):
-	#rotate_y(delta)
+#	rotate_y(delta)
+
+#	var list = InputMap.get_action_list(\"move_up\")
+#
+#	for item in list:
+#		print(item.get_scancode_with_modifiers())
+#		continue
+#
+#	if Input.is_action_pressed(\"move_up\"):
+#		print(\"Uppies\")
+	
+	
 	pass
 "
 

@@ -7,10 +7,10 @@ use std::collections::HashMap;
 
 mod collections;
 mod geometry;
+mod systems;
+mod node;
 
-mod level_map;
-mod custom_mesh;
-mod selection_box;
+use systems::{input, level_map, custom_mesh, selection_box};
 
 #[cfg(test)]
 mod tests;
@@ -28,6 +28,7 @@ pub struct WolfGang {
 use std::sync::Mutex;
 
 static mut OWNER_NODE: Option<Mutex<Node>> = None;
+static mut DELTA_TIME: f64 = 0.0;
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
 // code to automatically bind any exported methods to Godot.
@@ -52,6 +53,7 @@ impl WolfGang {
     #[export]
     fn _ready(&mut self, mut owner: Node) {
 
+        input::InputConfig::from_file(input::CONFIG_PATH);
         godot_print!("hello, world.");
 
         self.universe = Some(Universe::new());
@@ -61,7 +63,7 @@ impl WolfGang {
 
         world.insert(
             (),
-            (0..1).map(|_| (level_map::MapChunkData::new(), custom_mesh::MeshName::new(), custom_mesh::MeshData::new(),))
+            (0..1).map(|_| (level_map::MapChunkData::new(), node::NodeName::new(), custom_mesh::MeshData::new(),))
         );
 
         world.insert(
@@ -71,14 +73,18 @@ impl WolfGang {
 
         world.insert(
             (),
-            (0..1).map(|_| (selection_box::SelectionBox::new(), custom_mesh::MeshData::new(), custom_mesh::MeshName::new(), custom_mesh::Material::from_str("res://select_box.material"),))
+            (0..1).map(|_| (selection_box::SelectionBox::new(), custom_mesh::MeshData::new(), node::NodeName::new(), custom_mesh::Material::from_str("res://select_box.material"),))
         );
 
         // self.executor = Some(Executor::new(systems));
         let schedule = Schedule::builder()
+            .add_system(input::create_system())
             .add_system(level_map::create_system())
             .add_system(selection_box::create_system())
-            .add_thread_local(custom_mesh::create_system())
+            .flush()
+            .add_thread_local_fn(selection_box::create_thread_local_fn())
+            .add_thread_local(custom_mesh::create_system_local())
+            .add_thread_local(selection_box::create_system_local())
             .build();
 
         self.schedule = Some(schedule);
@@ -86,18 +92,12 @@ impl WolfGang {
 
     #[export]
     fn _process(&mut self, mut owner: Node, delta: f64) {
-        // let executor = self.executor.as_mut().unwrap();
+        unsafe { DELTA_TIME = delta };
 
         let world = self.world.as_mut().unwrap();
         
-
         let schedule = self.schedule.as_mut().unwrap();
         schedule.execute(world);
-
-        // executor.execute(world);
-
-        // custom_mesh::local_process(world, &mut owner);
-
     }
 }
 

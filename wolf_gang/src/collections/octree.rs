@@ -44,65 +44,65 @@ impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: Poi
         let min = self.aabb.get_min();
         let max = self.aabb.get_max();
 
-        let half_dimensions = self.aabb.dimensions/NumCast::from(2).unwrap();
-        let larger_half = self.aabb.dimensions - half_dimensions;
+        let smaller_half = self.aabb.dimensions/NumCast::from(2).unwrap();
+        let larger_half = self.aabb.dimensions - smaller_half;
 
         //This gets very complicated as we need to account for if the format is integer, and can't
         //be halved properly. Any max values have to be the full dimensions minus the small side's max
 
         let downbackleft = AABB::<N>::new(
             self.aabb.center + (min - self.aabb.center)/NumCast::from(2).unwrap(), 
-            half_dimensions
+            larger_half
         );
 
         println!("subdividing at center {:?} : {:?} {:?}", self.aabb.center, min, max);
-        println!("half_dimensions.x: {:?}, larger_half.x: {:?}", half_dimensions.x, larger_half.x);
+        println!("larger_half.x: {:?}, smaller_half.x: {:?}", larger_half.x, smaller_half.x);
                 
         let downbackright = AABB::<N>::new(
             self.aabb.center + (Vector3::new(max.x, min.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
             Vector3::new(
-                larger_half.x, half_dimensions.y, half_dimensions.z
+                smaller_half.x, larger_half.y, larger_half.z
             )
         );
 
         let downforwardleft = AABB::<N>::new(
             self.aabb.center + (Vector3::new(min.x, min.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
             Vector3::new(
-                half_dimensions.x, half_dimensions.y, larger_half.z
+                larger_half.x, larger_half.y, smaller_half.z
             )
         );
 
         let downforwardright = AABB::<N>::new(
             self.aabb.center + (Vector3::new(max.x, min.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
             Vector3::new(
-                larger_half.x, half_dimensions.y, larger_half.z
+                smaller_half.x, larger_half.y, smaller_half.z
             )
         );
 
         let upbackleft = AABB::<N>::new(
             self.aabb.center + (Vector3::new(min.x, max.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
             Vector3::new(
-                half_dimensions.x, larger_half.y, half_dimensions.z
+                larger_half.x, smaller_half.y, larger_half.z
             )
         );
 
         let upbackright = AABB::<N>::new(
             self.aabb.center + (Vector3::new(max.x, max.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
             Vector3::new(
-                larger_half.x, larger_half.y, half_dimensions.z
+                smaller_half.x, smaller_half.y, larger_half.z
             )
         );
 
         let upforwardleft = AABB::<N>::new(
             self.aabb.center + (Vector3::new(min.x, max.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
             Vector3::new(
-                half_dimensions.x, larger_half.y, larger_half.z
+                larger_half.x, smaller_half.y, smaller_half.z
             )
         );
 
         let upforwardright = AABB::<N>::new(
             self.aabb.center + (max - self.aabb.center)/NumCast::from(2).unwrap(), 
-            larger_half
+            smaller_half
         );
 
         self.children[0] = Some(Octree::new(downbackleft));

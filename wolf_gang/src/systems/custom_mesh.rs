@@ -14,27 +14,11 @@ use gdnative::{
     Vector3Array
 };
 
+use crate::node;
+
 use legion::prelude::*;
-
-use std::cell::RefCell;
-
+use crate::node::NodeName;
 use std::collections::HashMap;
-
-pub struct OwnerNode {
-    node: RefCell<Node>
-}
-
-pub struct MeshName {
-    name: Option<String>,
-}
-
-impl MeshName {
-    pub fn new() -> Self {
-        MeshName {
-            name: None,
-        }
-    }
-}
 
 pub struct MeshInstancePool {
     pool: HashMap<GodotString, MeshInstance>,
@@ -84,10 +68,10 @@ impl MeshData {
     }
 }
 
-pub fn create_system() -> Box<dyn Runnable> {
+pub fn create_system_local() -> Box<dyn Runnable> {
     SystemBuilder::new("custom_mesh_system")
         .read_component::<Material>()
-        .with_query(<(Read<MeshData>, Write<MeshName>)>::query()
+        .with_query(<(Read<MeshData>, Write<NodeName>)>::query()
             .filter(changed::<MeshData>())
         )
         .build_thread_local(move |commands, world, resource, query|{
@@ -118,9 +102,8 @@ pub fn create_system() -> Box<dyn Runnable> {
                             let mesh_instance = MeshInstance::new();
                             let name = mesh_instance.get_name().to_string();
                             mesh_name.name = Some(name);
-                            let mut owner = crate::OWNER_NODE.as_mut().unwrap().lock().unwrap();
 
-                            owner.add_child(Some(mesh_instance.to_node()), true); 
+                            node::add_node(&mut mesh_instance.to_node());
         
                             godot_print!("name: {}", mesh_instance.get_name().to_string());
         

@@ -1,11 +1,13 @@
-use gdnative::{godot_print, Int32Array, Vector2, Vector2Array, Vector3, Vector3Array};
+use gdnative::{godot_print, GodotString, Input, Int32Array, Vector2, Vector2Array, Vector3, Vector3Array};
 use legion::prelude::*;
 use nalgebra::{Rotation2, Rotation3};
 use num::Float;
 
 use crate::geometry::aabb;
 use crate::custom_mesh;
+use crate::node;
 use crate::level_map::TILE_DIMENSIONS;
+use crate::input;
 
 type AABB = aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;
@@ -21,7 +23,7 @@ impl SelectionBox {
     ///Creates a SelectionBox with an aabb at center (0,0,0) with dimensions of (1,1,1).
     pub fn new() -> Self {
         SelectionBox {
-            aabb: AABB::new(Point::new(0,0,0), Point::new(2,4,3))
+            aabb: AABB::new(Point::new(0,0,0), Point::new(1,1,1))
         }
     }
 
@@ -32,6 +34,38 @@ impl SelectionBox {
     }
 }
 
+pub fn create_system_local() -> Box<dyn Runnable> {
+    SystemBuilder::<()>::new("selection_box_local_system")
+        .with_query(<(Read<SelectionBox>, Write<node::NodeName>, )>::query()
+            .filter(changed::<SelectionBox>(),),
+        )
+        .build_thread_local(move |commands, world, resource, queries|{
+            for(entity, (selection_box, node_name)) in queries.iter_entities(&mut *world) {
+
+            }
+        })
+}
+
+pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
+    Box::new(|world: &mut World|{
+
+        let move_forward = input::Action("move_forward".to_string());
+
+        let input_query = <(Read<input::InputComponent>, Tagged<input::Action>)>::query()
+            .filter(changed::<input::InputComponent>())
+            .filter(tag_value(&move_forward));
+
+        for (input_component, tag) in input_query.iter(world) {
+
+            if tag.0 == move_forward.0 {
+                if input_component.repeated(0.5) {
+                    godot_print!("Uppies");
+                }
+            }
+        }
+    })
+}
+
 pub fn create_system() -> Box<dyn Schedulable> {
     
     SystemBuilder::<()>::new("selection_box_system")
@@ -39,7 +73,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
             .filter(changed::<SelectionBox>(),)
         )
         .build(move |commands, world, resource, queries| {
-            
+
             for (entity, (selection_box, mut mesh_data)) in queries.iter_entities(&mut *world) {
 
                 //offset that the next face will begin on, increments by the number of verts for each face
@@ -49,8 +83,15 @@ pub fn create_system() -> Box<dyn Schedulable> {
                 let min = selection_box.aabb.get_min();
                 let max = selection_box.aabb.get_max();
 
-                let min = Vector3D::new(min.x as f32 * TILE_DIMENSIONS.x, min.y as f32 * TILE_DIMENSIONS.y, min.z as f32 * TILE_DIMENSIONS.z);
-                let max = Vector3D::new(max.x as f32 * TILE_DIMENSIONS.x, max.y as f32 * TILE_DIMENSIONS.y, max.z as f32 * TILE_DIMENSIONS.z);
+                //subtract the center to get the "local" min and max
+                let min = Vector3D::new(min.x as f32 * TILE_DIMENSIONS.x - selection_box.aabb.center.x as f32 * TILE_DIMENSIONS.x, 
+                    min.y as f32 * TILE_DIMENSIONS.y - selection_box.aabb.center.y as f32 * TILE_DIMENSIONS.y, 
+                    min.z as f32 * TILE_DIMENSIONS.z - selection_box.aabb.center.z as f32 * TILE_DIMENSIONS.z
+                );
+                let max = Vector3D::new(max.x as f32 * TILE_DIMENSIONS.x - selection_box.aabb.center.x as f32 * TILE_DIMENSIONS.x, 
+                    max.y as f32 * TILE_DIMENSIONS.y - selection_box.aabb.center.y as f32 * TILE_DIMENSIONS.y, 
+                    max.z as f32 * TILE_DIMENSIONS.z - selection_box.aabb.center.z as f32 * TILE_DIMENSIONS.z
+                );
 
                 let true_center = (max + min) / 2.0;
                 let true_dimensions = Vector3D::new(selection_box.aabb.dimensions.x as f32 * TILE_DIMENSIONS.x,
