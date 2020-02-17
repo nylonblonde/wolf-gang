@@ -12,7 +12,8 @@ impl NodeName {
     }
 }
 
-pub unsafe fn add_node(node: &mut Node) {
+/// Add the node to the owner and set the NodeName
+pub unsafe fn add_node(node: &mut Node, node_name: &mut NodeName) {
     
     let mut owner = crate::OWNER_NODE.as_mut().unwrap().lock().unwrap();
 
@@ -27,4 +28,12 @@ pub unsafe fn add_node(node: &mut Node) {
 
     owner.add_child(Some(*node), true); 
 
+    node_name.name = Some(node.get_name().to_string());
+
+}
+
+pub unsafe fn find_node(name: GodotString) -> Option<Node> {
+    let owner = crate::OWNER_NODE.as_ref().unwrap().lock().unwrap();
+
+    owner.find_node(name, true, false)
 }

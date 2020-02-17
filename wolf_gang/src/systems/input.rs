@@ -40,10 +40,51 @@ impl InputConfig {
         input_config.actions.insert(String::from("move_forward"), 
             { 
                 let mut event = HashMap::new();
-                event.insert(InputType::Key, InputData { deadzone: 0.2, code: 87 });
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 87 });
                 event
             }
         );
+
+        input_config.actions.insert(String::from("move_back"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 83 });
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("move_left"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 65 });
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("move_right"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 68 });
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("move_down"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 90 });
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("move_up"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 88 });
+                event
+            }
+        );
+
 
         input_config.save(CONFIG_PATH);
 
@@ -152,7 +193,9 @@ impl InputComponent {
         self.strength == 0.0
     }
     pub fn repeated(&self, increment: f64) -> bool {
-        unsafe { self.repeater % increment < crate::DELTA_TIME }
+        unsafe {
+            self.repeater % increment < crate::DELTA_TIME 
+        }
     }
 }
 
@@ -177,7 +220,8 @@ pub fn create_system() -> Box<dyn Schedulable> {
                     input_component.strength = inputs.get_action_strength(GodotString::from(&tag.0));
                     unsafe { input_component.repeater += crate::DELTA_TIME; }
                 } else {
-                    if input_component.strength == 0.0 { //ahhh careful, should be fine because it's from assignment but might need epsilon comparison
+                    if input_component.strength < std::f32::EPSILON.into() { 
+                        // godot_print!("{:?} deleted", tag.0);
                         // If strength is already 0.0, then we've already passed on "on release" frame
                         commands.delete(entity);
                     } else {
@@ -194,6 +238,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                 //shit, this adds a new entity every single frame, need a check to make it unique somehow
                 if !already_pressed.contains(&action.to_string()) && inputs.is_action_pressed(action.to_godot_string()) {
+                    // godot_print!("{:?}", action.to_string());
                     commands.insert(
                         (Action(action.to_string()),),
                         vec![

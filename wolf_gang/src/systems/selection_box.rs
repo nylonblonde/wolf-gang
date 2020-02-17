@@ -7,6 +7,7 @@ use crate::geometry::aabb;
 use crate::custom_mesh;
 use crate::node;
 use crate::level_map::TILE_DIMENSIONS;
+use crate::transform;
 use crate::input;
 
 type AABB = aabb::AABB<i32>;
@@ -34,35 +35,60 @@ impl SelectionBox {
     }
 }
 
-pub fn create_system_local() -> Box<dyn Runnable> {
-    SystemBuilder::<()>::new("selection_box_local_system")
-        .with_query(<(Read<SelectionBox>, Write<node::NodeName>, )>::query()
-            .filter(changed::<SelectionBox>(),),
-        )
-        .build_thread_local(move |commands, world, resource, queries|{
-            for(entity, (selection_box, node_name)) in queries.iter_entities(&mut *world) {
-
-            }
-        })
-}
-
+/// This function reads input, then moves the center of the selection_box
 pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
     Box::new(|world: &mut World|{
 
         let move_forward = input::Action("move_forward".to_string());
+        let move_back = input::Action("move_back".to_string());
+        let move_left = input::Action("move_left".to_string());
+        let move_right = input::Action("move_right".to_string());
+        let move_up = input::Action("move_up".to_string());
+        let move_down = input::Action("move_down".to_string());
 
         let input_query = <(Read<input::InputComponent>, Tagged<input::Action>)>::query()
             .filter(changed::<input::InputComponent>())
-            .filter(tag_value(&move_forward));
+            .filter(
+                tag_value(&move_forward)
+                | tag_value(&move_back)
+                | tag_value(&move_left)
+                | tag_value(&move_right)
+                | tag_value(&move_up)
+                | tag_value(&move_down)
+            );
 
-        for (input_component, tag) in input_query.iter(world) {
+        let selection_box_query = <(Write<crate::level_map::CoordPos>, Write<transform::position::Position>)>::query();
 
-            if tag.0 == move_forward.0 {
+        //this should be fine as no systems runs in parallel with local thread
+        unsafe { 
+
+            for(input_component, action) in input_query.iter_unchecked(world) {                    
+                
                 if input_component.repeated(0.5) {
-                    godot_print!("Uppies");
-                }
+
+                    for (mut coord_pos, mut position) in selection_box_query.iter_unchecked(world) {
+
+                        if action.0 == move_forward.0 {
+                            coord_pos.value.z += 1;
+                        } else if action.0 == move_back.0 {
+                            coord_pos.value.z -= 1;
+                        } else if action.0 == move_left.0 {
+                            coord_pos.value.x -= 1;
+                        } else if action.0 == move_right.0 {
+                            coord_pos.value.x += 1;
+                        } else if action.0 == move_up.0 {
+                            coord_pos.value.y += 1;
+                        } else if action.0 == move_down.0 {
+                            coord_pos.value.y -= 1;
+                        }
+                        
+                        let coord_pos = crate::level_map::map_coords_to_world(coord_pos.value);
+                        position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
+                    }
+                }            
             }
         }
+        
     })
 }
 
@@ -98,9 +124,6 @@ pub fn create_system() -> Box<dyn Schedulable> {
                     selection_box.aabb.dimensions.y as f32 * TILE_DIMENSIONS.y,
                     selection_box.aabb.dimensions.z as f32 * TILE_DIMENSIONS.z 
                 );
-
-                godot_print!("{:?}", selection_box.aabb.dimensions);
-                godot_print!("{:?}",true_center);
 
                 for i in 0..3 { 
 
@@ -382,7 +405,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                     offset += verts.len() as i32;
                 }
 
-                godot_print!("Updated selection box mesh");
+                // godot_print!("Updated selection box mesh");
                 
             }
 

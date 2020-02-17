@@ -10,7 +10,7 @@ mod geometry;
 mod systems;
 mod node;
 
-use systems::{input, level_map, custom_mesh, selection_box};
+use systems::{input, level_map, custom_mesh, selection_box, transform};
 
 #[cfg(test)]
 mod tests;
@@ -73,25 +73,35 @@ impl WolfGang {
 
         world.insert(
             (),
-            (0..1).map(|_| (selection_box::SelectionBox::new(), custom_mesh::MeshData::new(), node::NodeName::new(), custom_mesh::Material::from_str("res://select_box.material"),))
+            vec![
+                (
+                    selection_box::SelectionBox::new(), 
+                    custom_mesh::MeshData::new(), 
+                    node::NodeName::new(),
+                    level_map::CoordPos::default(),
+                    transform::position::Position{ value: Vector3::new(0.,0.,0.)}, 
+                    custom_mesh::Material::from_str("res://select_box.material")
+                )
+            ]
         );
 
-        // self.executor = Some(Executor::new(systems));
         let schedule = Schedule::builder()
             .add_system(input::create_system())
             .add_system(level_map::create_system())
             .add_system(selection_box::create_system())
             .flush()
-            .add_thread_local_fn(selection_box::create_thread_local_fn())
+            //systems which add nodes should go first
             .add_thread_local(custom_mesh::create_system_local())
-            .add_thread_local(selection_box::create_system_local())
+            //systems that work on nodes follow
+            .add_thread_local_fn(selection_box::create_thread_local_fn())
+            .add_thread_local(transform::position::create_system_local())
             .build();
 
         self.schedule = Some(schedule);
     }
 
     #[export]
-    fn _process(&mut self, mut owner: Node, delta: f64) {
+    fn _process(&mut self, _owner: Node, delta: f64) {
         unsafe { DELTA_TIME = delta };
 
         let world = self.world.as_mut().unwrap();

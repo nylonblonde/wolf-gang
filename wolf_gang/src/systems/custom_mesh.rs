@@ -87,12 +87,10 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                 let mut mesh_instance = match &mesh_name.name {
                     Some(r) => {
                         unsafe { 
-                            let owner = crate::OWNER_NODE.as_ref().unwrap().lock().unwrap();
-
-                            let mesh_instance: MeshInstance = owner.find_node(GodotString::from_str(r), false, true)
+                            let mesh_instance: MeshInstance = crate::node::find_node(GodotString::from_str(r))
                             .unwrap()
-                            .cast().
-                            unwrap();
+                            .cast()
+                            .unwrap();
                     
                             mesh_instance
                         }
@@ -103,9 +101,9 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                             let name = mesh_instance.get_name().to_string();
                             mesh_name.name = Some(name);
 
-                            node::add_node(&mut mesh_instance.to_node());
+                            node::add_node(&mut mesh_instance.to_node(), &mut mesh_name);
         
-                            godot_print!("name: {}", mesh_instance.get_name().to_string());
+                            godot_print!("name: {:?}", mesh_name.name);
         
                             mesh_instance
                         }

@@ -18,6 +18,18 @@ pub struct TileDimensions {
     pub z: f32
 }
 
+pub struct CoordPos {
+    pub value: Point
+}
+
+impl Default for CoordPos {
+    fn default() -> CoordPos {
+        CoordPos {
+            value: Point::new(0,0,0)
+        }
+    }
+}
+
 pub const TILE_DIMENSIONS: TileDimensions = TileDimensions {x: 1.0, y: 0.2, z: 1.0};
 
 pub fn create_system() -> Box<dyn Schedulable> {
@@ -52,6 +64,15 @@ pub fn create_system() -> Box<dyn Schedulable> {
                 }
             })
 } 
+
+/// Applies the const TILE_DIMENSIONS to each map coord to get its conversion in 3D space.
+pub fn map_coords_to_world(map_coord: Point) -> nalgebra::Vector3<f32> {
+    nalgebra::Vector3::<f32>::new(
+        map_coord.x as f32 * TILE_DIMENSIONS.x, 
+        map_coord.y as f32 * TILE_DIMENSIONS.y,
+        map_coord.z as f32 * TILE_DIMENSIONS.z
+    )
+}
 
 pub struct Map {
     chunk_dimensions: AABB,
