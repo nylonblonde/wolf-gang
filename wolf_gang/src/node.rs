@@ -13,7 +13,7 @@ impl NodeName {
 }
 
 /// Add the node to the owner and set the NodeName
-pub unsafe fn add_node(node: &mut Node, node_name: &mut NodeName) {
+pub unsafe fn add_node(node: &mut Node, node_name: Option<&mut NodeName>) {
     
     let mut owner = crate::OWNER_NODE.as_mut().unwrap().lock().unwrap();
 
@@ -28,7 +28,12 @@ pub unsafe fn add_node(node: &mut Node, node_name: &mut NodeName) {
 
     owner.add_child(Some(*node), true); 
 
-    node_name.name = Some(node.get_name().to_string());
+    match node_name {
+        Some(r) => { 
+            r.name = Some(node.get_name().to_string());
+        },
+        None => {}
+    }
 
 }
 

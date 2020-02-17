@@ -4,28 +4,26 @@ use legion::prelude::*;
 
 use crate::node;
 
-pub struct Position {
-    pub value: Vector3
+pub struct Rotation {
+    pub euler: Vector3
 }
 
-impl Default for Position {
+impl Default for Rotation {
     fn default() -> Self {
-        Position {
-            value: Vector3::new(0.,0.,0.)
+        Rotation {
+            euler: Vector3::new(0.,0.,0.)
         }
     }
 }
 
 pub fn create_system_local() -> Box<dyn Runnable> {
-    SystemBuilder::new("transform_position_system")
-    .with_query(<(Read<Position>, Read<node::NodeName>)>::query()
-        .filter(changed::<Position>())
+    SystemBuilder::new("rotation_system")
+    .with_query(<(Read<Rotation>, Read<node::NodeName>)>::query()
+        .filter(changed::<Rotation>())
     )
     .build_thread_local(move |commands, world, resource, query| {
 
-        for (position, node_name) in query.iter(&mut *world) {
-            // godot_print!("Move {:?}", node_name.name);
-
+        for (rotation, node_name) in query.iter(&mut *world) {
             let spatial_node : Option<Spatial> = match &node_name.name {
                 Some(r) => {
                     unsafe {
@@ -50,11 +48,9 @@ pub fn create_system_local() -> Box<dyn Runnable> {
 
             match spatial_node {
                 Some(mut r) => { 
-                    unsafe { r.set_translation(position.value); } }
+                    unsafe { r.set_rotation(rotation.euler); } }
                 None => {}
             }
-        
         }
-
     })
 }

@@ -10,7 +10,7 @@ mod geometry;
 mod systems;
 mod node;
 
-use systems::{input, level_map, custom_mesh, selection_box, transform};
+use systems::{camera, input, level_map, custom_mesh, selection_box, transform};
 
 #[cfg(test)]
 mod tests;
@@ -56,10 +56,13 @@ impl WolfGang {
         input::InputConfig::from_file(input::CONFIG_PATH);
         godot_print!("hello, world.");
 
+
         self.universe = Some(Universe::new());
         self.world = Some(self.universe.as_ref().unwrap().create_world());
 
-        let world = self.world.as_mut().unwrap();
+        let mut world = self.world.as_mut().unwrap();
+
+        camera::initialize_camera(&mut world);
 
         world.insert(
             (),
@@ -72,14 +75,14 @@ impl WolfGang {
         );
 
         world.insert(
-            (),
+            (selection_box::Main{},),
             vec![
                 (
                     selection_box::SelectionBox::new(), 
                     custom_mesh::MeshData::new(), 
                     node::NodeName::new(),
                     level_map::CoordPos::default(),
-                    transform::position::Position{ value: Vector3::new(0.,0.,0.)}, 
+                    transform::position::Position::default(), 
                     custom_mesh::Material::from_str("res://select_box.material")
                 )
             ]
@@ -87,6 +90,7 @@ impl WolfGang {
 
         let schedule = Schedule::builder()
             .add_system(input::create_system())
+            .add_system(camera::create_system())
             .add_system(level_map::create_system())
             .add_system(selection_box::create_system())
             .flush()
@@ -95,6 +99,7 @@ impl WolfGang {
             //systems that work on nodes follow
             .add_thread_local_fn(selection_box::create_thread_local_fn())
             .add_thread_local(transform::position::create_system_local())
+            .add_thread_local(transform::rotation::create_system_local())
             .build();
 
         self.schedule = Some(schedule);

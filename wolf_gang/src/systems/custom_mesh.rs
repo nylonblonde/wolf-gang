@@ -101,7 +101,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                             let name = mesh_instance.get_name().to_string();
                             mesh_name.name = Some(name);
 
-                            node::add_node(&mut mesh_instance.to_node(), &mut mesh_name);
+                            node::add_node(&mut mesh_instance.to_node(), Some(&mut mesh_name));
         
                             godot_print!("name: {:?}", mesh_name.name);
         

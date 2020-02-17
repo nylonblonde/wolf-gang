@@ -20,6 +20,9 @@ pub struct SelectionBox {
     aabb: AABB
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub struct Main {}
+
 impl SelectionBox {
     ///Creates a SelectionBox with an aabb at center (0,0,0) with dimensions of (1,1,1).
     pub fn new() -> Self {
