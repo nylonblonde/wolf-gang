@@ -1,19 +1,11 @@
 use gdnative::*;
 
-pub struct NodeName {
-    pub name: Option<String>,
-}
+#[derive(Clone, PartialEq)]
+pub struct NodeName(pub String);
 
-impl NodeName {
-    pub fn new() -> Self {
-        NodeName {
-            name: None,
-        }
-    }
-}
-
-/// Add the node to the owner and set the NodeName
-pub unsafe fn add_node(node: &mut Node, node_name: Option<&mut NodeName>) {
+/// Add the node to the owner and set the NodeName. Returns an option so that we can
+/// avoid putting whole blocks of code in unsafe by just mutably assigning
+pub unsafe fn add_node(node: &mut Node) -> Option<NodeName> {
     
     let mut owner = crate::OWNER_NODE.as_mut().unwrap().lock().unwrap();
 
@@ -28,13 +20,7 @@ pub unsafe fn add_node(node: &mut Node, node_name: Option<&mut NodeName>) {
 
     owner.add_child(Some(*node), true); 
 
-    match node_name {
-        Some(r) => { 
-            r.name = Some(node.get_name().to_string());
-        },
-        None => {}
-    }
-
+    Some(NodeName(node.get_name().to_string()))
 }
 
 pub unsafe fn find_node(name: GodotString) -> Option<Node> {

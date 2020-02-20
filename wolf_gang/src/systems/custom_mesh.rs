@@ -71,7 +71,7 @@ impl MeshData {
 pub fn create_system_local() -> Box<dyn Runnable> {
     SystemBuilder::new("custom_mesh_system")
         .read_component::<Material>()
-        .with_query(<(Read<MeshData>, Write<NodeName>)>::query()
+        .with_query(<(Read<MeshData>, Tagged<NodeName>)>::query()
             .filter(changed::<MeshData>())
         )
         .build_thread_local(move |commands, world, resource, query|{
@@ -84,31 +84,51 @@ pub fn create_system_local() -> Box<dyn Runnable> {
         
                 let mut arr = VariantArray::new();
         
-                let mut mesh_instance = match &mesh_name.name {
-                    Some(r) => {
-                        unsafe { 
-                            let mesh_instance: MeshInstance = crate::node::find_node(GodotString::from_str(r))
-                            .unwrap()
-                            .cast()
-                            .unwrap();
-                    
-                            mesh_instance
+                let mut mesh_instance: Option<MeshInstance> = None;
+                
+                unsafe { 
+                    mesh_instance = match node::find_node(GodotString::from(mesh_name.0.clone())) {
+                        Some(r) => {
+                            Some(r.cast().unwrap())
+                        },
+                        None => {
+                            godot_print!("Couldn't find mesh instance");
+                            None
                         }
-                    },
-                    None => {
-                        unsafe {
-                            let mesh_instance = MeshInstance::new();
-                            let name = mesh_instance.get_name().to_string();
-                            mesh_name.name = Some(name);
+                    };
+                }
 
-                            node::add_node(&mut mesh_instance.to_node(), Some(&mut mesh_name));
+                if mesh_instance.is_none() {
+                    continue;
+                }
+
+                let mut mesh_instance = mesh_instance.unwrap();
+
+                // let mut mesh_instance = match &mesh_name.name {
+                //     Some(r) => {
+                //         unsafe { 
+                //             let mesh_instance: MeshInstance = crate::node::find_node(GodotString::from_str(r))
+                //             .unwrap()
+                //             .cast()
+                //             .unwrap();
+                    
+                //             mesh_instance
+                //         }
+                //     },
+                //     None => {
+                //         unsafe {
+                //             let mesh_instance = MeshInstance::new();
+                //             let name = mesh_instance.get_name().to_string();
+                //             mesh_name.name = Some(name);
+
+                //             node::add_node(&mut mesh_instance.to_node(), Some(&mut mesh_name));
         
-                            godot_print!("name: {:?}", mesh_name.name);
+                //             godot_print!("name: {:?}", mesh_name.name);
         
-                            mesh_instance
-                        }
-                    }
-                };
+                //             mesh_instance
+                //         }
+                //     }
+                // };
         
                 //resize to the expected size for meshes
                 arr.resize(Mesh::ARRAY_MAX as i32);

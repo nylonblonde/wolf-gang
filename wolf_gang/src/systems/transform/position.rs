@@ -18,7 +18,7 @@ impl Default for Position {
 
 pub fn create_system_local() -> Box<dyn Runnable> {
     SystemBuilder::new("transform_position_system")
-    .with_query(<(Read<Position>, Read<node::NodeName>)>::query()
+    .with_query(<(Read<Position>, Tagged<node::NodeName>)>::query()
         .filter(changed::<Position>())
     )
     .build_thread_local(move |commands, world, resource, query| {
@@ -26,26 +26,20 @@ pub fn create_system_local() -> Box<dyn Runnable> {
         for (position, node_name) in query.iter(&mut *world) {
             // godot_print!("Move {:?}", node_name.name);
 
-            let spatial_node : Option<Spatial> = match &node_name.name {
-                Some(r) => {
+            let spatial_node : Option<Spatial> = {
                     unsafe {
-                        match node::find_node(GodotString::from_str(r)) {
+                        match node::find_node(GodotString::from_str(node_name.0.clone())) {
                             Some(r) => {
                                 r.cast()
                             },
                             None => {
-                                godot_print!("Can't find {:?}", r);                            
+                                godot_print!("Can't find {:?}", node_name.0);                            
 
                                 None
                             }
                         }
                     }
-                },
-                None => {
-                    //some kind of error handling's gotta go here
-                    godot_print!("Name is not set yet");
-                    None
-                }
+                
             };
 
             match spatial_node {

@@ -1,14 +1,26 @@
-use gdnative::{godot_print, GodotString, Input, Int32Array, Vector2, Vector2Array, Vector3, Vector3Array};
+use gdnative::{
+    godot_print, 
+    GodotString, 
+    Input, 
+    Int32Array, 
+    MeshInstance, 
+    Vector2, 
+    Vector2Array, 
+    Vector3, 
+    Vector3Array
+};
 use legion::prelude::*;
 use nalgebra::{Rotation2, Rotation3};
 use num::Float;
 
 use crate::geometry::aabb;
+use crate::camera;
 use crate::custom_mesh;
 use crate::node;
 use crate::level_map::TILE_DIMENSIONS;
 use crate::transform;
 use crate::input;
+use crate::level_map;
 
 type AABB = aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;
@@ -35,6 +47,36 @@ impl SelectionBox {
     }
 }
 
+#[derive(Default)]
+pub struct RelativeCamera {
+    camera: String
+}
+
+pub fn initialize_selection_box(world: &mut World, camera_name: String) {
+    let mut node_name = None;
+    
+    let mut mesh: MeshInstance = MeshInstance::new();
+
+    unsafe { 
+        node_name = node::add_node(&mut mesh);
+    }
+
+    let node_name = node_name.unwrap();
+
+    world.insert((node_name.clone(),), 
+        vec![
+            (
+                SelectionBox::new(), 
+                RelativeCamera{ camera: camera_name },
+                custom_mesh::MeshData::new(),
+                level_map::CoordPos::default(),
+                transform::position::Position::default(), 
+                custom_mesh::Material::from_str("res://select_box.material")
+            )
+        ]
+    );
+}
+
 /// This function reads input, then moves the center of the selection_box
 pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
     Box::new(|world: &mut World|{
@@ -57,7 +99,7 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
                 | tag_value(&move_down)
             );
 
-        let selection_box_query = <(Write<crate::level_map::CoordPos>, Write<transform::position::Position>)>::query();
+        let selection_box_query = <(Read<RelativeCamera>, Write<crate::level_map::CoordPos>, Write<transform::position::Position>)>::query();
 
         //this should be fine as no systems runs in parallel with local thread
         unsafe { 
@@ -66,22 +108,68 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
                 
                 if input_component.repeated(0.5) {
 
-                    for (mut coord_pos, mut position) in selection_box_query.iter_unchecked(world) {
+                    for (relative_cam, mut coord_pos, mut position) in selection_box_query.iter_unchecked(world) {
+
+                        let mut movement = Point::zeros();
 
                         if action.0 == move_forward.0 {
-                            coord_pos.value.z += 1;
+                            movement.z += 1;
                         } else if action.0 == move_back.0 {
-                            coord_pos.value.z -= 1;
+                            movement.z -= 1;
                         } else if action.0 == move_left.0 {
-                            coord_pos.value.x -= 1;
+                            movement.x -= 1;
                         } else if action.0 == move_right.0 {
-                            coord_pos.value.x += 1;
+                            movement.x += 1;
                         } else if action.0 == move_up.0 {
-                            coord_pos.value.y += 1;
+                            movement.y += 1;
                         } else if action.0 == move_down.0 {
-                            coord_pos.value.y -= 1;
+                            movement.y -= 1;
                         }
                         
+                        let node_name = node::NodeName(relative_cam.camera.clone());
+
+                        let cam_query = <(Read<transform::rotation::Direction>, Read<camera::FocalAngle>)>::query()
+                            .filter(tag_value(&node_name))
+                            .filter(changed::<transform::rotation::Direction>());
+
+                        let mut relative_cam = false;
+
+                        let mut adjusted = movement;
+
+                        //this is close to working, gotta check what I did with old Wolf Gang 
+                        match cam_query.iter_unchecked(world).next() {
+                            Some(r) => {
+                                let (dir, angle) = r;
+
+                                let rot = Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), angle.euler.y.abs() % 90.);
+
+                                //gotta invert forward because camera looks at -z
+                                let mut forward = rot * -dir.forward;
+                                let mut right = rot * dir.right;
+
+                                forward.y = 0.;
+                                right.y = 0.;
+
+                                forward = forward.normalize();
+                                right = right.normalize();
+
+                                adjusted = Point::new(
+                                    forward.x.round() as i32,
+                                    0,
+                                    forward.z.round() as i32
+                                ) * movement.z + Point::new(
+                                    right.x.round() as i32,
+                                    0,
+                                    right.z.round() as i32
+                                ) * movement.x;
+
+                                adjusted.y = movement.y;
+                            },
+                            None => {}
+                        };
+
+                        coord_pos.value += adjusted;
+
                         let coord_pos = crate::level_map::map_coords_to_world(coord_pos.value);
                         position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
                     }

@@ -20,9 +20,9 @@ impl Default for Rotation {
 }
 
 pub struct Direction {
-    right: Vector3D,
-    up: Vector3D,
-    forward: Vector3D
+    pub right: Vector3D,
+    pub up: Vector3D,
+    pub forward: Vector3D
 }
 
 impl Default for Direction {
@@ -37,32 +37,26 @@ impl Default for Direction {
 
 pub fn create_system_local() -> Box<dyn Runnable> {
     SystemBuilder::new("rotation_system")
-    .with_query(<(Read<Rotation>, Write<Direction>, Read<node::NodeName>)>::query()
+    .with_query(<(Read<Rotation>, Write<Direction>, Tagged<node::NodeName>)>::query()
         .filter(changed::<Rotation>())
     )
     .build_thread_local(move |commands, world, resource, query| {
 
         for (rotation, mut direction, node_name) in query.iter(&mut *world) {
-            let spatial_node : Option<Spatial> = match &node_name.name {
-                Some(r) => {
-                    unsafe {
-                        match node::find_node(GodotString::from_str(r)) {
-                            Some(r) => {
-                                r.cast()
-                            },
-                            None => {
-                                godot_print!("Can't find {:?}", r);                            
+            let spatial_node : Option<Spatial> = {
+                unsafe {
+                    match node::find_node(GodotString::from_str(node_name.0.clone())) {
+                        Some(r) => {
+                            r.cast()
+                        },
+                        None => {
+                            godot_print!("Can't find {:?}", node_name.0);                            
 
-                                None
-                            }
+                            None
                         }
                     }
-                },
-                None => {
-                    //some kind of error handling's gotta go here
-                    godot_print!("Name is not set yet");
-                    None
                 }
+                
             };
 
             match spatial_node {

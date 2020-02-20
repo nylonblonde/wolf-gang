@@ -13,12 +13,8 @@ use crate::transform::{
 type Vector3D = nalgebra::Vector3<f32>;
 type Rotation3D = nalgebra::Rotation3<f32>;
 
-pub struct MainCamera {
-    camera: Camera
-}
-
 pub struct FocalPoint {
-    value: Vector3D
+    pub value: Vector3D
 }
 
 impl Default for FocalPoint {
@@ -28,11 +24,11 @@ impl Default for FocalPoint {
 }
 
 pub struct FocalAngle {
-    euler: Vector3D
+    pub euler: Vector3D
 }
 
 pub struct Zoom {
-    value: f32
+    pub value: f32
 }
 
 impl Default for Zoom {
@@ -41,24 +37,26 @@ impl Default for Zoom {
     }
 }
 
-pub fn initialize_camera(world: &mut legion::world::World) -> Camera {
+pub fn initialize_camera(world: &mut legion::world::World) -> String {
     
-    let mut node_name = node::NodeName::new();
+    let mut node_name = None;
     
     let mut camera: Camera = Camera::new();
 
     unsafe { 
-        node::add_node(&mut camera, Some(&mut node_name));
+        node_name = node::add_node(&mut camera);
 
         camera.make_current();
     }
 
-    world.insert((), vec![
+    let node_name = node_name.unwrap();
+
+    world.insert((node_name.clone(),), vec![
         (
-            node_name,
+            
             Position::default(),
             FocalAngle {
-                euler: Vector3D::new(-45., -45., 0.)
+                euler: Vector3D::new(-45., 360.-45., 0.)
             },
             Rotation::default(),
             Direction::default(),
@@ -67,7 +65,7 @@ pub fn initialize_camera(world: &mut legion::world::World) -> Camera {
         )
     ]);
 
-    camera
+    node_name.0
 }
 
 pub fn create_system() -> Box<dyn Schedulable> {

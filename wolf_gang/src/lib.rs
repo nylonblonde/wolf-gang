@@ -62,31 +62,33 @@ impl WolfGang {
 
         let mut world = self.world.as_mut().unwrap();
 
-        camera::initialize_camera(&mut world);
+        let camera = camera::initialize_camera(&mut world);
 
-        world.insert(
-            (),
-            (0..1).map(|_| (level_map::MapChunkData::new(), node::NodeName::new(), custom_mesh::MeshData::new(),))
-        );
+        // world.insert(
+        //     (),
+        //     (0..1).map(|_| (level_map::MapChunkData::new(), custom_mesh::MeshData::new(),))
+        // );
 
         world.insert(
             (),
             (0..1).map(|_| (level_map::Map::new(),))
         );
 
-        world.insert(
-            (),
-            vec![
-                (
-                    selection_box::SelectionBox::new(), 
-                    custom_mesh::MeshData::new(), 
-                    node::NodeName::new(),
-                    level_map::CoordPos::default(),
-                    transform::position::Position::default(), 
-                    custom_mesh::Material::from_str("res://select_box.material")
-                )
-            ]
-        );
+        selection_box::initialize_selection_box(world, camera);
+
+        // world.insert(
+        //     (),
+        //     vec![
+        //         (
+        //             selection_box::SelectionBox::new(), 
+        //             custom_mesh::MeshData::new(), 
+        //             node::NodeName::new(),
+        //             level_map::CoordPos::default(),
+        //             transform::position::Position::default(), 
+        //             custom_mesh::Material::from_str("res://select_box.material")
+        //         )
+        //     ]
+        // );
 
         let schedule = Schedule::builder()
             .add_system(input::create_system())
