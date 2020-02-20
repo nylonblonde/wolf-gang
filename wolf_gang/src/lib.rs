@@ -75,7 +75,7 @@ impl WolfGang {
         );
 
         world.insert(
-            (selection_box::Main{},),
+            (),
             vec![
                 (
                     selection_box::SelectionBox::new(), 

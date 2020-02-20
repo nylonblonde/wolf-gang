@@ -7,7 +7,7 @@ use nalgebra;
 use crate::node;
 use crate::transform::{
     position::Position,
-    rotation::Rotation
+    rotation::{ Rotation, Direction }
 };
 
 type Vector3D = nalgebra::Vector3<f32>;
@@ -61,6 +61,7 @@ pub fn initialize_camera(world: &mut legion::world::World) -> Camera {
                 euler: Vector3D::new(-45., -45., 0.)
             },
             Rotation::default(),
+            Direction::default(),
             FocalPoint::default(),
             Zoom::default(),
         )
@@ -84,9 +85,8 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
             let up = Vector3D::y();
             let rot = Rotation3D::face_towards(&dir, &up);
-            let euler = rot.euler_angles();
 
-            rotation.euler = Vector3::new(euler.0, euler.1, euler.2);
+            rotation.value = rot;
 
         }
     })
