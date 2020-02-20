@@ -85,6 +85,38 @@ impl InputConfig {
             }
         );
 
+        input_config.actions.insert(String::from("camera_rotate_left"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 74 });
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("camera_rotate_right"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 76 });
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("camera_rotate_up"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 73 });
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("camera_rotate_down"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, InputData { deadzone: 0.0, code: 75 });
+                event
+            }
+        );
+
 
         input_config.save(CONFIG_PATH);
 

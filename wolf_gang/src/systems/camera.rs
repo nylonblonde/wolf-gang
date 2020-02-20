@@ -9,6 +9,7 @@ use crate::transform::{
     position::Position,
     rotation::{ Rotation, Direction }
 };
+use crate::input::{ Action, InputComponent };
 
 type Vector3D = nalgebra::Vector3<f32>;
 type Rotation3D = nalgebra::Rotation3<f32>;
@@ -86,6 +87,30 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
             rotation.value = rot;
 
+        }
+    })
+}
+
+pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World)> {
+    Box::new(|world: &mut legion::world::World| {
+        let camera_rotate_left = Action("camera_rotate_left".to_string());
+        let camera_rotate_right = Action("camera_rotate_left".to_string());
+        let camera_rotate_up = Action("camera_rotate_left".to_string());
+        let camera_rotate_down = Action("camera_rotate_left".to_string());
+
+        let input_query = <(Read<InputComponent>, Tagged<Action>)>::query()
+            .filter(changed::<InputComponent>())
+            .filter(
+                tag_value(&camera_rotate_left)
+                | tag_value(&camera_rotate_right)
+                | tag_value(&camera_rotate_up)
+                | tag_value(&camera_rotate_down)
+            );
+        
+        unsafe {
+            for(input_component, action) in input_query.iter_unchecked(world) {                    
+
+            }
         }
     })
 }

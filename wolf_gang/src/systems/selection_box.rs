@@ -99,14 +99,14 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
                 | tag_value(&move_down)
             );
 
-        let selection_box_query = <(Read<RelativeCamera>, Write<crate::level_map::CoordPos>, Write<transform::position::Position>)>::query();
-
         //this should be fine as no systems runs in parallel with local thread
         unsafe { 
 
             for(input_component, action) in input_query.iter_unchecked(world) {                    
                 
                 if input_component.repeated(0.5) {
+                    
+                    let selection_box_query = <(Read<RelativeCamera>, Write<crate::level_map::CoordPos>, Write<transform::position::Position>)>::query();
 
                     for (relative_cam, mut coord_pos, mut position) in selection_box_query.iter_unchecked(world) {
 
