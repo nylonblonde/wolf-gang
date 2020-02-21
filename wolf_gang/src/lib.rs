@@ -88,6 +88,7 @@ impl WolfGang {
             (0..1).map(|_| (level_map::Map::new(),))
         );
 
+        // let camera = "".to_string();
         selection_box::initialize_selection_box(world, camera);
 
         // let test_node = node::NodeName("Cone".to_string());

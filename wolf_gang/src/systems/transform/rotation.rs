@@ -1,4 +1,4 @@
-use gdnative::{godot_print, GodotString, Vector3, Spatial};
+use gdnative::{godot_print, Basis, Vector3, Spatial};
 
 use legion::prelude::*;
 
@@ -66,11 +66,60 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                     direction.up = rotation.value * Vector3D::y();
                     direction.forward = rotation.value * Vector3D::z();
 
-                    //We do this because as best as I can tell there's no clear way to set quat from gdnative bindings 
-                    let dir = Vector3::new(direction.forward.x, direction.forward.y, direction.forward.z);
-                    let up = Vector3::new(0.,1.,0.);
+                    let z_factor = direction.forward;
+                    let y_factor = direction.up;
+                    let x_factor = direction.right;
+
+                    let unit_quat: nalgebra::UnitQuaternion<f32> = rotation.value.into();
+                    let quat = unit_quat.quaternion();
+
+                    //Create a basis from Quaternion, jacked from the Godot source since there are
+                    //no bindings
+                    let d = quat.norm_squared();
+                    let s = 2.0 / d;
+                    let xs = quat.coords.x * s;
+                    let ys = quat.coords.y * s;
+                    let zs = quat.coords.z * s;
                     
-                    unsafe { r.look_at(dir, up); } 
+                    let wx = quat.coords.w * xs;
+                    let wy = quat.coords.w * ys;
+                    let wz = quat.coords.w * zs;
+
+                    let xx = quat.coords.x * xs;
+                    let xy = quat.coords.x * ys;
+                    let xz = quat.coords.x * zs;
+
+                    let yy = quat.coords.y * ys;
+                    let yz = quat.coords.y * zs;
+                    let zz = quat.coords.y * zs;
+
+                    let mut x_axis = Vector3::new(1.0 - (yy + zz), xy - wz, xz + wy);
+                    let mut y_axis = Vector3::new(xy + wz, 1.0 - (xx + zz), yz - wx);
+                    let mut z_axis = Vector3::new(xz - wy, yz + wx, 1.0 - (xx + yy));
+
+                    //orthonormalize the axes, again ripped from the Godot source
+                    // x_axis = x_axis.normalize();
+                    // y_axis = (y_axis - x_axis * (x_axis.dot(y_axis))).normalize();
+                    // z_axis = (z_axis - x_axis * (x_axis.dot(z_axis)) - y_axis * y_axis.dot(z_axis)).normalize();
+
+                    unsafe {
+                        let mut transform = r.get_transform();
+                        transform.basis = Basis{
+                            elements: [
+                                x_axis,
+                                y_axis,
+                                z_axis
+                            ]
+                        };
+                        
+                        r.set_transform(transform);
+                    }
+
+                    // //We do this because as best as I can tell there's no clear way to set quat from gdnative bindings 
+                    // let dir = Vector3::new(direction.forward.x, direction.forward.y, direction.forward.z);
+                    // let up = Vector3::new(0.,1.,0.);
+                    
+                    // unsafe { r.look_at(dir, up); } 
 
                 },
 

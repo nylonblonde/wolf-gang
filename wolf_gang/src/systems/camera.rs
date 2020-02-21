@@ -81,9 +81,9 @@ pub fn create_system() -> Box<dyn Schedulable> {
     .build(move |commands, world, time, query|{
         for (mut focal_point, focal_angle, zoom, mut position, mut rotation) in query.iter(&mut *world) {
 
-            unsafe { focal_point.current = focal_point.current - (focal_point.heading - focal_point.current) * crate::DELTA_TIME as f32; }
+            unsafe { focal_point.current = focal_point.current + (focal_point.heading - focal_point.current) * crate::DELTA_TIME as f32 * SPEED }
 
-            godot_print!("{:?} {:?}", focal_point.current, focal_point.heading);
+            // godot_print!("{:?} {:?}", focal_point.current, focal_point.heading);
 
             let new_position = focal_point.current + (Rotation3D::from_euler_angles(
                 focal_angle.0, 
@@ -146,21 +146,24 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World)> {
             }
         }
 
-        let selection_box_query = <(Read<selection_box::RelativeCamera>, Read<selection_box::SelectionBox>)>::query()
+        let selection_box_query = <(Read<selection_box::RelativeCamera>, Read<level_map::CoordPos>)>::query()
             .filter(changed::<crate::level_map::CoordPos>());
 
         unsafe{
-            for (relative_cam, selection_box) in selection_box_query.iter_unchecked(world) {
+            for (relative_cam, coord_pos) in selection_box_query.iter_unchecked(world) {
                 let node_name = node::NodeName(relative_cam.0.clone());
                 let cam_query = <Write<FocalPoint>>::query()
                     .filter(tag_value(&node_name));
                 for mut focal_point in cam_query.iter_unchecked(world) {
-                    let min = level_map::map_coords_to_world(selection_box.aabb.get_min());
-                    let max = level_map::map_coords_to_world(selection_box.aabb.get_max());
+                    let center = level_map::map_coords_to_world(coord_pos.value);
+
+                    let min = Vector3D::zeros();
+                    let max = Vector3D::new(1.,1.,1.);
 
                     let mid = (max + min)/2.;
 
-                    focal_point.heading = mid;
+                    focal_point.heading = center + mid;
+
                 }
             }
         }

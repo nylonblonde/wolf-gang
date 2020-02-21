@@ -42,6 +42,7 @@ fn test_read_resource() {
     let mut worls = universe.create_world();
 
     let mut resources = Resources::default();
-    
+    resources.insert
+
     world.insert()
 }
