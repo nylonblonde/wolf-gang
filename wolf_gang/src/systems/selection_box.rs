@@ -75,9 +75,26 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
     );
 }
 
-fn dot_compare(a: &Vector3D, b: &Vector3D, rhs: &Vector3D) -> std::cmp::Ordering {
-    a.dot(rhs).partial_cmp(
-        &b.dot(rhs)
+/// Gets the axis closest to forward from a or b, adjusted by adjust_angle around the up axis. We adjust it so that we can smooth out the comparison at 45
+/// degree angles.
+fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, right: &Vector3D, up: &nalgebra::Unit<Vector3D>, adjust_angle: f32) -> std::cmp::Ordering {
+    
+    let a_dir = if a.dot(right) > 0. {
+            -1.
+        } else {
+            1.
+        };
+    let b_dir = if b.dot(right) > 0. {
+        -1.
+    } else {
+        1.
+    };
+    
+    let forward_a = nalgebra::UnitQuaternion::<f32>::from_axis_angle(up, adjust_angle*a_dir) * forward;
+    let forward_b = nalgebra::UnitQuaternion::<f32>::from_axis_angle(up, adjust_angle*b_dir) * forward;
+
+    a.dot(&forward_a).partial_cmp(
+        &b.dot(&forward_b)
     ).unwrap()
 }
 
@@ -147,35 +164,29 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
 
                                 // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
                                 // view.
-                                // TODO: Add a little leeway so that 45deg angles aren't so jumpy somehow                             
-                                let mut forward = std::cmp::min_by(Vector3D::z(), 
+                                let mut forward = dir.forward;
+                                let mut right = dir.right;
+
+                                forward.y = 0.;
+                                
+                                forward = std::cmp::min_by(Vector3D::z(), 
                                     std::cmp::min_by(-Vector3D::z(), 
                                         std::cmp::min_by(Vector3D::x(), -Vector3D::x(),
                                             |lh: &Vector3D, rh: &Vector3D| {
-                                                dot_compare(lh, rh, &dir.forward)
+                                                get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), std::f32::consts::FRAC_PI_8)
                                             }
                                         ), 
                                         |lh: &Vector3D, rh: &Vector3D| {
-                                            dot_compare(lh, rh, &dir.forward)
+                                            get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), std::f32::consts::FRAC_PI_8)
                                         }
                                     ), 
                                     |lh: &Vector3D, rh: &Vector3D| {
-                                        dot_compare(lh, rh, &dir.forward)
+                                        get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), std::f32::consts::FRAC_PI_8)
                                     }
                                 );
 
                                 //calculate right from up and forward
-                                let mut right = {
-                                    let rot = nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2);
-                                    rot * forward
-                                };
-
-                                //gotta invert forward because camera looks at -z
-                                // let mut forward = -dir.forward;
-                                // let mut right = dir.right;
-
-                                // forward.y = 0.;
-                                // right.y = 0.;
+                                right =  nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2) * forward;
 
                                 forward = forward.normalize();
                                 right = right.normalize();
