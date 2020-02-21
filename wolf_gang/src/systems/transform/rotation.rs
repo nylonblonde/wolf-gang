@@ -91,16 +91,16 @@ pub fn create_system_local() -> Box<dyn Runnable> {
 
                     let yy = quat.coords.y * ys;
                     let yz = quat.coords.y * zs;
-                    let zz = quat.coords.y * zs;
+                    let zz = quat.coords.z * zs;
 
                     let mut x_axis = Vector3::new(1.0 - (yy + zz), xy - wz, xz + wy);
                     let mut y_axis = Vector3::new(xy + wz, 1.0 - (xx + zz), yz - wx);
                     let mut z_axis = Vector3::new(xz - wy, yz + wx, 1.0 - (xx + yy));
 
                     //orthonormalize the axes, again ripped from the Godot source
-                    // x_axis = x_axis.normalize();
-                    // y_axis = (y_axis - x_axis * (x_axis.dot(y_axis))).normalize();
-                    // z_axis = (z_axis - x_axis * (x_axis.dot(z_axis)) - y_axis * y_axis.dot(z_axis)).normalize();
+                    x_axis = x_axis.normalize();
+                    y_axis = (y_axis - x_axis * (x_axis.dot(y_axis))).normalize();
+                    z_axis = (z_axis - x_axis * (x_axis.dot(z_axis)) - y_axis * y_axis.dot(z_axis)).normalize();
 
                     unsafe {
                         let mut transform = r.get_transform();
