@@ -15,6 +15,13 @@ use systems::{camera, input, level_map, custom_mesh, selection_box, transform};
 #[cfg(test)]
 mod tests;
 
+static mut OWNER_NODE: Option<Node> = None;
+static mut DELTA_TIME: f64 = 0.0;
+
+pub struct Time {
+    delta: f32
+}
+
 /// The WolfGang "class"
 #[derive(NativeClass)]
 #[inherit(Node)]
@@ -23,12 +30,8 @@ pub struct WolfGang {
     universe: Option<Universe>,
     world: Option<legion::world::World>,
     schedule: Option<Schedule>,
+    resources: Option<Resources>,
 }
-
-use std::sync::Mutex;
-
-static mut OWNER_NODE: Option<Mutex<Node>> = None;
-static mut DELTA_TIME: f64 = 0.0;
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
 // code to automatically bind any exported methods to Godot.
@@ -37,12 +40,15 @@ impl WolfGang {
     
     /// The "constructor" of the class.
     fn _init(owner: Node) -> Self {
-        unsafe { OWNER_NODE = Some(Mutex::new(owner)); }
+        log_panics::init();
+
+        unsafe { OWNER_NODE = Some(owner); }
 
         WolfGang {
             universe: None,
             world: None,
             schedule: None,
+            resources: None,
         }
     }
     
@@ -60,6 +66,14 @@ impl WolfGang {
         self.universe = Some(Universe::new());
         self.world = Some(self.universe.as_ref().unwrap().create_world());
 
+        self.resources = Some(Resources::default());
+
+        let resources = self.resources.as_mut().unwrap();
+
+        resources.insert(Time{
+            delta: 0.
+        });
+
         let mut world = self.world.as_mut().unwrap();
 
         let camera = camera::initialize_camera(&mut world);
@@ -76,19 +90,33 @@ impl WolfGang {
 
         selection_box::initialize_selection_box(world, camera);
 
-        // world.insert(
-        //     (),
-        //     vec![
-        //         (
-        //             selection_box::SelectionBox::new(), 
-        //             custom_mesh::MeshData::new(), 
-        //             node::NodeName::new(),
-        //             level_map::CoordPos::default(),
-        //             transform::position::Position::default(), 
-        //             custom_mesh::Material::from_str("res://select_box.material")
-        //         )
-        //     ]
-        // );
+        // let test_node = node::NodeName("Cone".to_string());
+        //     world.insert(
+        //         (test_node.clone(),),
+        //         vec![
+        //             (
+        //                 transform::rotation::Rotation::default(),
+        //                 transform::rotation::Direction::default(),
+        //                 transform::position::Position::default(),
+        //                 camera::FocalPoint::default(),
+        //                 camera::FocalAngle(-45.0f32.to_radians(),45.0f32.to_radians(),0.),
+        //                 camera::Zoom(5.0)
+        //             )
+        //         ]
+        //     );
+
+        // let test_system = Box::new(|world: &mut legion::world::World|{
+        //     let node_name = node::NodeName("Cone".to_string());
+
+        //     let query = <(Write<camera::FocalAngle>,)>::query()
+        //         .filter(tag_value(&node_name));
+
+        //     unsafe {
+        //         for (mut focal_angle,) in query.iter_unchecked(world) {
+        //             focal_angle.1 += 1.0f32.to_radians();
+        //         }
+        //     }
+        // });
 
         let schedule = Schedule::builder()
             .add_system(input::create_system())
@@ -100,6 +128,8 @@ impl WolfGang {
             .add_thread_local(custom_mesh::create_system_local())
             //systems that work on nodes follow
             .add_thread_local_fn(selection_box::create_thread_local_fn())
+            .add_thread_local_fn(camera::create_thread_local_fn())
+            // .add_thread_local_fn(test_system)
             .add_thread_local(transform::position::create_system_local())
             .add_thread_local(transform::rotation::create_system_local())
             .build();
@@ -112,6 +142,12 @@ impl WolfGang {
         unsafe { DELTA_TIME = delta };
 
         let world = self.world.as_mut().unwrap();
+
+        let resources = self.resources.as_mut().unwrap();
+
+        resources.insert(Time{
+            delta: delta as f32
+        });
         
         let schedule = self.schedule.as_mut().unwrap();
         schedule.execute(world);

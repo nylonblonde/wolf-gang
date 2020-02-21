@@ -29,7 +29,7 @@ type Vector3D = nalgebra::Vector3<f32>;
 type Vector2D = nalgebra::Vector2<f32>;
 
 pub struct SelectionBox {
-    aabb: AABB
+    pub aabb: AABB
 }
 
 impl SelectionBox {
@@ -48,9 +48,7 @@ impl SelectionBox {
 }
 
 #[derive(Default)]
-pub struct RelativeCamera {
-    camera: String
-}
+pub struct RelativeCamera(pub String);
 
 pub fn initialize_selection_box(world: &mut World, camera_name: String) {
     let mut node_name = None;
@@ -67,7 +65,7 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
         vec![
             (
                 SelectionBox::new(), 
-                RelativeCamera{ camera: camera_name },
+                RelativeCamera(camera_name),
                 custom_mesh::MeshData::new(),
                 level_map::CoordPos::default(),
                 transform::position::Position::default(), 
@@ -126,7 +124,7 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
                             movement.y -= 1;
                         }
                         
-                        let node_name = node::NodeName(relative_cam.camera.clone());
+                        let node_name = node::NodeName(relative_cam.0.clone());
 
                         let cam_query = <(Read<transform::rotation::Direction>, Read<camera::FocalAngle>)>::query()
                             .filter(tag_value(&node_name))
@@ -141,7 +139,9 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
                             Some(r) => {
                                 let (dir, angle) = r;
 
-                                let rot = Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), angle.euler.y.abs() % 90.);
+                                //We make this adjustment to the camera direction to avoid having the selector move diagonally through coordinates. Tbh not
+                                // super sure why it works.
+                                let rot = Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), angle.1.abs() % std::f32::consts::FRAC_PI_2);
 
                                 //gotta invert forward because camera looks at -z
                                 let mut forward = rot * -dir.forward;
@@ -162,6 +162,10 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
                                     0,
                                     right.z.round() as i32
                                 ) * movement.x;
+
+                                if adjusted.x != 0 && adjusted.z != 0 {
+                                    godot_print!("{}", angle.1.abs());
+                                }
 
                                 adjusted.y = movement.y;
                             },

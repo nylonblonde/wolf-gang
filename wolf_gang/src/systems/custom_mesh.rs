@@ -87,7 +87,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                 let mut mesh_instance: Option<MeshInstance> = None;
                 
                 unsafe { 
-                    mesh_instance = match node::find_node(GodotString::from(mesh_name.0.clone())) {
+                    mesh_instance = match node::find_node(mesh_name.0.clone()) {
                         Some(r) => {
                             Some(r.cast().unwrap())
                         },

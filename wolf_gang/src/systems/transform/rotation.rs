@@ -45,7 +45,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
         for (rotation, mut direction, node_name) in query.iter(&mut *world) {
             let spatial_node : Option<Spatial> = {
                 unsafe {
-                    match node::find_node(GodotString::from_str(node_name.0.clone())) {
+                    match node::find_node(node_name.0.clone()) {
                         Some(r) => {
                             r.cast()
                         },
@@ -66,8 +66,15 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                     direction.up = rotation.value * Vector3D::y();
                     direction.forward = rotation.value * Vector3D::z();
 
-                    let euler = rotation.value.euler_angles();
-                    unsafe { r.set_rotation(Vector3::new(euler.0, euler.1, euler.2)); } }
+                    //We do this because as best as I can tell there's no clear way to set quat from gdnative bindings 
+                    let dir = Vector3::new(direction.forward.x, direction.forward.y, direction.forward.z);
+                    let up = Vector3::new(0.,1.,0.);
+                    
+                    unsafe { r.look_at(dir, up); } 
+
+                },
+
+                   
                 None => {}
             }
         }

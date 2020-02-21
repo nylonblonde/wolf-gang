@@ -28,7 +28,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
 
             let spatial_node : Option<Spatial> = {
                     unsafe {
-                        match node::find_node(GodotString::from_str(node_name.0.clone())) {
+                        match node::find_node(node_name.0.clone()) {
                             Some(r) => {
                                 r.cast()
                             },

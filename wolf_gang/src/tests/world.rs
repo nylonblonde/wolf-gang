@@ -35,3 +35,13 @@ fn test_add_tag() {
     assert_eq!(world.get_tag::<NodeName>(*entity).unwrap().0.as_ref().unwrap(), &"Test".to_string());
 
 }
+
+#[test]
+fn test_read_resource() {
+    let universe = Universe::new();
+    let mut worls = universe.create_world();
+
+    let mut resources = Resources::default();
+    
+    world.insert()
+}
