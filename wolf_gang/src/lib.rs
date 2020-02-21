@@ -1,3 +1,5 @@
+#![feature(cmp_min_max_by)]
+
 use gdnative::*;
 
 use legion::prelude::*;
@@ -40,7 +42,6 @@ impl WolfGang {
     
     /// The "constructor" of the class.
     fn _init(owner: Node) -> Self {
-        log_panics::init();
 
         unsafe { OWNER_NODE = Some(owner); }
 

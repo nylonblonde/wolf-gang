@@ -75,6 +75,12 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
     );
 }
 
+fn dot_compare(a: &Vector3D, b: &Vector3D, rhs: &Vector3D) -> std::cmp::Ordering {
+    a.dot(rhs).partial_cmp(
+        &b.dot(rhs)
+    ).unwrap()
+}
+
 /// This function reads input, then moves the center of the selection_box
 pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
     Box::new(|world: &mut World|{
@@ -139,16 +145,37 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
                             Some(r) => {
                                 let (dir, angle) = r;
 
-                                //We make this adjustment to the camera direction to avoid having the selector move diagonally through coordinates. Tbh not
-                                // super sure why it works.
-                                let rot = Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), angle.1.abs() % std::f32::consts::FRAC_PI_2);
+                                // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
+                                // view.
+                                // TODO: Add a little leeway so that 45deg angles aren't so jumpy somehow                             
+                                let mut forward = std::cmp::min_by(Vector3D::z(), 
+                                    std::cmp::min_by(-Vector3D::z(), 
+                                        std::cmp::min_by(Vector3D::x(), -Vector3D::x(),
+                                            |lh: &Vector3D, rh: &Vector3D| {
+                                                dot_compare(lh, rh, &dir.forward)
+                                            }
+                                        ), 
+                                        |lh: &Vector3D, rh: &Vector3D| {
+                                            dot_compare(lh, rh, &dir.forward)
+                                        }
+                                    ), 
+                                    |lh: &Vector3D, rh: &Vector3D| {
+                                        dot_compare(lh, rh, &dir.forward)
+                                    }
+                                );
+
+                                //calculate right from up and forward
+                                let mut right = {
+                                    let rot = nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2);
+                                    rot * forward
+                                };
 
                                 //gotta invert forward because camera looks at -z
-                                let mut forward = rot * -dir.forward;
-                                let mut right = rot * dir.right;
+                                // let mut forward = -dir.forward;
+                                // let mut right = dir.right;
 
-                                forward.y = 0.;
-                                right.y = 0.;
+                                // forward.y = 0.;
+                                // right.y = 0.;
 
                                 forward = forward.normalize();
                                 right = right.normalize();
