@@ -60,7 +60,6 @@ impl WolfGang {
     #[export]
     fn _ready(&mut self, mut owner: Node) {
 
-        input::InputConfig::from_file(input::CONFIG_PATH);
         godot_print!("hello, world.");
 
 
@@ -76,6 +75,7 @@ impl WolfGang {
         });
 
         let mut world = self.world.as_mut().unwrap();
+        input::initialize_input_config(world, input::CONFIG_PATH);
 
         let camera = camera::initialize_camera(&mut world);
 
@@ -121,7 +121,7 @@ impl WolfGang {
         // });
 
         let schedule = Schedule::builder()
-            .add_system(input::create_system())
+            .add_thread_local_fn(input::create_thread_local_fn())
             .add_system(camera::create_system())
             .add_system(level_map::create_system())
             .add_system(selection_box::create_system())

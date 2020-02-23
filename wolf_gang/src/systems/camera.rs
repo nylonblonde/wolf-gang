@@ -11,7 +11,7 @@ use crate::transform::{
     position::Position,
     rotation::{ Rotation, Direction }
 };
-use crate::input::{ Action, InputComponent };
+use crate::input::{ Action, InputActionComponent };
 use crate::level_map;
 
 type Vector3D = nalgebra::Vector3<f32>;
@@ -61,7 +61,7 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
         (
             
             Position::default(),
-            FocalAngle(-45.0f32.to_radians(),45.0f32.to_radians(), 0.0),
+            FocalAngle(-45.0f32.to_radians(),225.0f32.to_radians(), 0.0),
             Rotation::default(),
             Direction::default(),
             FocalPoint::default(),
@@ -112,8 +112,8 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World)> {
         let camera_rotate_up = Action("camera_rotate_up".to_string());
         let camera_rotate_down = Action("camera_rotate_down".to_string());
 
-        let input_query = <(Read<InputComponent>, Tagged<Action>)>::query()
-            .filter(changed::<InputComponent>())
+        let input_query = <(Read<InputActionComponent>, Tagged<Action>)>::query()
+            .filter(changed::<InputActionComponent>())
             .filter(
                 tag_value(&camera_rotate_left)
                 | tag_value(&camera_rotate_right)

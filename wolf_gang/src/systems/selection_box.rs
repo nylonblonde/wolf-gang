@@ -13,6 +13,8 @@ use legion::prelude::*;
 use nalgebra::{Rotation2, Rotation3};
 use num::Float;
 
+use std::cmp::Ordering;
+
 use crate::geometry::aabb;
 use crate::camera;
 use crate::custom_mesh;
@@ -79,22 +81,25 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
 /// degree angles.
 fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, right: &Vector3D, up: &nalgebra::Unit<Vector3D>, adjust_angle: f32) -> std::cmp::Ordering {
     
-    let a_dir = if a.dot(right) > 0. {
-            -1.
-        } else {
-            1.
-        };
-    let b_dir = if b.dot(right) > 0. {
-        -1.
-    } else {
-        1.
-    };
-    
-    let forward_a = nalgebra::UnitQuaternion::<f32>::from_axis_angle(up, adjust_angle*a_dir) * forward;
-    let forward_b = nalgebra::UnitQuaternion::<f32>::from_axis_angle(up, adjust_angle*b_dir) * forward;
+    let a_dot = a.dot(right);
+    let b_dot = b.dot(right);
 
-    a.dot(&forward_a).partial_cmp(
-        &b.dot(&forward_b)
+    let dot = match PartialOrd::partial_cmp(&a_dot, &b_dot) {
+        None => 0., //If NaN just set it to 0
+        Some(Ordering::Less) => a_dot,
+        Some(_) => b_dot
+    };
+
+    let dir = match PartialOrd::partial_cmp(&dot, &0.) {
+        None => 0., //If NaN just set it to 0
+        Some(Ordering::Less) => -1.,
+        Some(_) => 1.
+    };
+ 
+    let forward = nalgebra::UnitQuaternion::<f32>::from_axis_angle(up, adjust_angle*dir) * forward;
+
+    a.dot(&forward).partial_cmp(
+        &b.dot(&forward)
     ).unwrap()
 }
 
@@ -109,8 +114,8 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
         let move_up = input::Action("move_up".to_string());
         let move_down = input::Action("move_down".to_string());
 
-        let input_query = <(Read<input::InputComponent>, Tagged<input::Action>)>::query()
-            .filter(changed::<input::InputComponent>())
+        let input_query = <(Read<input::InputActionComponent>, Tagged<input::Action>)>::query()
+            .filter(changed::<input::InputActionComponent>())
             .filter(
                 tag_value(&move_forward)
                 | tag_value(&move_back)
@@ -169,19 +174,21 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
 
                                 forward.y = 0.;
                                 
+                                let adjustment_angle = std::f32::consts::FRAC_PI_8;
+
                                 forward = std::cmp::min_by(Vector3D::z(), 
                                     std::cmp::min_by(-Vector3D::z(), 
                                         std::cmp::min_by(Vector3D::x(), -Vector3D::x(),
                                             |lh: &Vector3D, rh: &Vector3D| {
-                                                get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), std::f32::consts::FRAC_PI_8)
+                                                get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
                                             }
                                         ), 
                                         |lh: &Vector3D, rh: &Vector3D| {
-                                            get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), std::f32::consts::FRAC_PI_8)
+                                            get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
                                         }
                                     ), 
                                     |lh: &Vector3D, rh: &Vector3D| {
-                                        get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), std::f32::consts::FRAC_PI_8)
+                                        get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
                                     }
                                 );
 
