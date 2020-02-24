@@ -30,6 +30,8 @@ pub unsafe fn add_node(node: &mut Node) -> Option<NodeName> {
 
     let string = node.get_name().to_string();
 
+    // godot_print!("{}", string.clone());
+
     if NODE_CACHE.is_none() {
         NODE_CACHE = Some(NodeCache {
             cache: HashMap::new()

@@ -1,8 +1,10 @@
 
 use gdnative::{
     ArrayMesh,
+    GeometryInstance,
     godot_print, 
     GodotString, 
+    ImmediateGeometry,
     Int32Array, 
     Mesh,
     MeshInstance,
@@ -18,19 +20,7 @@ use crate::node;
 
 use legion::prelude::*;
 use crate::node::NodeName;
-use std::collections::HashMap;
-
-pub struct MeshInstancePool {
-    pool: HashMap<GodotString, MeshInstance>,
-}
-
-impl MeshInstancePool {
-    pub fn new() -> Self {
-        MeshInstancePool {
-            pool: HashMap::new()
-        }
-    }
-}
+use std::collections::HashMap;  
 
 pub struct MeshData {
     pub verts: Vector3Array,
@@ -82,12 +72,12 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                 let normals = &mesh_data.normals;
                 let indices = &mesh_data.indices;
         
-                let mut arr = VariantArray::new();
+                // let mut arr = VariantArray::new();
         
-                let mut mesh_instance: Option<MeshInstance> = None;
+                let mut immediate_geometry: Option<ImmediateGeometry> = None;
                 
                 unsafe { 
-                    mesh_instance = match node::find_node(mesh_name.0.clone()) {
+                    immediate_geometry = match node::find_node(mesh_name.0.clone()) {
                         Some(r) => {
                             Some(r.cast().unwrap())
                         },
@@ -98,59 +88,50 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                     };
                 }
 
-                if mesh_instance.is_none() {
+                if immediate_geometry.is_none() {
                     continue;
                 }
 
-                let mut mesh_instance = mesh_instance.unwrap();
+                let mut immediate_geometry = immediate_geometry.unwrap();
+        
+                // let mut immediate_geometry = ImmediateGeometry::new();
 
-                // let mut mesh_instance = match &mesh_name.name {
-                //     Some(r) => {
-                //         unsafe { 
-                //             let mesh_instance: MeshInstance = crate::node::find_node(GodotString::from_str(r))
-                //             .unwrap()
-                //             .cast()
-                //             .unwrap();
+                unsafe {
+                    immediate_geometry.clear();
+                    immediate_geometry.begin(Mesh::PRIMITIVE_TRIANGLES, None);
                     
-                //             mesh_instance
-                //         }
-                //     },
-                //     None => {
-                //         unsafe {
-                //             let mesh_instance = MeshInstance::new();
-                //             let name = mesh_instance.get_name().to_string();
-                //             mesh_name.name = Some(name);
+                    for i in 0..indices.len() {
+                        let index = indices.get(i);
 
-                //             node::add_node(&mut mesh_instance.to_node(), Some(&mut mesh_name));
-        
-                //             godot_print!("name: {:?}", mesh_name.name);
-        
-                //             mesh_instance
-                //         }
-                //     }
-                // };
-        
+                        immediate_geometry.set_normal(normals.get(index));
+                        immediate_geometry.set_uv(uvs.get(index));
+                        immediate_geometry.add_vertex(verts.get(index));
+                    }
+
+                    immediate_geometry.end();
+                }
+
                 //resize to the expected size for meshes
-                arr.resize(Mesh::ARRAY_MAX as i32);
+                // arr.resize(Mesh::ARRAY_MAX as i32);
         
                 //create an ArrayMesh which we will feed the VariantArray with surface_from_arrays
-                let mut array_mesh = ArrayMesh::new();
+                // let mut array_mesh = ArrayMesh::new();
         
-                arr.set(Mesh::ARRAY_VERTEX as i32, &Variant::from_vector3_array(verts));
-                arr.set(Mesh::ARRAY_TEX_UV as i32, &Variant::from_vector2_array(uvs));
-                arr.set(Mesh::ARRAY_NORMAL as i32, &Variant::from_vector3_array(normals));
-                arr.set(Mesh::ARRAY_INDEX as i32, &Variant::from_int32_array(indices));
+                // arr.set(Mesh::ARRAY_VERTEX as i32, &Variant::from_vector3_array(verts));
+                // arr.set(Mesh::ARRAY_TEX_UV as i32, &Variant::from_vector2_array(uvs));
+                // arr.set(Mesh::ARRAY_NORMAL as i32, &Variant::from_vector3_array(normals));
+                // arr.set(Mesh::ARRAY_INDEX as i32, &Variant::from_int32_array(indices));
+
+                // array_mesh.add_surface_from_arrays(
+                //     Mesh::PRIMITIVE_TRIANGLES, 
+                //     arr, 
+                //     VariantArray::new(), 
+                //     Mesh::ARRAY_COMPRESS_DEFAULT
+                // );
         
-                array_mesh.add_surface_from_arrays(
-                    Mesh::PRIMITIVE_TRIANGLES, 
-                    arr, 
-                    VariantArray::new(), 
-                    Mesh::ARRAY_COMPRESS_DEFAULT
-                );
-        
-                unsafe { 
-                    mesh_instance.set_mesh(Some(array_mesh.to_mesh()));
-                }
+                // unsafe { 
+                //     mesh_instance.set_mesh(Some(array_mesh.to_mesh()));
+                // }
 
                 match world.get_component::<Material>(entity) {
                     Some(r) => {
@@ -163,7 +144,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                                 }
                             }), GodotString::from_str("Material"), false);
                 
-                            mesh_instance.set_surface_material(0, Some(match resource {
+                            immediate_geometry.cast::<GeometryInstance>().unwrap().set_material_override(Some(match resource {
                                     Some(r) => r,
                                     None => {
                                         //TODO: Same thing, gotta get a default material if none is found
