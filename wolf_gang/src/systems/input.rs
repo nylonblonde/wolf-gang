@@ -25,6 +25,8 @@ pub struct InputData {
     code: i64
 }
 
+pub const MODIFIER_SUFFIX: &'static str = "_modifier";
+
 #[derive(Deserialize, Serialize)]
 pub struct InputConfig {
     actions: HashMap<String, HashMap<InputType, [Option<InputData>; 2]>>
@@ -118,6 +120,78 @@ impl InputConfig {
             }
         );
 
+        input_config.actions.insert(String::from("expand_selection_forward"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, [
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_W })
+                    ]
+                );
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("expand_selection_back"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, [
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_S })
+                    ]
+                );
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("expand_selection_left"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, [
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_A })
+                    ]
+                );
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("expand_selection_right"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, [
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_D })
+                    ]
+                );
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("expand_selection_up"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, [
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_X })
+                    ]
+                );
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("expand_selection_down"), 
+            { 
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, [
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_Z })
+                    ]
+                );
+                event
+            }
+        );
+
         input_config.save(CONFIG_PATH);
 
         input_config
@@ -138,7 +212,7 @@ impl InputConfig {
                     match &input_data[i] {
                         Some(r) => {
                             let name = match i {
-                                0 => format!("{}_modifier", name),
+                                0 => format!("{}{}", name, MODIFIER_SUFFIX),
                                 _ => name.clone()
                             };
 
@@ -260,13 +334,7 @@ pub fn initialize_input_config(world: &mut legion::world::World, path: &str) {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Modifier{}
 
-/// Used to store data about configured input events
-pub struct InputEventComponent {
-    modifier: Option<InputData>,
-    main: Option<InputData>
-}
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Action(pub String);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -289,7 +357,7 @@ impl InputActionComponent {
     }
     pub fn repeated(&self, increment: f64) -> bool {
         unsafe {
-            self.repeater % increment < crate::DELTA_TIME 
+            self.repeater % increment < crate::DELTA_TIME && self.strength > 0.0
         }
     }
 }
@@ -310,47 +378,218 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World)> {
 
         let mut already_pressed: HashSet<String> = HashSet::new();
 
+        let mut delete_entities: Vec<Entity> = Vec::new();
+
+        let input_config_query = <(Read<InputData>, Tagged<Action>)>::query()
+            .filter(!tag::<Modifier>());
+
         unsafe {
-            for (entity, (mut input_component, tag)) in input_component_query.iter_entities_unchecked(&mut *world){
+            for (input_data, action) in input_config_query.iter_unchecked(world) {
 
-                if inputs.is_action_pressed(GodotString::from(&tag.0)) {
-                    already_pressed.insert(tag.0.clone());
+                //Check if this input config requires a modifier
+                let modifier_config_query = <Read<InputData>>::query()
+                    .filter(tag::<Modifier>())
+                    .filter(tag_value(action));
 
-                    input_component.strength = inputs.get_action_strength(GodotString::from(&tag.0));
-                    unsafe { input_component.repeater += crate::DELTA_TIME; }
-                } else {
-                    if input_component.strength < std::f32::EPSILON.into() { 
-                        // godot_print!("{:?} deleted", tag.0);
-                        // If strength is already 0.0, then we've already passed on "on release" frame
-                        world.delete(entity);
-                    } else {
-                        // If action is no longer pressed, set strength to zero. If a component has a strength of 0.0, we can confirm that it has been released.
-                        input_component.strength = 0.0;
+                let modifier = modifier_config_query.iter_unchecked(world).next();                
+                
+                let input_component_query = <Write<InputActionComponent>>::query()
+                    .filter(tag_value(action));
+
+                match input_component_query.iter_entities_unchecked(world).next() {
+                    Some((entity, mut input_component)) => {
+
+                        let mut pressed = inputs.is_action_pressed(GodotString::from(action.0.clone()));
+
+                        pressed = match modifier {
+                            Some(_) if pressed => inputs.is_action_pressed(GodotString::from(format!("{}{}", action.0.clone(), MODIFIER_SUFFIX))),
+                            _ => pressed
+                        };
+
+                        pressed = {
+                            //check to see if another modifier conflicts
+                            let other_modifier_query = <(Read<InputData>, Tagged<Action>)>::query()
+                            .filter(tag::<Modifier>());
+        
+                            for (other_input_modifier, other_action) in other_modifier_query.iter_unchecked(world) {
+                                if other_action == action {
+                                    continue;
+                                }
+
+                                let other_config_query = <Read<InputData>>::query()
+                                    .filter(!tag::<Modifier>())
+                                    .filter(tag_value(other_action));
+        
+                                for other_input in other_config_query.iter_unchecked(world) {
+                                    if other_input.code == input_data.code {
+                                        pressed = {
+                                            if inputs.is_action_pressed(GodotString::from(format!("{}{}", other_action.0.clone(), MODIFIER_SUFFIX))) {
+                                                false
+                                            } else {
+                                                pressed
+                                            }
+                                        };
+                                        break
+                                    } 
+                                }
+        
+                                if pressed == false {
+                                    break
+                                }
+                            }
+        
+                            pressed  
+                        };
+
+                        if pressed && !already_pressed.contains(&action.0) {
+                            already_pressed.insert(action.0.clone());
+
+                            input_component.strength = inputs.get_action_strength(GodotString::from(&action.0));
+                            input_component.repeater += crate::DELTA_TIME;
+                        } else {
+                            if input_component.strength < std::f32::EPSILON.into() { 
+                                godot_print!("{:?} deleted", action.0);
+                                // If strength is already 0.0, then we've already passed on "on release" frame
+                                delete_entities.push(entity);
+                            } else {
+                                // If action is no longer pressed, set strength to zero. If a component has a strength of 0.0, we can confirm that it has been released.
+                                input_component.strength = 0.0;
+                                
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+
+            }
+        }
+
+                // if inputs.is_action_pressed(GodotString::from(&tag.0)) {
+                //     already_pressed.insert(tag.0.clone());
+
+                //     input_component.strength = inputs.get_action_strength(GodotString::from(&tag.0));
+                //     unsafe { input_component.repeater += crate::DELTA_TIME; }
+                // } else {
+                //     if input_component.strength < std::f32::EPSILON.into() { 
+                //         // godot_print!("{:?} deleted", tag.0);
+                //         // If strength is already 0.0, then we've already passed on "on release" frame
+                //         delete_entities.push(entity);
+                //     } else {
+                //         // If action is no longer pressed, set strength to zero. If a component has a strength of 0.0, we can confirm that it has been released.
+                //         input_component.strength = 0.0;
+                //     }
+                // }
+            // }
+        
+
+        for entity in delete_entities {
+            world.delete(entity);
+        }
+
+        let godot_actions = input_map.get_actions();
+
+        let input_config_query = <(Read<InputData>, Tagged<Action>)>::query()
+            .filter(!tag::<Modifier>());
+
+        let mut insert_data: HashMap<Action, InputActionComponent> = HashMap::new();
+
+        //Go through each input configuration and check to see if it is pressed
+        unsafe {
+            for (input_data, action) in input_config_query.iter_unchecked(world) {
+
+                //check to see if this action has a modifier
+                let modifier_query = <Read<InputData>>::query()
+                    .filter(tag_value(action))
+                    .filter(tag::<Action>())
+                    .filter(tag::<Modifier>());
+
+                let modifier_input = modifier_query.iter_unchecked(world).next();
+
+                let mut pressed = inputs.is_action_pressed(GodotString::from(action.0.clone()));
+                // if pressed { godot_print!("{:?} {}", action.0, pressed); }
+
+                //If there is a modifier configured, check that it is pressed, otherwise just return pressed
+                pressed = match modifier_input {
+                    Some(_) if pressed => inputs.is_action_pressed(GodotString::from(format!("{}{}", action.0.clone(), MODIFIER_SUFFIX))),
+                    _ => pressed
+                };
+
+                pressed = {
+                    //check to see if another modifier conflicts
+                    let other_modifier_query = <(Read<InputData>, Tagged<Action>)>::query()
+                    .filter(tag::<Modifier>());
+
+                    for (other_input_modifier, other_action) in other_modifier_query.iter_unchecked(world) {
+                        if other_action == action {
+                            continue;
+                        }
+
+                        let other_config_query = <Read<InputData>>::query()
+                            .filter(!tag::<Modifier>())
+                            .filter(tag_value(other_action));
+
+                        for other_input in other_config_query.iter_unchecked(world) {
+                            if other_input.code == input_data.code {
+                                pressed = {
+                                    if inputs.is_action_pressed(GodotString::from(format!("{}{}", other_action.0.clone(), MODIFIER_SUFFIX))) {
+                                        false
+                                    } else {
+                                        pressed
+                                    }
+                                };
+                                break
+                            } 
+                        }
+
+                        if pressed == false {
+                            break
+                        }
                     }
+
+                    pressed  
+                };
+
+                if !already_pressed.contains(&action.0) && pressed {
+                    // if action == &Action("move_forward".to_string()) {
+                    //     godot_print!("{}", action.0);
+                    // }
+                    insert_data.insert(action.clone(), InputActionComponent{ 
+                        strength: inputs.get_action_strength(GodotString::from(action.0.clone())), 
+                        repeater: 0. 
+                    });
                 }
             }
         }
 
-        let mut actions = input_map.get_actions();
+        for (action, input) in insert_data {
+            world.insert(
+                (action.clone(),),
+                vec![
+                    (input,)
+                ]
+            );
 
-        //check for all actions, create an inputcomponent for each one
-        for i in 0..actions.len() {
-            let action = actions.get_val(i);
-
-            if !already_pressed.contains(&action.to_string()) && inputs.is_action_pressed(action.to_godot_string()) {
-                // godot_print!("{:?}", action.to_string());
-                world.insert(
-                    (Action(action.to_string()),),
-                    vec![
-                        (InputActionComponent{ 
-                            strength: inputs.get_action_strength(action.to_godot_string()), 
-                            repeater: 0. 
-                        },)
-                    ]
-                );
-            }
-
+            godot_print!("{:?}", action.0);
         }
+
+        // //check for all actions, create an inputcomponent for each one
+        // for i in 0..godot_actions.len() {
+        //     let action = godot_actions.get_val(i);
+
+        //     if !already_pressed.contains(&action.to_string()) && inputs.is_action_pressed(action.to_godot_string()) {
+        //         // godot_print!("{:?}", action.to_string());
+        //         world.insert(
+        //             (Action(action.to_string()),),
+        //             vec![
+        //                 (InputActionComponent{ 
+        //                     strength: inputs.get_action_strength(action.to_godot_string()), 
+        //                     repeater: 0. 
+        //                 },)
+        //             ]
+        //         );
+        //     }
+
+        // }
 
     })
 }
