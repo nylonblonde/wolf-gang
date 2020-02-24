@@ -111,7 +111,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                     immediate_geometry.end();
                 }
 
-                //resize to the expected size for meshes
+                // //resize to the expected size for meshes
                 // arr.resize(Mesh::ARRAY_MAX as i32);
         
                 //create an ArrayMesh which we will feed the VariantArray with surface_from_arrays

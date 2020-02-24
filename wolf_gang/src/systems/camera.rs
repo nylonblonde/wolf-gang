@@ -17,17 +17,19 @@ use crate::level_map;
 type Vector3D = nalgebra::Vector3<f32>;
 type Rotation3D = nalgebra::Rotation3<f32>;
 
-pub struct FocalPoint{
-    current: Vector3D,
-    heading: Vector3D,
-}
+pub struct FocalPoint(pub Vector3D);
+
+pub struct FocalHeading(Vector3D);
 
 impl Default for FocalPoint {
     fn default() -> Self {
-        FocalPoint {
-            current: Vector3D::zeros(),
-            heading: Vector3D::zeros()
-        }
+        FocalPoint(Vector3D::zeros())
+    }
+}
+
+impl Default for FocalHeading {
+    fn default() -> Self {
+        FocalHeading(Vector3D::zeros())
     }
 }
 
@@ -65,6 +67,7 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
             Rotation::default(),
             Direction::default(),
             FocalPoint::default(),
+            FocalHeading::default(),
             Zoom::default(),
         )
     ]);
@@ -72,20 +75,20 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
     node_name.0
 }
 
-pub fn create_system() -> Box<dyn Schedulable> {
-    SystemBuilder::new("camera_system")
+pub fn create_movement_system() -> Box<dyn Schedulable> {
+    SystemBuilder::new("camera_movement_system")
     // .read_resource::<crate::Time>()
-    .with_query(<(Write<FocalPoint>, Read<FocalAngle>, Read<Zoom>, Write<Position>, Write<Rotation>)>::query()
+    .with_query(<(Write<FocalPoint>, Read<FocalHeading>, Read<FocalAngle>, Read<Zoom>, Write<Position>)>::query()
         .filter(changed::<FocalPoint>() | changed::<Zoom>() | changed::<FocalAngle>())
     )
     .build(move |commands, world, time, query|{
-        for (mut focal_point, focal_angle, zoom, mut position, mut rotation) in query.iter(&mut *world) {
+        for (mut focal_point, focal_heading, focal_angle, zoom, mut position) in query.iter(&mut *world) {
 
-            unsafe { focal_point.current = focal_point.current + (focal_point.heading - focal_point.current) * crate::DELTA_TIME as f32 * SPEED }
+            unsafe { focal_point.0 = focal_point.0 + (focal_heading.0 - focal_point.0) * crate::DELTA_TIME as f32 * SPEED }
 
             // godot_print!("{:?} {:?}", focal_point.current, focal_point.heading);
 
-            let new_position = focal_point.current + (Rotation3D::from_euler_angles(
+            let new_position = focal_point.0 + (Rotation3D::from_euler_angles(
                 focal_angle.0, 
                 focal_angle.1, 
                 focal_angle.2
@@ -93,7 +96,28 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
             position.value = Vector3::new(new_position.x, new_position.y, new_position.z);
 
-            let dir = new_position - focal_point.current;
+            // let dir = new_position - focal_point.current;
+
+            // let up = Vector3D::y();
+
+            // let rot = Rotation3D::face_towards(&dir, &up);
+            
+            // rotation.value = rot;
+
+        }
+    })
+}
+
+pub fn create_rotation_system() -> Box<dyn Schedulable> {
+    SystemBuilder::new("camera_rotation_system")
+    // .read_resource::<crate::Time>()
+    .with_query(<(Read<FocalPoint>, Read<Position>, Write<Rotation>)>::query()
+        .filter(changed::<Position>())
+    )
+    .build(move |commands, world, time, query|{
+        for (focal_point, position, mut rotation) in query.iter(&mut *world) {
+
+            let dir = Vector3D::new(position.value.x, position.value.y, position.value.z) - focal_point.0;
 
             let up = Vector3D::y();
 
@@ -152,9 +176,9 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World)> {
         unsafe{
             for (relative_cam, coord_pos) in selection_box_query.iter_unchecked(world) {
                 let node_name = node::NodeName(relative_cam.0.clone());
-                let cam_query = <Write<FocalPoint>>::query()
+                let cam_query = <Write<FocalHeading>>::query()
                     .filter(tag_value(&node_name));
-                for mut focal_point in cam_query.iter_unchecked(world) {
+                for mut focal_heading in cam_query.iter_unchecked(world) {
                     let center = level_map::map_coords_to_world(coord_pos.value);
 
                     let min = Vector3D::zeros();
@@ -162,7 +186,7 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World)> {
 
                     let mid = (max + min)/2.;
 
-                    focal_point.heading = center + mid;
+                    focal_heading.0 = center + mid;
 
                 }
             }

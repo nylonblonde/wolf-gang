@@ -122,7 +122,8 @@ impl WolfGang {
 
         let schedule = Schedule::builder()
             .add_thread_local_fn(input::create_thread_local_fn())
-            .add_system(camera::create_system())
+            .add_system(camera::create_movement_system())
+            .add_system(camera::create_rotation_system())
             .add_system(level_map::create_system())
             .add_system(selection_box::create_system())
             .flush()
