@@ -105,8 +105,8 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
 }
 
 /// This function reads input, then moves the center of the selection_box
-pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World)> {
-    Box::new(|world: &mut World|{
+pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+    Box::new(|world: &mut World, resources: &mut Resources|{
 
         let move_forward = input::Action("move_forward".to_string());
         let move_back = input::Action("move_back".to_string());
@@ -273,7 +273,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
         )
         .build(move |commands, world, resource, queries| {
 
-            for (entity, (selection_box, mut mesh_data)) in queries.iter_entities(&mut *world) {
+            for (entity, (selection_box, mut mesh_data)) in queries.iter_entities_mut(&mut *world) {
 
                 mesh_data.verts = Vector3Array::new();
                 mesh_data.normals = Vector3Array::new();

@@ -38,7 +38,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                 .filter(changed::<MapChunkData>())
             )
             .build(move |commands, world, resource, queries| {
-                for (entity, (map_data, mut mesh_data)) in queries.iter_entities(&mut *world) {
+                for (entity, (map_data, mut mesh_data)) in queries.iter_entities_mut(&mut *world) {
                     godot_print!("{:?}", "there should only be one tick");
                     mesh_data.verts.push(&Vector3::new(2.0,0.0,0.0));
                     mesh_data.verts.push(&Vector3::new(1.0,0.0,0.0));

@@ -82,7 +82,7 @@ pub fn create_movement_system() -> Box<dyn Schedulable> {
         .filter(changed::<FocalPoint>() | changed::<Zoom>() | changed::<FocalAngle>())
     )
     .build(move |commands, world, time, query|{
-        for (mut focal_point, focal_heading, focal_angle, zoom, mut position) in query.iter(&mut *world) {
+        for (mut focal_point, focal_heading, focal_angle, zoom, mut position) in query.iter_mut(&mut *world) {
 
             unsafe { focal_point.0 = focal_point.0 + (focal_heading.0 - focal_point.0) * crate::DELTA_TIME as f32 * SPEED }
 
@@ -115,7 +115,7 @@ pub fn create_rotation_system() -> Box<dyn Schedulable> {
         .filter(changed::<Position>())
     )
     .build(move |commands, world, time, query|{
-        for (focal_point, position, mut rotation) in query.iter(&mut *world) {
+        for (focal_point, position, mut rotation) in query.iter_mut(&mut *world) {
 
             let dir = Vector3D::new(position.value.x, position.value.y, position.value.z) - focal_point.0;
 
@@ -129,8 +129,8 @@ pub fn create_rotation_system() -> Box<dyn Schedulable> {
     })
 }
 
-pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World)> {
-    Box::new(|world: &mut legion::world::World| {
+pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
+    Box::new(|world: &mut legion::world::World, resources: &mut Resources| {
         let camera_rotate_left = Action("camera_rotate_left".to_string());
         let camera_rotate_right = Action("camera_rotate_right".to_string());
         let camera_rotate_up = Action("camera_rotate_up".to_string());

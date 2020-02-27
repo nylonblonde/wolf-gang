@@ -42,7 +42,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
     )
     .build_thread_local(move |commands, world, resource, query| {
 
-        for (rotation, mut direction, node_name) in query.iter(&mut *world) {
+        for (rotation, mut direction, node_name) in query.iter_mut(&mut *world) {
             let spatial_node : Option<Spatial> = {
                 unsafe {
                     match node::find_node(node_name.0.clone()) {

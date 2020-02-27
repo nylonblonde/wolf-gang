@@ -362,16 +362,8 @@ impl InputActionComponent {
     }
 }
 
-pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World)> {
-    Box::new(|world: &mut legion::world::World|{
-    // SystemBuilder::<()>::new("input_system")
-    //     .write_component::<InputActionComponent>()
-    //     .with_query(<(Write<InputActionComponent>, Tagged<Action>)>::query()
-            
-    //     )
-    //     .build(move |commands, world, resource, query| {
-
-        let input_component_query = <(Write<InputActionComponent>, Tagged<Action>)>::query();
+pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
+    Box::new(|world: &mut legion::world::World, resources: &mut Resources|{
 
         let mut input_map = InputMap::godot_singleton();
         let inputs = Input::godot_singleton();

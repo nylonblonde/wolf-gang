@@ -153,7 +153,7 @@ impl WolfGang {
         });
         
         let schedule = self.schedule.as_mut().unwrap();
-        schedule.execute(world);
+        schedule.execute(world, resources);
     }
 }
 
