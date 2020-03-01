@@ -121,7 +121,7 @@ impl WolfGang {
 
         let schedule = Schedule::builder()
             .add_thread_local_fn(input::create_thread_local_fn())
-            // .add_system(smoothing::create_system())
+            .add_system(smoothing::create_system())
             .add_system(camera::create_movement_system())
             .add_system(camera::create_rotation_system())
             .add_system(level_map::create_system())
@@ -132,7 +132,9 @@ impl WolfGang {
             //systems that work on nodes follow
             .add_thread_local_fn(selection_box::create_orthogonal_dir_thread_local_fn())
             .add_thread_local_fn(selection_box::create_thread_local_fn())
-            .add_thread_local_fn(camera::create_thread_local_fn())
+            .add_thread_local_fn(camera::create_focal_point_thread_local_fn())
+            .add_thread_local_fn(camera::create_camera_angle_thread_local_fn())
+            .add_thread_local_fn(camera::create_follow_selection_box_thread_local_fn())
             // .add_thread_local_fn(test_system)
             .add_thread_local(transform::position::create_system_local())
             .add_thread_local(transform::rotation::create_system_local())

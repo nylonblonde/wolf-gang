@@ -121,9 +121,10 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
 }
 
 pub fn create_orthogonal_dir_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
-    Box::new(|world: &mut World, resources: &mut Resources|{
 
-        let selection_box_query = <(Write<CameraAdjustedDirection>, Read<RelativeCamera>)>::query();
+    let selection_box_query = <(Write<CameraAdjustedDirection>, Read<RelativeCamera>)>::query();
+
+    Box::new(move |world: &mut World, resources: &mut Resources|{
 
         unsafe {
 

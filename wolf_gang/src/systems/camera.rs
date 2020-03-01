@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use gdnative::*;
 
 use legion::prelude::*;
@@ -6,6 +7,7 @@ use nalgebra;
 
 use crate::selection_box;
 use crate::node;
+use crate::smoothing::Smoothing;
 use crate::transform;
 use crate::transform::{
     position::Position,
@@ -19,17 +21,9 @@ type Rotation3D = nalgebra::Rotation3<f32>;
 
 pub struct FocalPoint(pub Vector3D);
 
-pub struct FocalHeading(Vector3D);
-
 impl Default for FocalPoint {
     fn default() -> Self {
         FocalPoint(Vector3D::zeros())
-    }
-}
-
-impl Default for FocalHeading {
-    fn default() -> Self {
-        FocalHeading(Vector3D::zeros())
     }
 }
 
@@ -67,7 +61,6 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
             Rotation::default(),
             Direction::default(),
             FocalPoint::default(),
-            FocalHeading::default(),
             Zoom::default(),
         )
     ]);
@@ -78,13 +71,13 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
 pub fn create_movement_system() -> Box<dyn Schedulable> {
     SystemBuilder::new("camera_movement_system")
     .read_resource::<crate::Time>()
-    .with_query(<(Write<FocalPoint>, Read<FocalHeading>, Read<FocalAngle>, Read<Zoom>, Write<Position>)>::query()
+    .with_query(<(Read<FocalPoint>, Read<FocalAngle>, Read<Zoom>, Write<Position>)>::query()
         .filter(changed::<FocalPoint>() | changed::<Zoom>() | changed::<FocalAngle>())
     )
     .build(move |commands, world, time, query|{
-        for (mut focal_point, focal_heading, focal_angle, zoom, mut position) in query.iter_mut(&mut *world) {
+        for (focal_point, focal_angle, zoom, mut position) in query.iter_mut(&mut *world) {
 
-            focal_point.0 = focal_point.0 + (focal_heading.0 - focal_point.0) * time.delta * SPEED;
+            // focal_point.0 = focal_point.0 + (focal_heading.0 - focal_point.0) * time.delta * SPEED;
 
             let new_position = focal_point.0 + (Rotation3D::from_euler_angles(
                 focal_angle.0, 
@@ -117,27 +110,29 @@ pub fn create_rotation_system() -> Box<dyn Schedulable> {
     })
 }
 
-pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
-    Box::new(|world: &mut legion::world::World, resources: &mut Resources| {
+/// Handles the input for rotating the camera around the focal point
+pub fn create_camera_angle_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
+    let camera_rotate_left = Action("camera_rotate_left".to_string());
+    let camera_rotate_right = Action("camera_rotate_right".to_string());
+    let camera_rotate_up = Action("camera_rotate_up".to_string());
+    let camera_rotate_down = Action("camera_rotate_down".to_string());
+
+    let cam_query = <Write<FocalAngle>>::query();
+
+    Box::new(move |world: &mut legion::world::World, resources: &mut Resources| {
         let time = resources.get::<crate::Time>().unwrap();
 
-        let camera_rotate_left = Action("camera_rotate_left".to_string());
-        let camera_rotate_right = Action("camera_rotate_right".to_string());
-        let camera_rotate_up = Action("camera_rotate_up".to_string());
-        let camera_rotate_down = Action("camera_rotate_down".to_string());
-
         let input_query = <(Read<InputActionComponent>, Tagged<Action>)>::query()
-            .filter(
-                tag_value(&camera_rotate_left)
-                | tag_value(&camera_rotate_right)
-                | tag_value(&camera_rotate_up)
-                | tag_value(&camera_rotate_down)
-            );
-        
+        .filter(
+            tag_value(&camera_rotate_left)
+            | tag_value(&camera_rotate_right)
+            | tag_value(&camera_rotate_up)
+            | tag_value(&camera_rotate_down)
+        );
+
         unsafe {
             for(input_component, action) in input_query.iter_unchecked(world) {                    
                 
-                let cam_query = <Write<FocalAngle>>::query();
                 for mut focal_angle in cam_query.iter_unchecked(world) {
                     if action.0 == camera_rotate_left.0 {
                         focal_angle.1 -= input_component.strength as f32 * time.delta * SPEED;
@@ -157,17 +152,59 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                     }
                 }
             }
+        } 
+    })
+}
+
+///Updates the focal point of the camera when a smoothing entity is present
+pub fn create_focal_point_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
+
+    Box::new(move |world: &mut legion::world::World, resources: &mut Resources| {
+
+        let selection_box_query_relative_cam = <Read<selection_box::RelativeCamera>>::query();
+
+        unsafe{
+            for relative_cam in selection_box_query_relative_cam.iter_unchecked(world) {
+                let node_name = node::NodeName(relative_cam.0.clone());
+                let smoothing_query = <Write<Smoothing>>::query()
+                        .filter(tag_value(&node_name));
+
+                match smoothing_query.iter_unchecked(world).next() {
+                    Some(mut smoothing) => {
+                
+                        let cam_query = <Write<FocalPoint>>::query()
+                            .filter(tag_value(&node_name));
+
+                        for mut focal_point in cam_query.iter_unchecked(world) {
+                            focal_point.0 = smoothing.current;
+                        }
+                    },
+                    None => {
+                    }
+                    
+                }
+            }
         }
+    })
+}
 
-        let selection_box_query = <(Read<selection_box::RelativeCamera>, Read<level_map::CoordPos>)>::query()
-            .filter(changed::<crate::level_map::CoordPos>());
 
+/// Creates a smoothing entity that will handle smoothing between the selection box's position and the current focal point
+pub fn create_follow_selection_box_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
+    let selection_box_query = <(Read<selection_box::RelativeCamera>, Read<level_map::CoordPos>)>::query()
+        .filter(changed::<crate::level_map::CoordPos>());
+
+    Box::new(move |world: &mut legion::world::World, resources: &mut Resources| {
+
+        let mut entities_to_insert: HashMap<String, Smoothing> = HashMap::new();
         unsafe{
             for (relative_cam, coord_pos) in selection_box_query.iter_unchecked(world) {
                 let node_name = node::NodeName(relative_cam.0.clone());
-                let cam_query = <Write<FocalHeading>>::query()
+
+                let cam_query = <Read<FocalPoint>>::query()
                     .filter(tag_value(&node_name));
-                for mut focal_heading in cam_query.iter_unchecked(world) {
+                    
+                for focal_point in cam_query.iter_unchecked(world) {
                     let center = level_map::map_coords_to_world(coord_pos.value);
 
                     let min = Vector3D::zeros();
@@ -175,10 +212,31 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
 
                     let mid = (max + min)/2.;
 
-                    focal_heading.0 = center + mid;
+                    let heading = center + mid;
 
+                    let smoothing_query = <Write<Smoothing>>::query()
+                        .filter(tag_value(&node_name));
+
+                    match smoothing_query.iter_unchecked(world).next() {
+                        Some(mut r) => {
+                            r.heading = heading;
+                        },
+                        None => {
+                            entities_to_insert.insert(node_name.0.clone(),
+                                Smoothing{
+                                    current: focal_point.0,
+                                    heading,
+                                    speed: SPEED
+                                }
+                            );
+                        }
+                    }
                 }
             }
+        }
+
+        for (name, smoothing) in entities_to_insert {
+            world.insert((node::NodeName(name),), vec![(smoothing,)]);
         }
     })
 }
