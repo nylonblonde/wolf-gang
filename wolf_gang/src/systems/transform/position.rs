@@ -1,4 +1,4 @@
-use gdnative::{godot_print, GodotString, Vector3, Spatial};
+use gdnative::{godot_print, Vector3, Spatial};
 
 use legion::prelude::*;
 

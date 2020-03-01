@@ -35,6 +35,21 @@ pub struct SelectionBox {
     pub aabb: AABB
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub struct CameraAdjustedDirection {
+    pub forward: Vector3D,
+    pub right: Vector3D
+}
+
+impl Default for CameraAdjustedDirection {
+    fn default() -> Self {
+        CameraAdjustedDirection {
+            forward: Vector3D::z(),
+            right: Vector3D::x()
+        }
+    }
+}
+
 impl SelectionBox {
     ///Creates a SelectionBox with an aabb at center (0,0,0) with dimensions of (1,1,1).
     pub fn new() -> Self {
@@ -72,6 +87,7 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
                 custom_mesh::MeshData::new(),
                 level_map::CoordPos::default(),
                 transform::position::Position::default(), 
+                CameraAdjustedDirection::default(),
                 custom_mesh::Material::from_str("res://select_box.material")
             )
         ]
@@ -104,9 +120,68 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
     ).unwrap()
 }
 
+pub fn create_orthogonal_dir_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+    Box::new(|world: &mut World, resources: &mut Resources|{
+
+        let selection_box_query = <(Write<CameraAdjustedDirection>, Read<RelativeCamera>)>::query();
+
+        unsafe {
+
+            for (mut camera_adjusted_dir, relative_cam) in selection_box_query.iter_unchecked(world) {
+
+                let node_name = node::NodeName(relative_cam.0.clone());
+
+                let cam_query = <Read<transform::rotation::Direction>>::query()
+                    .filter(tag_value(&node_name) & changed::<transform::rotation::Direction>());
+
+                match cam_query.iter_unchecked(world).next() {
+                    Some(dir) => {
+
+                        // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
+                        // view.
+                        let mut forward = dir.forward;
+                        let mut right = dir.right;
+
+                        forward.y = 0.;
+                        
+                        let adjustment_angle = std::f32::consts::FRAC_PI_8;
+
+                        forward = std::cmp::min_by(Vector3D::z(), 
+                            std::cmp::min_by(-Vector3D::z(), 
+                                std::cmp::min_by(Vector3D::x(), -Vector3D::x(),
+                                    |lh: &Vector3D, rh: &Vector3D| {
+                                        get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
+                                    }
+                                ), 
+                                |lh: &Vector3D, rh: &Vector3D| {
+                                    get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
+                                }
+                            ), 
+                            |lh: &Vector3D, rh: &Vector3D| {
+                                get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
+                            }
+                        );
+
+                        //calculate right from up and forward
+                        right =  nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2) * forward;
+
+                        forward = forward.normalize();
+                        right = right.normalize();
+
+                        camera_adjusted_dir.forward = forward;
+                        camera_adjusted_dir.right = right;
+                    },
+                    None => {}
+                }
+            }
+        }
+    })
+} 
+
 /// This function reads input, then moves the center of the selection_box
 pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
     Box::new(|world: &mut World, resources: &mut Resources|{
+        let time = resources.get::<crate::Time>().unwrap();
 
         let move_forward = input::Action("move_forward".to_string());
         let move_back = input::Action("move_back".to_string());
@@ -116,7 +191,7 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
         let move_down = input::Action("move_down".to_string());
 
         let input_query = <(Read<input::InputActionComponent>, Tagged<input::Action>)>::query()
-            .filter(changed::<input::InputActionComponent>())
+            // .filter(changed::<input::InputActionComponent>())
             .filter(
                 tag_value(&move_forward)
                 | tag_value(&move_back)
@@ -131,12 +206,12 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
             for(input_component, action) in input_query.iter_unchecked(world) {                    
                 
-                if input_component.repeated(0.25) {
+                if input_component.repeated(time.delta, 0.25) {
                     
-                    let selection_box_query = <(Read<RelativeCamera>, Write<crate::level_map::CoordPos>, Write<transform::position::Position>)>::query()
+                    let selection_box_query = <(Read<RelativeCamera>, Read<CameraAdjustedDirection>, Write<crate::level_map::CoordPos>, Write<transform::position::Position>)>::query()
                         .filter(component::<SelectionBox>());
 
-                    for (relative_cam, mut coord_pos, mut position) in selection_box_query.iter_unchecked(world) {
+                    for (relative_cam, camera_adjusted_dir, mut coord_pos, mut position) in selection_box_query.iter_unchecked(world) {
 
                         let mut movement = Point::zeros();
 
@@ -156,64 +231,72 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                         
                         let node_name = node::NodeName(relative_cam.0.clone());
 
-                        let cam_query = <(Read<transform::rotation::Direction>, Read<camera::FocalAngle>)>::query()
-                            .filter(tag_value(&node_name))
-                            .filter(changed::<transform::rotation::Direction>());
-
-                        let mut relative_cam = false;
-
                         let mut adjusted = movement;
 
-                        //this is close to working, gotta check what I did with old Wolf Gang 
-                        match cam_query.iter_unchecked(world).next() {
-                            Some(r) => {
-                                let (dir, angle) = r;
+                        let forward = camera_adjusted_dir.forward;
+                        let right = camera_adjusted_dir.right;
 
-                                // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
-                                // view.
-                                let mut forward = dir.forward;
-                                let mut right = dir.right;
+                        adjusted = Point::new(
+                            forward.x.round() as i32,
+                            0,
+                            forward.z.round() as i32
+                        ) * movement.z + Point::new(
+                            right.x.round() as i32,
+                            0,
+                            right.z.round() as i32
+                        ) * movement.x;
+                        // let cam_query = <Read<transform::rotation::Direction>>::query()
+                        //     .filter(tag_value(&node_name) & changed::<transform::rotation::Direction>());
 
-                                forward.y = 0.;
+                        // //this is close to working, gotta check what I did with old Wolf Gang 
+                        // match cam_query.iter_unchecked(world).next() {
+                        //     Some(dir) => {
+
+                        //         // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
+                        //         // view.
+                        //         let mut forward = dir.forward;
+                        //         let mut right = dir.right;
+
+                        //         forward.y = 0.;
                                 
-                                let adjustment_angle = std::f32::consts::FRAC_PI_8;
+                        //         let adjustment_angle = std::f32::consts::FRAC_PI_8;
 
-                                forward = std::cmp::min_by(Vector3D::z(), 
-                                    std::cmp::min_by(-Vector3D::z(), 
-                                        std::cmp::min_by(Vector3D::x(), -Vector3D::x(),
-                                            |lh: &Vector3D, rh: &Vector3D| {
-                                                get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
-                                            }
-                                        ), 
-                                        |lh: &Vector3D, rh: &Vector3D| {
-                                            get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
-                                        }
-                                    ), 
-                                    |lh: &Vector3D, rh: &Vector3D| {
-                                        get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
-                                    }
-                                );
+                        //         forward = std::cmp::min_by(Vector3D::z(), 
+                        //             std::cmp::min_by(-Vector3D::z(), 
+                        //                 std::cmp::min_by(Vector3D::x(), -Vector3D::x(),
+                        //                     |lh: &Vector3D, rh: &Vector3D| {
+                        //                         get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
+                        //                     }
+                        //                 ), 
+                        //                 |lh: &Vector3D, rh: &Vector3D| {
+                        //                     get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
+                        //                 }
+                        //             ), 
+                        //             |lh: &Vector3D, rh: &Vector3D| {
+                        //                 get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
+                        //             }
+                        //         );
 
-                                //calculate right from up and forward
-                                right =  nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2) * forward;
+                        //         //calculate right from up and forward
+                        //         right =  nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2) * forward;
 
-                                forward = forward.normalize();
-                                right = right.normalize();
+                        //         forward = forward.normalize();
+                        //         right = right.normalize();
 
-                                adjusted = Point::new(
-                                    forward.x.round() as i32,
-                                    0,
-                                    forward.z.round() as i32
-                                ) * movement.z + Point::new(
-                                    right.x.round() as i32,
-                                    0,
-                                    right.z.round() as i32
-                                ) * movement.x;
+                        //         adjusted = Point::new(
+                        //             forward.x.round() as i32,
+                        //             0,
+                        //             forward.z.round() as i32
+                        //         ) * movement.z + Point::new(
+                        //             right.x.round() as i32,
+                        //             0,
+                        //             right.z.round() as i32
+                        //         ) * movement.x;
 
-                                adjusted.y = movement.y;
-                            },
-                            None => {}
-                        };
+                        //         adjusted.y = movement.y;
+                        //     },
+                        //     None => {}
+                        // };
 
                         coord_pos.value += adjusted;
 
@@ -232,7 +315,6 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
         let expand_selection_down = input::Action("expand_selection_down".to_string());
 
         let input_query = <(Read<input::InputActionComponent>, Tagged<input::Action>)>::query()
-            .filter(changed::<input::InputActionComponent>())
             .filter(
                 tag_value(&expand_selection_forward)
                 | tag_value(&expand_selection_back)
@@ -246,7 +328,7 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
             for(input_component, action) in input_query.iter_unchecked(world) {                    
                 
-                if input_component.repeated(0.25) {
+                if input_component.repeated(time.delta, 0.25) {
                     
                     let selection_box_query = <(Write<SelectionBox>,)>::query();
 

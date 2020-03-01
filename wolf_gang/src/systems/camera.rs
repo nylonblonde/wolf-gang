@@ -77,16 +77,14 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
 
 pub fn create_movement_system() -> Box<dyn Schedulable> {
     SystemBuilder::new("camera_movement_system")
-    // .read_resource::<crate::Time>()
+    .read_resource::<crate::Time>()
     .with_query(<(Write<FocalPoint>, Read<FocalHeading>, Read<FocalAngle>, Read<Zoom>, Write<Position>)>::query()
         .filter(changed::<FocalPoint>() | changed::<Zoom>() | changed::<FocalAngle>())
     )
     .build(move |commands, world, time, query|{
         for (mut focal_point, focal_heading, focal_angle, zoom, mut position) in query.iter_mut(&mut *world) {
 
-            unsafe { focal_point.0 = focal_point.0 + (focal_heading.0 - focal_point.0) * crate::DELTA_TIME as f32 * SPEED }
-
-            // godot_print!("{:?} {:?}", focal_point.current, focal_point.heading);
+            focal_point.0 = focal_point.0 + (focal_heading.0 - focal_point.0) * time.delta * SPEED;
 
             let new_position = focal_point.0 + (Rotation3D::from_euler_angles(
                 focal_angle.0, 
@@ -95,26 +93,16 @@ pub fn create_movement_system() -> Box<dyn Schedulable> {
             ) * (Vector3D::z() * zoom.0));
 
             position.value = Vector3::new(new_position.x, new_position.y, new_position.z);
-
-            // let dir = new_position - focal_point.current;
-
-            // let up = Vector3D::y();
-
-            // let rot = Rotation3D::face_towards(&dir, &up);
-            
-            // rotation.value = rot;
-
         }
     })
 }
 
 pub fn create_rotation_system() -> Box<dyn Schedulable> {
     SystemBuilder::new("camera_rotation_system")
-    // .read_resource::<crate::Time>()
     .with_query(<(Read<FocalPoint>, Read<Position>, Write<Rotation>)>::query()
         .filter(changed::<Position>())
     )
-    .build(move |commands, world, time, query|{
+    .build(move |_, world, _, query|{
         for (focal_point, position, mut rotation) in query.iter_mut(&mut *world) {
 
             let dir = Vector3D::new(position.value.x, position.value.y, position.value.z) - focal_point.0;
@@ -131,13 +119,14 @@ pub fn create_rotation_system() -> Box<dyn Schedulable> {
 
 pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
     Box::new(|world: &mut legion::world::World, resources: &mut Resources| {
+        let time = resources.get::<crate::Time>().unwrap();
+
         let camera_rotate_left = Action("camera_rotate_left".to_string());
         let camera_rotate_right = Action("camera_rotate_right".to_string());
         let camera_rotate_up = Action("camera_rotate_up".to_string());
         let camera_rotate_down = Action("camera_rotate_down".to_string());
 
         let input_query = <(Read<InputActionComponent>, Tagged<Action>)>::query()
-            .filter(changed::<InputActionComponent>())
             .filter(
                 tag_value(&camera_rotate_left)
                 | tag_value(&camera_rotate_right)
@@ -151,13 +140,13 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                 let cam_query = <Write<FocalAngle>>::query();
                 for mut focal_angle in cam_query.iter_unchecked(world) {
                     if action.0 == camera_rotate_left.0 {
-                        focal_angle.1 -= (input_component.strength * crate::DELTA_TIME) as f32 * SPEED;
+                        focal_angle.1 -= input_component.strength as f32 * time.delta * SPEED;
                     } else if action.0 == camera_rotate_right.0 {
-                        focal_angle.1 += (input_component.strength * crate::DELTA_TIME) as f32 * SPEED;
+                        focal_angle.1 += input_component.strength as f32 * time.delta * SPEED;
                     } else if action.0 == camera_rotate_up.0 {
-                        focal_angle.0 -= (input_component.strength * crate::DELTA_TIME) as f32 * SPEED;
+                        focal_angle.0 -= input_component.strength as f32 * time.delta * SPEED;
                     } else if action.0 == camera_rotate_down.0 {
-                        focal_angle.0 += (input_component.strength * crate::DELTA_TIME) as f32 * SPEED;
+                        focal_angle.0 += input_component.strength as f32 * time.delta * SPEED;
                     }
 
                     let min = -(std::f32::consts::FRAC_PI_2 - 0.001);

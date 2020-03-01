@@ -345,7 +345,7 @@ pub struct TypeTag(InputType);
 /// Strength is zero when action has just been released.
 pub struct InputActionComponent {
     pub strength: f64,
-    pub repeater: f64
+    pub repeater: f32
 }
 
 impl InputActionComponent {
@@ -355,15 +355,14 @@ impl InputActionComponent {
     pub fn just_released(&self) -> bool {
         self.strength == 0.0
     }
-    pub fn repeated(&self, increment: f64) -> bool {
-        unsafe {
-            self.repeater % increment < crate::DELTA_TIME && self.strength > 0.0
-        }
+    pub fn repeated(&self, delta: f32, increment: f32) -> bool {
+        self.repeater % increment < delta && self.strength > 0.0
     }
 }
 
 pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
     Box::new(|world: &mut legion::world::World, resources: &mut Resources|{
+        let time = resources.get::<crate::Time>().unwrap();
 
         let mut input_map = InputMap::godot_singleton();
         let inputs = Input::godot_singleton();
@@ -437,10 +436,9 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                             already_pressed.insert(action.0.clone());
 
                             input_component.strength = inputs.get_action_strength(GodotString::from(&action.0));
-                            input_component.repeater += crate::DELTA_TIME;
+                            input_component.repeater += time.delta;
                         } else {
                             if input_component.strength < std::f32::EPSILON.into() { 
-                                godot_print!("{:?} deleted", action.0);
                                 // If strength is already 0.0, then we've already passed on "on release" frame
                                 delete_entities.push(entity);
                             } else {
@@ -455,30 +453,11 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
 
             }
         }
-
-                // if inputs.is_action_pressed(GodotString::from(&tag.0)) {
-                //     already_pressed.insert(tag.0.clone());
-
-                //     input_component.strength = inputs.get_action_strength(GodotString::from(&tag.0));
-                //     unsafe { input_component.repeater += crate::DELTA_TIME; }
-                // } else {
-                //     if input_component.strength < std::f32::EPSILON.into() { 
-                //         // godot_print!("{:?} deleted", tag.0);
-                //         // If strength is already 0.0, then we've already passed on "on release" frame
-                //         delete_entities.push(entity);
-                //     } else {
-                //         // If action is no longer pressed, set strength to zero. If a component has a strength of 0.0, we can confirm that it has been released.
-                //         input_component.strength = 0.0;
-                //     }
-                // }
-            // }
         
 
         for entity in delete_entities {
             world.delete(entity);
         }
-
-        let godot_actions = input_map.get_actions();
 
         let input_config_query = <(Read<InputData>, Tagged<Action>)>::query()
             .filter(!tag::<Modifier>());
@@ -561,27 +540,7 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                 ]
             );
 
-            godot_print!("{:?}", action.0);
         }
-
-        // //check for all actions, create an inputcomponent for each one
-        // for i in 0..godot_actions.len() {
-        //     let action = godot_actions.get_val(i);
-
-        //     if !already_pressed.contains(&action.to_string()) && inputs.is_action_pressed(action.to_godot_string()) {
-        //         // godot_print!("{:?}", action.to_string());
-        //         world.insert(
-        //             (Action(action.to_string()),),
-        //             vec![
-        //                 (InputActionComponent{ 
-        //                     strength: inputs.get_action_strength(action.to_godot_string()), 
-        //                     repeater: 0. 
-        //                 },)
-        //             ]
-        //         );
-        //     }
-
-        // }
 
     })
 }

@@ -12,13 +12,12 @@ mod geometry;
 mod systems;
 mod node;
 
-use systems::{camera, input, level_map, custom_mesh, selection_box, transform};
+use systems::{camera, input, level_map, custom_mesh, selection_box, smoothing, transform};
 
 #[cfg(test)]
 mod tests;
 
 static mut OWNER_NODE: Option<Node> = None;
-static mut DELTA_TIME: f64 = 0.0;
 
 pub struct Time {
     delta: f32
@@ -122,6 +121,7 @@ impl WolfGang {
 
         let schedule = Schedule::builder()
             .add_thread_local_fn(input::create_thread_local_fn())
+            // .add_system(smoothing::create_system())
             .add_system(camera::create_movement_system())
             .add_system(camera::create_rotation_system())
             .add_system(level_map::create_system())
@@ -130,6 +130,7 @@ impl WolfGang {
             //systems which add nodes should go first
             .add_thread_local(custom_mesh::create_system_local())
             //systems that work on nodes follow
+            .add_thread_local_fn(selection_box::create_orthogonal_dir_thread_local_fn())
             .add_thread_local_fn(selection_box::create_thread_local_fn())
             .add_thread_local_fn(camera::create_thread_local_fn())
             // .add_thread_local_fn(test_system)
@@ -142,7 +143,6 @@ impl WolfGang {
 
     #[export]
     fn _process(&mut self, _owner: Node, delta: f64) {
-        unsafe { DELTA_TIME = delta };
 
         let world = self.world.as_mut().unwrap();
 
