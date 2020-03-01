@@ -120,6 +120,7 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
     ).unwrap()
 }
 
+/// Calculates the orthogonal direction that should be considered forward and right when grid-like directional input is used.
 pub fn create_orthogonal_dir_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
     let selection_box_query = <(Write<CameraAdjustedDirection>, Read<RelativeCamera>)>::query();
@@ -163,7 +164,7 @@ pub fn create_orthogonal_dir_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
                             }
                         );
 
-                        //calculate right from up and forward
+                        //calculate right from up and forward by just rotating forward by -90 degrees
                         right =  nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2) * forward;
 
                         forward = forward.normalize();
@@ -179,8 +180,8 @@ pub fn create_orthogonal_dir_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
     })
 } 
 
-/// This function reads input, then moves the center of the selection_box
-pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+/// This function reads input, then moves the coord position of the selection_box
+pub fn create_movement_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
     Box::new(|world: &mut World, resources: &mut Resources|{
         let time = resources.get::<crate::Time>().unwrap();
 
@@ -192,7 +193,6 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
         let move_down = input::Action("move_down".to_string());
 
         let input_query = <(Read<input::InputActionComponent>, Tagged<input::Action>)>::query()
-            // .filter(changed::<input::InputActionComponent>())
             .filter(
                 tag_value(&move_forward)
                 | tag_value(&move_back)
@@ -246,67 +246,22 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                             0,
                             right.z.round() as i32
                         ) * movement.x;
-                        // let cam_query = <Read<transform::rotation::Direction>>::query()
-                        //     .filter(tag_value(&node_name) & changed::<transform::rotation::Direction>());
-
-                        // //this is close to working, gotta check what I did with old Wolf Gang 
-                        // match cam_query.iter_unchecked(world).next() {
-                        //     Some(dir) => {
-
-                        //         // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
-                        //         // view.
-                        //         let mut forward = dir.forward;
-                        //         let mut right = dir.right;
-
-                        //         forward.y = 0.;
-                                
-                        //         let adjustment_angle = std::f32::consts::FRAC_PI_8;
-
-                        //         forward = std::cmp::min_by(Vector3D::z(), 
-                        //             std::cmp::min_by(-Vector3D::z(), 
-                        //                 std::cmp::min_by(Vector3D::x(), -Vector3D::x(),
-                        //                     |lh: &Vector3D, rh: &Vector3D| {
-                        //                         get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
-                        //                     }
-                        //                 ), 
-                        //                 |lh: &Vector3D, rh: &Vector3D| {
-                        //                     get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
-                        //                 }
-                        //             ), 
-                        //             |lh: &Vector3D, rh: &Vector3D| {
-                        //                 get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
-                        //             }
-                        //         );
-
-                        //         //calculate right from up and forward
-                        //         right =  nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2) * forward;
-
-                        //         forward = forward.normalize();
-                        //         right = right.normalize();
-
-                        //         adjusted = Point::new(
-                        //             forward.x.round() as i32,
-                        //             0,
-                        //             forward.z.round() as i32
-                        //         ) * movement.z + Point::new(
-                        //             right.x.round() as i32,
-                        //             0,
-                        //             right.z.round() as i32
-                        //         ) * movement.x;
-
-                        //         adjusted.y = movement.y;
-                        //     },
-                        //     None => {}
-                        // };
-
+                        
                         coord_pos.value += adjusted;
 
                         let coord_pos = crate::level_map::map_coords_to_world(coord_pos.value);
                         position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
                     }
                 }            
-            }
-        }
+            }       
+        } 
+    })
+}
+
+/// Expands the dimensions of the selection box
+pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+    Box::new(|world: &mut World, resources: &mut Resources|{
+        let time = resources.get::<crate::Time>().unwrap();
 
         let expand_selection_forward = input::Action("expand_selection_forward".to_string());
         let expand_selection_back = input::Action("expand_selection_back".to_string());
@@ -331,21 +286,52 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                 
                 if input_component.repeated(time.delta, 0.25) {
                     
-                    let selection_box_query = <(Write<SelectionBox>,)>::query();
+                    let selection_box_query = <(Write<SelectionBox>, Write<crate::level_map::CoordPos>, Read<CameraAdjustedDirection>)>::query();
 
-                    for (mut selection_box,) in selection_box_query.iter_unchecked(world) {
+                    for (mut selection_box, mut coord_pos, camera_adjusted_dir) in selection_box_query.iter_unchecked(world) {
+
+                        let mut expansion = Point::zeros();
 
                         if action == &expand_selection_forward {
-                            godot_print!("boop");
-                            selection_box.aabb.dimensions.z += 1;
-                        } 
+                            expansion.z += 1;
+                        } else if action == &expand_selection_back {
+                            expansion.z -= 1;
+                        } else if action == &expand_selection_left {
+                            expansion.x -= 1;
+                        } else if action == &expand_selection_right {
+                            expansion.x += 1;
+                        } else if action == &expand_selection_down {
+                            expansion.y -= 1;
+                        } else if action == &expand_selection_up {
+                            expansion.y += 1;
+                        }
+
+                        let mut adjusted = expansion;
+
+                        let forward = camera_adjusted_dir.forward;
+                        let right = camera_adjusted_dir.right;
+
+                        adjusted = Point::new(
+                            forward.x.round() as i32,
+                            0,
+                            forward.z.round() as i32
+                        ) * expansion.z + Point::new(
+                            right.x.round() as i32,
+                            0,
+                            right.z.round() as i32
+                        ) * expansion.x;
+
+                        adjusted.y = expansion.y;
+
+                        selection_box.aabb.dimensions += adjusted;
 
                     }
                 }
             }
         }
-        
+
     })
+
 }
 
 pub fn create_system() -> Box<dyn Schedulable> {

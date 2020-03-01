@@ -131,7 +131,8 @@ impl WolfGang {
             .add_thread_local(custom_mesh::create_system_local())
             //systems that work on nodes follow
             .add_thread_local_fn(selection_box::create_orthogonal_dir_thread_local_fn())
-            .add_thread_local_fn(selection_box::create_thread_local_fn())
+            .add_thread_local_fn(selection_box::create_movement_thread_local_fn())
+            .add_thread_local_fn(selection_box::create_expansion_thread_local_fn())
             .add_thread_local_fn(camera::create_focal_point_thread_local_fn())
             .add_thread_local_fn(camera::create_camera_angle_thread_local_fn())
             .add_thread_local_fn(camera::create_follow_selection_box_thread_local_fn())

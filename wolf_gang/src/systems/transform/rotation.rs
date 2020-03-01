@@ -66,10 +66,6 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                     direction.up = rotation.value * Vector3D::y();
                     direction.forward = rotation.value * Vector3D::z();
 
-                    let z_factor = direction.forward;
-                    let y_factor = direction.up;
-                    let x_factor = direction.right;
-
                     let unit_quat: nalgebra::UnitQuaternion<f32> = rotation.value.into();
                     let quat = unit_quat.quaternion();
 
@@ -114,12 +110,6 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                         
                         r.set_transform(transform);
                     }
-
-                    // //We do this because as best as I can tell there's no clear way to set quat from gdnative bindings 
-                    // let dir = Vector3::new(direction.forward.x, direction.forward.y, direction.forward.z);
-                    // let up = Vector3::new(0.,1.,0.);
-                    
-                    // unsafe { r.look_at(dir, up); } 
 
                 },
 

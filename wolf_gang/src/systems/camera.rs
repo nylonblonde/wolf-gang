@@ -77,8 +77,6 @@ pub fn create_movement_system() -> Box<dyn Schedulable> {
     .build(move |commands, world, time, query|{
         for (focal_point, focal_angle, zoom, mut position) in query.iter_mut(&mut *world) {
 
-            // focal_point.0 = focal_point.0 + (focal_heading.0 - focal_point.0) * time.delta * SPEED;
-
             let new_position = focal_point.0 + (Rotation3D::from_euler_angles(
                 focal_angle.0, 
                 focal_angle.1, 
