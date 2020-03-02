@@ -21,7 +21,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
     .with_query(<(Read<Position>, Tagged<node::NodeName>)>::query()
         .filter(changed::<Position>())
     )
-    .build_thread_local(move |commands, world, resource, query| {
+    .build_thread_local(move |_, world, _, query| {
 
         for (position, node_name) in query.iter(&mut *world) {
             // godot_print!("Move {:?}", node_name.name);

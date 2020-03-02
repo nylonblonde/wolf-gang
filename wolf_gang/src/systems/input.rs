@@ -273,7 +273,7 @@ pub fn initialize_input_config(world: &mut legion::world::World, path: &str) {
         true => InputConfig::new(),
         false => {
             match file.open(GodotString::from_str(path), File::READ) {
-                Ok(r) => {},
+                Ok(_) => {},
                 _err => {
                     //maybe return an error message
                 }
@@ -364,7 +364,6 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
     Box::new(|world: &mut legion::world::World, resources: &mut Resources|{
         let time = resources.get::<crate::Time>().unwrap();
 
-        let mut input_map = InputMap::godot_singleton();
         let inputs = Input::godot_singleton();
 
         let mut already_pressed: HashSet<String> = HashSet::new();
@@ -402,7 +401,7 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                             let other_modifier_query = <(Read<InputData>, Tagged<Action>)>::query()
                             .filter(tag::<Modifier>());
         
-                            for (other_input_modifier, other_action) in other_modifier_query.iter_unchecked(world) {
+                            for (_other_input_modifier, other_action) in other_modifier_query.iter_unchecked(world) {
                                 if other_action == action {
                                     continue;
                                 }
@@ -490,7 +489,7 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                     let other_modifier_query = <(Read<InputData>, Tagged<Action>)>::query()
                     .filter(tag::<Modifier>());
 
-                    for (other_input_modifier, other_action) in other_modifier_query.iter_unchecked(world) {
+                    for (_other_input_modifier, other_action) in other_modifier_query.iter_unchecked(world) {
                         if other_action == action {
                             continue;
                         }

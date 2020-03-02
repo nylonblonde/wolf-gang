@@ -1,26 +1,21 @@
 use gdnative::{
-    godot_print, 
-    GodotString,
+    godot_print,
     ImmediateGeometry, 
-    Input, 
     Int32Array, 
-    MeshInstance, 
     Vector2, 
     Vector2Array, 
     Vector3, 
     Vector3Array
 };
 use legion::prelude::*;
-use nalgebra::{Rotation2, Rotation3};
+use nalgebra::Rotation3;
 use num::Float;
 
 use std::cmp::Ordering;
 
 use crate::geometry::aabb;
-use crate::camera;
 use crate::custom_mesh;
 use crate::node;
-use crate::level_map::TILE_DIMENSIONS;
 use crate::transform;
 use crate::input;
 use crate::level_map;
@@ -69,15 +64,12 @@ impl SelectionBox {
 pub struct RelativeCamera(pub String);
 
 pub fn initialize_selection_box(world: &mut World, camera_name: String) {
-    let mut node_name = None;
-    
+   
     let mut mesh: ImmediateGeometry = ImmediateGeometry::new();
 
-    unsafe { 
-        node_name = node::add_node(&mut mesh);
-    }
-
-    let node_name = node_name.unwrap();
+    let node_name = unsafe { 
+        node::add_node(&mut mesh)
+    }.unwrap();
 
     world.insert((node_name.clone(),), 
         vec![
@@ -125,7 +117,7 @@ pub fn create_orthogonal_dir_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
 
     let selection_box_query = <(Write<CameraAdjustedDirection>, Read<RelativeCamera>)>::query();
 
-    Box::new(move |world: &mut World, resources: &mut Resources|{
+    Box::new(move |world: &mut World, _|{
 
         unsafe {
 
@@ -209,10 +201,10 @@ pub fn create_movement_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resou
                 
                 if input_component.repeated(time.delta, 0.25) {
                     
-                    let selection_box_query = <(Read<RelativeCamera>, Read<CameraAdjustedDirection>, Write<crate::level_map::CoordPos>, Write<transform::position::Position>)>::query()
+                    let selection_box_query = <(Read<CameraAdjustedDirection>, Write<crate::level_map::CoordPos>)>::query()
                         .filter(component::<SelectionBox>());
 
-                    for (relative_cam, camera_adjusted_dir, mut coord_pos, mut position) in selection_box_query.iter_unchecked(world) {
+                    for (camera_adjusted_dir, mut coord_pos) in selection_box_query.iter_unchecked(world) {
 
                         let mut movement = Point::zeros();
 
@@ -230,14 +222,10 @@ pub fn create_movement_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resou
                             movement.y -= 1;
                         }
                         
-                        let node_name = node::NodeName(relative_cam.0.clone());
-
-                        let mut adjusted = movement;
-
                         let forward = camera_adjusted_dir.forward;
                         let right = camera_adjusted_dir.right;
 
-                        adjusted = Point::new(
+                        let mut adjusted = Point::new(
                             forward.x.round() as i32,
                             0,
                             forward.z.round() as i32
@@ -246,6 +234,8 @@ pub fn create_movement_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resou
                             0,
                             right.z.round() as i32
                         ) * movement.x;
+
+                        adjusted.y = movement.y;
                         
                         coord_pos.value += adjusted;
 
@@ -261,7 +251,7 @@ pub fn create_coord_to_pos_system() -> Box<dyn Schedulable> {
         .with_query(<(Read<level_map::CoordPos>, Write<transform::position::Position>,)>::query()
             .filter(changed::<level_map::CoordPos>(),)
         )
-        .build(move |commands, world, resource, query| {
+        .build(move |_, world, _, query| {
 
             for (coord_pos, mut position) in query.iter_mut(&mut *world) {
                 let coord_pos = crate::level_map::map_coords_to_world(coord_pos.value);
@@ -368,9 +358,9 @@ pub fn create_system() -> Box<dyn Schedulable> {
         .with_query(<(Read<SelectionBox>, Write<custom_mesh::MeshData>,)>::query()
             .filter(changed::<SelectionBox>(),)
         )
-        .build(move |commands, world, resource, queries| {
+        .build(move |_, world, _, queries| {
 
-            for (entity, (selection_box, mut mesh_data)) in queries.iter_entities_mut(&mut *world) {
+            for (selection_box, mut mesh_data) in queries.iter_mut(&mut *world) {
 
                 mesh_data.verts = Vector3Array::new();
                 mesh_data.normals = Vector3Array::new();
@@ -381,24 +371,13 @@ pub fn create_system() -> Box<dyn Schedulable> {
                 //at the end of each loop
                 let mut offset = 0;
 
-                let min = selection_box.aabb.get_min();
-                let max = selection_box.aabb.get_max();
-
-                //subtract the center to get the "local" min and max
-                let min = Vector3D::new(min.x as f32 * TILE_DIMENSIONS.x - selection_box.aabb.center.x as f32 * TILE_DIMENSIONS.x, 
-                    min.y as f32 * TILE_DIMENSIONS.y - selection_box.aabb.center.y as f32 * TILE_DIMENSIONS.y, 
-                    min.z as f32 * TILE_DIMENSIONS.z - selection_box.aabb.center.z as f32 * TILE_DIMENSIONS.z
-                );
-                let max = Vector3D::new(max.x as f32 * TILE_DIMENSIONS.x - selection_box.aabb.center.x as f32 * TILE_DIMENSIONS.x, 
-                    max.y as f32 * TILE_DIMENSIONS.y - selection_box.aabb.center.y as f32 * TILE_DIMENSIONS.y, 
-                    max.z as f32 * TILE_DIMENSIONS.z - selection_box.aabb.center.z as f32 * TILE_DIMENSIONS.z
-                );
+                let min = level_map::map_coords_to_world(selection_box.aabb.get_min()) - level_map::map_coords_to_world(selection_box.aabb.center);
+                let max = level_map::map_coords_to_world(selection_box.aabb.get_max()) - level_map::map_coords_to_world(selection_box.aabb.center);
 
                 let true_center = (max + min) / 2.0;
-                let true_dimensions = Vector3D::new(selection_box.aabb.dimensions.x as f32 * TILE_DIMENSIONS.x,
-                    selection_box.aabb.dimensions.y as f32 * TILE_DIMENSIONS.y,
-                    selection_box.aabb.dimensions.z as f32 * TILE_DIMENSIONS.z 
-                );
+                let true_dimensions = level_map::map_coords_to_world(selection_box.aabb.dimensions);
+
+                godot_print!("{:?}, {:?}", min, max);
 
                 for i in 0..3 { 
 
@@ -406,53 +385,55 @@ pub fn create_system() -> Box<dyn Schedulable> {
                     let mut normals: Vector3Array = Vector3Array::new();
                     let mut uvs: Vector2Array = Vector2Array::new();
 
-                    let smaller_x = Float::min(1.0, true_dimensions.y /2.0);
-                    let smaller_y = Float::min(1.0, true_dimensions.y /2.0);
-                    let smaller_z = Float::min(1.0, true_dimensions.y /2.0);
+                    let smaller_x = num::signum(true_dimensions.x) * Float::min(1.0, true_dimensions.x.abs() /2.0);
+                    let smaller_y = num::signum(true_dimensions.y) * Float::min(1.0, true_dimensions.y.abs() /2.0);
+                    let smaller_z = num::signum(true_dimensions.z) * Float::min(1.0, true_dimensions.z.abs() /2.0);
 
-                    let margin = Float::min(smaller_x, Float::min(smaller_y, smaller_z));
-
+                    let margin = Float::min(smaller_x.abs(), Float::min(smaller_y.abs(), smaller_z.abs()));
+                    let margin_x = margin * num::signum(smaller_x);
+                    let margin_y = margin * num::signum(smaller_y);
+                    let margin_z = margin * num::signum(smaller_z);
                     match i {
                         0 => { // top and bottom
-                            
+
                             //store vectors as nalgebra's Vector3 to do transformations
                             let mut pts: Vec<Vector3D> = Vec::new();
 
                             let top_right = Vector3D::new(max.x , max.y , max.z );
                             let inner_top_right = Vector3D::new( //inner top right
-                                max.x  - margin,
+                                max.x  - margin_x,
                                 max.y ,
-                                max.z  - margin
+                                max.z  - margin_z
                             );
 
                             pts.push(Vector3D::new(min.x , max.y , max.z )); //0 top left
                             pts.push(top_right); //1
                             pts.push(Vector3D::new( //2 inner top left
-                                min.x  + margin,
+                                min.x  + margin_x,
                                 max.y ,
-                                max.z  - margin
+                                max.z  - margin_z
                             ));
                             pts.push(inner_top_right); //3
                             pts.push(top_right); //4
                             pts.push(Vector3D::new(max.x , max.y , min.z )); //5 bottom right
                             pts.push(inner_top_right); //6
                             pts.push(Vector3D::new( //7 inner bottom right
-                                    max.x  - margin,
+                                    max.x  - margin_x,
                                     max.y ,
-                                    min.z  + margin
+                                    min.z  + margin_z
                             ));
 
                             let mut uv: Vec<Vector2D> = Vec::new();
 
                             uv.push(Vector2D::new(0.0, 0.0));
                             uv.push(Vector2D::new(1.0 * true_dimensions.x , 0.0));
-                            uv.push(Vector2D::new(margin, margin));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.x  - margin, margin));
+                            uv.push(Vector2D::new(margin_x, margin_z));
+                            uv.push(Vector2D::new(1.0 * true_dimensions.x  - margin_x, margin_z));
 
                             uv.push(Vector2D::new(0.0, 0.0));
                             uv.push(Vector2D::new(1.0 * true_dimensions.z , 0.0));
-                            uv.push(Vector2D::new(margin, margin));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.z  - margin, margin));
+                            uv.push(Vector2D::new(margin_z, margin_x));
+                            uv.push(Vector2D::new(1.0 * true_dimensions.z  - margin_z, margin_x));
 
                             for iter in pts.iter().zip(uv.iter()) {
                                 let (pt, u) = iter;
@@ -477,7 +458,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 verts.push(&Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
                             }
 
-                            for n in 0..pts.len() {
+                            for _ in 0..pts.len() {
                                 normals.push(&Vector3::new(0.0, 1.0, 0.0));
                             }
 
@@ -501,16 +482,16 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             let top_right = Vector3D::new(max.x , max.y , max.z );
                             let inner_top_right = Vector3D::new( //inner top right
                                 max.x ,
-                                max.y  - margin,
-                                max.z  - margin
+                                max.y  - margin_y,
+                                max.z  - margin_z
                             );
 
                             pts.push(Vector3D::new(max.x , max.y , min.z )); //0 top left
                             pts.push(top_right); //1
                             pts.push(Vector3D::new( //2 inner top left
                                 max.x ,
-                                max.y  - margin,
-                                min.z  + margin
+                                max.y  - margin_y,
+                                min.z  + margin_z
                             ));
                             pts.push(inner_top_right); //3
                             pts.push(top_right); //4
@@ -518,21 +499,21 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             pts.push(inner_top_right); //6
                             pts.push(Vector3D::new( //7 inner bottom right
                                 max.x ,
-                                min.y  + margin,
-                                max.z  - margin
+                                min.y  + margin_y,
+                                max.z  - margin_z
                             ));
 
                             let mut uv: Vec<Vector2D> = Vec::new();
 
                             uv.push(Vector2D::new(1.0 * true_dimensions.z , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.z  - margin, margin));
-                            uv.push(Vector2D::new(margin, margin));
+                            uv.push(Vector2D::new(1.0 * true_dimensions.z  - margin_z, margin_y));
+                            uv.push(Vector2D::new(margin_z, margin_y));
 
                             uv.push(Vector2D::new(1.0 * true_dimensions.y , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin, margin));
-                            uv.push(Vector2D::new(margin, margin));
+                            uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin_y, margin_z));
+                            uv.push(Vector2D::new(margin_y, margin_z));
 
                             for iter in pts.iter().zip(uv.iter()) {
                                 let (pt, u) = iter;
@@ -557,7 +538,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 verts.push(&Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
                             }
 
-                            for n in 0..pts.len() {
+                            for _ in 0..pts.len() {
                                 normals.push(&Vector3::new(1.0, 0.0, 0.0));
                             }
 
@@ -579,16 +560,16 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                             let top_right = Vector3D::new(max.x , max.y , min.z );
                             let inner_top_right = Vector3D::new( //inner top right
-                                max.x  - margin,
-                                max.y  - margin,
+                                max.x  - margin_x,
+                                max.y  - margin_y,
                                 min.z 
                             );
 
                             pts.push(Vector3D::new(min.x , max.y , min.z )); //0 top left
                             pts.push(top_right); //1
                             pts.push(Vector3D::new( //2 inner top left
-                                min.x  + margin,
-                                max.y  - margin,
+                                min.x  + margin_x,
+                                max.y  - margin_y,
                                 min.z 
                             ));
                             pts.push(inner_top_right); //3
@@ -596,8 +577,8 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             pts.push(Vector3D::new(max.x , min.y , min.z )); //5 bottom right
                             pts.push(inner_top_right); //6
                             pts.push(Vector3D::new( //7 inner bottom right
-                                max.x  - margin,
-                                min.y  + margin,
+                                max.x  - margin_x,
+                                min.y  + margin_y,
                                 min.z 
                             ));
 
@@ -605,13 +586,13 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                             uv.push(Vector2D::new(1.0 * true_dimensions.x , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.x  - margin, margin));
-                            uv.push(Vector2D::new(margin, margin));
+                            uv.push(Vector2D::new(1.0 * true_dimensions.x  - margin_x, margin_y));
+                            uv.push(Vector2D::new(margin_x, margin_y));
 
                             uv.push(Vector2D::new(1.0 * true_dimensions.y , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin, margin));
-                            uv.push(Vector2D::new(margin, margin));
+                            uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin_y, margin_x));
+                            uv.push(Vector2D::new(margin_y, margin_x));
 
                             for iter in pts.iter().zip(uv.iter()) {
                                 let (pt, u) = iter;
@@ -636,7 +617,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 verts.push(&Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
                             }
 
-                            for n in 0..pts.len() {
+                            for _ in 0..pts.len() {
                                 normals.push(&Vector3::new(0.0, 0.0, 1.0));
                             }
 

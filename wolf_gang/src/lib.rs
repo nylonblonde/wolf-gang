@@ -1,4 +1,5 @@
 #![feature(cmp_min_max_by)]
+#![allow(dead_code)]
 
 use gdnative::*;
 

@@ -8,7 +8,6 @@ use nalgebra;
 use crate::selection_box;
 use crate::node;
 use crate::smoothing::Smoothing;
-use crate::transform;
 use crate::transform::{
     position::Position,
     rotation::{ Rotation, Direction }
@@ -41,13 +40,14 @@ const SPEED : f32 = 4.;
 
 pub fn initialize_camera(world: &mut legion::world::World) -> String {
     
-    let mut node_name = None;
     
     let mut camera: Camera = Camera::new();
 
-    unsafe { 
-        node_name = node::add_node(&mut camera);
+    let node_name = unsafe { 
+        node::add_node(&mut camera)
+    };
 
+    unsafe {
         camera.make_current();
     }
 
@@ -70,11 +70,10 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
 
 pub fn create_movement_system() -> Box<dyn Schedulable> {
     SystemBuilder::new("camera_movement_system")
-    .read_resource::<crate::Time>()
     .with_query(<(Read<FocalPoint>, Read<FocalAngle>, Read<Zoom>, Write<Position>)>::query()
         .filter(changed::<FocalPoint>() | changed::<Zoom>() | changed::<FocalAngle>())
     )
-    .build(move |commands, world, time, query|{
+    .build(move |_, world, _, query|{
         for (focal_point, focal_angle, zoom, mut position) in query.iter_mut(&mut *world) {
 
             let new_position = focal_point.0 + (Rotation3D::from_euler_angles(
@@ -157,7 +156,7 @@ pub fn create_camera_angle_thread_local_fn() -> Box<dyn FnMut(&mut legion::world
 ///Updates the focal point of the camera when a smoothing entity is present
 pub fn create_focal_point_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
 
-    Box::new(move |world: &mut legion::world::World, resources: &mut Resources| {
+    Box::new(move |world: &mut legion::world::World, _| {
 
         let selection_box_query_relative_cam = <Read<selection_box::RelativeCamera>>::query();
 
@@ -168,7 +167,7 @@ pub fn create_focal_point_thread_local_fn() -> Box<dyn FnMut(&mut legion::world:
                         .filter(tag_value(&node_name));
 
                 match smoothing_query.iter_unchecked(world).next() {
-                    Some(mut smoothing) => {
+                    Some(smoothing) => {
                 
                         let cam_query = <Write<FocalPoint>>::query()
                             .filter(tag_value(&node_name));
@@ -192,7 +191,7 @@ pub fn create_follow_selection_box_thread_local_fn() -> Box<dyn FnMut(&mut legio
     let selection_box_query = <(Read<selection_box::RelativeCamera>, Read<level_map::CoordPos>)>::query()
         .filter(changed::<crate::level_map::CoordPos>());
 
-    Box::new(move |world: &mut legion::world::World, resources: &mut Resources| {
+    Box::new(move |world: &mut legion::world::World, _| {
 
         let mut entities_to_insert: HashMap<String, Smoothing> = HashMap::new();
         unsafe{

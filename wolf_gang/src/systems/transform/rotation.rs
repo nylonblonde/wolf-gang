@@ -40,7 +40,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
     .with_query(<(Read<Rotation>, Write<Direction>, Tagged<node::NodeName>)>::query()
         .filter(changed::<Rotation>())
     )
-    .build_thread_local(move |commands, world, resource, query| {
+    .build_thread_local(move |_, world, _, query| {
 
         for (rotation, mut direction, node_name) in query.iter_mut(&mut *world) {
             let spatial_node : Option<Spatial> = {

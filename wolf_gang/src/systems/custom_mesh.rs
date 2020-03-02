@@ -1,17 +1,12 @@
 
 use gdnative::{
-    ArrayMesh,
     GeometryInstance,
     godot_print, 
     GodotString, 
     ImmediateGeometry,
     Int32Array, 
     Mesh,
-    MeshInstance,
-    Node,
-    ResourceLoader,
-    Variant,
-    VariantArray, 
+    ResourceLoader, 
     Vector2Array, 
     Vector3Array
 };
@@ -19,8 +14,7 @@ use gdnative::{
 use crate::node;
 
 use legion::prelude::*;
-use crate::node::NodeName;
-use std::collections::HashMap;  
+use crate::node::NodeName;  
 
 pub struct MeshData {
     pub verts: Vector3Array,
@@ -64,8 +58,8 @@ pub fn create_system_local() -> Box<dyn Runnable> {
         .with_query(<(Read<MeshData>, Tagged<NodeName>)>::query()
             .filter(changed::<MeshData>())
         )
-        .build_thread_local(move |commands, world, resource, query|{
-            for (entity, (mesh_data, mut mesh_name)) in query.iter_entities(&mut *world) {
+        .build_thread_local(move |_, world, _, query|{
+            for (entity, (mesh_data, mesh_name)) in query.iter_entities(&mut *world) {
 
                 let verts = &mesh_data.verts;
                 let uvs = &mesh_data.uvs;
@@ -74,10 +68,8 @@ pub fn create_system_local() -> Box<dyn Runnable> {
         
                 // let mut arr = VariantArray::new();
         
-                let mut immediate_geometry: Option<ImmediateGeometry> = None;
-                
-                unsafe { 
-                    immediate_geometry = match node::find_node(mesh_name.0.clone()) {
+                let immediate_geometry: Option<ImmediateGeometry> = unsafe { 
+                    match node::find_node(mesh_name.0.clone()) {
                         Some(r) => {
                             Some(r.cast().unwrap())
                         },
@@ -85,8 +77,8 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                             godot_print!("Couldn't find mesh instance");
                             None
                         }
-                    };
-                }
+                    }
+                };
 
                 if immediate_geometry.is_none() {
                     continue;
