@@ -54,7 +54,7 @@ impl SelectionBox {
     ///Creates a SelectionBox with an aabb at center (0,0,0) with dimensions of (1,1,1).
     pub fn new() -> Self {
         SelectionBox {
-            aabb: AABB::new(Point::new(0,0,0), Point::new(1,1,2))
+            aabb: AABB::new(Point::new(0,0,0), Point::new(1,1,1))
         }
     }
 
@@ -249,13 +249,25 @@ pub fn create_movement_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resou
                         
                         coord_pos.value += adjusted;
 
-                        let coord_pos = crate::level_map::map_coords_to_world(coord_pos.value);
-                        position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
                     }
                 }            
             }       
         } 
     })
+}
+
+pub fn create_coord_to_pos_system() -> Box<dyn Schedulable> {
+    SystemBuilder::<()>::new("selection_box_coord_system")
+        .with_query(<(Read<level_map::CoordPos>, Write<transform::position::Position>,)>::query()
+            .filter(changed::<level_map::CoordPos>(),)
+        )
+        .build(move |commands, world, resource, query| {
+
+            for (coord_pos, mut position) in query.iter_mut(&mut *world) {
+                let coord_pos = crate::level_map::map_coords_to_world(coord_pos.value);
+                position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
+            }
+        })
 }
 
 /// Expands the dimensions of the selection box
@@ -306,12 +318,10 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
                             expansion.y += 1;
                         }
 
-                        let mut adjusted = expansion;
-
                         let forward = camera_adjusted_dir.forward;
                         let right = camera_adjusted_dir.right;
 
-                        adjusted = Point::new(
+                        let mut adjusted = Point::new(
                             forward.x.round() as i32,
                             0,
                             forward.z.round() as i32
@@ -323,7 +333,25 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
 
                         adjusted.y = expansion.y;
 
-                        selection_box.aabb.dimensions += adjusted;
+                        let mut new_aabb = crate::geometry::aabb::AABB::new(Point::zeros(), selection_box.aabb.dimensions + adjusted);
+
+                        if new_aabb.dimensions.x == 0 {
+                            new_aabb.dimensions.x += adjusted.x;
+                        }
+
+                        if new_aabb.dimensions.y == 0 {
+                            new_aabb.dimensions.y += adjusted.y;
+                        }
+
+                        if new_aabb.dimensions.z == 0 {
+                            new_aabb.dimensions.z += adjusted.z;
+                        }
+
+                        let diff = new_aabb.get_min() - selection_box.aabb.get_min();
+
+                        coord_pos.value -= diff;
+
+                        selection_box.aabb.dimensions = new_aabb.dimensions;
 
                     }
                 }

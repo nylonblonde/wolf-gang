@@ -126,6 +126,7 @@ impl WolfGang {
             .add_system(camera::create_rotation_system())
             .add_system(level_map::create_system())
             .add_system(selection_box::create_system())
+            .add_system(selection_box::create_coord_to_pos_system())
             .flush()
             //systems which add nodes should go first
             .add_thread_local(custom_mesh::create_system_local())
