@@ -8,7 +8,7 @@ use gdnative::{
     Vector3Array
 };
 use legion::prelude::*;
-use nalgebra::Rotation3;
+use nalgebra::{Rotation2, Rotation3};
 use num::Float;
 
 use std::cmp::Ordering;
@@ -428,11 +428,24 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             uv.push(Vector2D::new(margin_x, margin_z));
                             uv.push(Vector2D::new(1.0 * true_dimensions.x  - margin_x, margin_z));
 
+                            if true_dimensions.z < 0.0 {
+                                for val in uv.iter_mut() {
+                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
+                                }
+                            }
+
                             uv.push(Vector2D::new(0.0, 0.0));
                             uv.push(Vector2D::new(1.0 * true_dimensions.z , 0.0));
                             uv.push(Vector2D::new(margin_z, margin_x));
                             uv.push(Vector2D::new(1.0 * true_dimensions.z  - margin_z, margin_x));
 
+                            if true_dimensions.x < 0.0 {
+                                for val in uv.iter_mut().skip(4) {
+                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
+                                }
+                            }
+
+                            //Set variables for rotating the vertices so that faces face outwards even with negative dimensions
                             let adjusted_center = Vector3D::new(true_center.x, max.y, true_center.z);
                             let mut angle = 0.0;
                             if true_dimensions.x < 0.0 {
@@ -449,6 +462,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             for iter in pts.iter_mut().zip(uv.iter()) {
                                 let (pt, u) = iter;
 
+                                //rotate the vertices so that they face outwards even with negative dimensions
                                 if angle > 0.0 {
                                     *pt = rot * (*pt - adjusted_center) + adjusted_center;  
                                 }
@@ -525,10 +539,22 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             uv.push(Vector2D::new(1.0 * true_dimensions.z  - margin_z, margin_y));
                             uv.push(Vector2D::new(margin_z, margin_y));
 
+                            if true_dimensions.y < 0.0 {
+                                for val in uv.iter_mut() {
+                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
+                                }
+                            }
+
                             uv.push(Vector2D::new(1.0 * true_dimensions.y , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
                             uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin_y, margin_z));
                             uv.push(Vector2D::new(margin_y, margin_z));
+
+                            if true_dimensions.z < 0.0 {
+                                for val in uv.iter_mut().skip(4) {
+                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
+                                }
+                            }
 
                             let adjusted_center = Vector3D::new(max.x, true_center.y, true_center.z);
                             let mut angle = 0.0;
@@ -621,10 +647,22 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             uv.push(Vector2D::new(1.0 * true_dimensions.x  - margin_x, margin_y));
                             uv.push(Vector2D::new(margin_x, margin_y));
 
+                            if true_dimensions.y < 0.0 {
+                                for val in uv.iter_mut() {
+                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
+                                }
+                            }
+
                             uv.push(Vector2D::new(1.0 * true_dimensions.y , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
                             uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin_y, margin_x));
                             uv.push(Vector2D::new(margin_y, margin_x));
+
+                            if true_dimensions.x < 0.0 {
+                                for val in uv.iter_mut().skip(4) {
+                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
+                                }
+                            }
 
                             let adjusted_center = Vector3D::new(true_center.x, true_center.y, min.z);
                             let mut angle = 0.0;
