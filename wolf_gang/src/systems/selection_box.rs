@@ -377,8 +377,6 @@ pub fn create_system() -> Box<dyn Schedulable> {
                 let true_center = (max + min) / 2.0;
                 let true_dimensions = level_map::map_coords_to_world(selection_box.aabb.dimensions);
 
-                godot_print!("{:?}, {:?}", min, max);
-
                 for i in 0..3 { 
 
                     let mut verts: Vector3Array = Vector3Array::new();  
@@ -435,8 +433,25 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             uv.push(Vector2D::new(margin_z, margin_x));
                             uv.push(Vector2D::new(1.0 * true_dimensions.z  - margin_z, margin_x));
 
-                            for iter in pts.iter().zip(uv.iter()) {
+                            let adjusted_center = Vector3D::new(true_center.x, max.y, true_center.z);
+                            let mut angle = 0.0;
+                            if true_dimensions.x < 0.0 {
+                                angle += std::f32::consts::PI;
+                            }
+                            if true_dimensions.y < 0.0 {
+                                angle += std::f32::consts::PI;
+                            }
+                            if true_dimensions.z < 0.0 {
+                                angle += std::f32::consts::PI;
+                            }
+                            let rot = Rotation3::new(Vector3D::x() * angle);
+
+                            for iter in pts.iter_mut().zip(uv.iter()) {
                                 let (pt, u) = iter;
+
+                                if angle > 0.0 {
+                                    *pt = rot * (*pt - adjusted_center) + adjusted_center;  
+                                }
 
                                 uvs.push(&Vector2::new(u.x, u.y));
                                 verts.push(&Vector3::new(pt.x, pt.y, pt.z));
@@ -515,8 +530,25 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin_y, margin_z));
                             uv.push(Vector2D::new(margin_y, margin_z));
 
-                            for iter in pts.iter().zip(uv.iter()) {
+                            let adjusted_center = Vector3D::new(max.x, true_center.y, true_center.z);
+                            let mut angle = 0.0;
+                            if true_dimensions.x < 0.0 {
+                                angle += std::f32::consts::PI;
+                            }
+                            if true_dimensions.y < 0.0 {
+                                angle += std::f32::consts::PI;
+                            }
+                            if true_dimensions.z < 0.0 {
+                                angle += std::f32::consts::PI;
+                            }
+                            let rot = Rotation3::new(Vector3D::z() * angle);
+
+                            for iter in pts.iter_mut().zip(uv.iter()) {
                                 let (pt, u) = iter;
+
+                                if angle > 0.0 {
+                                    *pt = rot * (*pt - adjusted_center) + adjusted_center;  
+                                }
 
                                 uvs.push(&Vector2::new(u.x, u.y));
                                 verts.push(&Vector3::new(pt.x, pt.y, pt.z));
@@ -594,8 +626,25 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin_y, margin_x));
                             uv.push(Vector2D::new(margin_y, margin_x));
 
-                            for iter in pts.iter().zip(uv.iter()) {
+                            let adjusted_center = Vector3D::new(true_center.x, true_center.y, min.z);
+                            let mut angle = 0.0;
+                            if true_dimensions.x < 0.0 {
+                                angle += std::f32::consts::PI;
+                            }
+                            if true_dimensions.y < 0.0 {
+                                angle += std::f32::consts::PI;
+                            }
+                            if true_dimensions.z < 0.0 {
+                                angle += std::f32::consts::PI;
+                            }
+                            let rot = Rotation3::new(Vector3D::y() * angle);
+
+                            for iter in pts.iter_mut().zip(uv.iter()) {
                                 let (pt, u) = iter;
+
+                                if angle > 0.0 {
+                                    *pt = rot * (*pt - adjusted_center) + adjusted_center;  
+                                }
 
                                 uvs.push(&Vector2::new(u.x, u.y));
                                 verts.push(&Vector3::new(pt.x, pt.y, pt.z));
