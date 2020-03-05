@@ -467,12 +467,17 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             }
                             let rot = Rotation3::new(Vector3D::x() * angle);
 
-                            for iter in pts.iter_mut().zip(uv.iter()) {
+                            for iter in pts.iter_mut().zip(uv.iter_mut()) {
                                 let (pt, u) = iter;
 
                                 //rotate the vertices so that they face outwards even with negative dimensions
                                 if angle > 0.0 {
                                     *pt = rot * (*pt - adjusted_center) + adjusted_center;  
+                                }
+
+                                //flip the UVs if negative
+                                if true_dimensions.y < 0. {
+                                    *u = Vector2D::new(-u.x, u.y)
                                 }
 
                                 uvs.push(&Vector2::new(u.x, u.y));
@@ -577,11 +582,15 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             }
                             let rot = Rotation3::new(Vector3D::z() * angle);
 
-                            for iter in pts.iter_mut().zip(uv.iter()) {
+                            for iter in pts.iter_mut().zip(uv.iter_mut()) {
                                 let (pt, u) = iter;
 
                                 if angle > 0.0 {
                                     *pt = rot * (*pt - adjusted_center) + adjusted_center;  
+                                }
+
+                                if true_dimensions.x < 0. {
+                                    *u = Vector2D::new(-u.x, u.y)
                                 }
 
                                 uvs.push(&Vector2::new(u.x, u.y));
@@ -685,11 +694,15 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             }
                             let rot = Rotation3::new(Vector3D::y() * angle);
 
-                            for iter in pts.iter_mut().zip(uv.iter()) {
+                            for iter in pts.iter_mut().zip(uv.iter_mut()) {
                                 let (pt, u) = iter;
 
                                 if angle > 0.0 {
                                     *pt = rot * (*pt - adjusted_center) + adjusted_center;  
+                                }
+
+                                if true_dimensions.z < 0. {
+                                    *u = Vector2D::new(-u.x, u.y)
                                 }
 
                                 uvs.push(&Vector2::new(u.x, u.y));
