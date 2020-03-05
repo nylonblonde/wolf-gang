@@ -52,7 +52,28 @@ impl MeshData {
     }
 }
 
-pub fn create_system_local() -> Box<dyn Runnable> {
+pub fn create_tag_system() -> Box<dyn Schedulable> {
+    SystemBuilder::new("custom_mesh_system")
+        .read_component::<Material>()
+        .with_query(<Read<MeshData>>::query()
+            .filter(!tag::<node::NodeName>())
+        )
+        .build(move |commands, world, _, query|{
+            for (entity, _) in query.iter_entities(&mut *world) {
+                commands.exec_mut(move |world: &mut World| {
+                    let mut immediate_geometry = ImmediateGeometry::new();
+
+                    let node_name = unsafe { node::add_node(&mut immediate_geometry) }.unwrap();
+                    match world.add_tag(entity, node_name){
+                        Ok(_) => {},
+                        Err(_) => godot_print!("Couldn't add tag!")
+                    }
+                });
+            }
+        })
+}
+
+pub fn create_draw_system_local() -> Box<dyn Runnable> {
     SystemBuilder::new("custom_mesh_system")
         .read_component::<Material>()
         .with_query(<(Read<MeshData>, Tagged<NodeName>)>::query()
@@ -81,13 +102,12 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                 };
 
                 if immediate_geometry.is_none() {
+                    
                     continue;
                 }
 
                 let mut immediate_geometry = immediate_geometry.unwrap();
         
-                // let mut immediate_geometry = ImmediateGeometry::new();
-
                 unsafe {
                     immediate_geometry.clear();
                     immediate_geometry.begin(Mesh::PRIMITIVE_TRIANGLES, None);

@@ -8,9 +8,8 @@ edition = "2018"
 
 [dependencies]
 gdnative = "0.7"
-lazy_static = "1.4.0"
-legion =  { git = "file:/home/lyon/RustProjects/legion", branch="added_index" } 
-#{ git = "https://github.com/TomGillen/legion.git" }
+#legion =  { git = "file:/home/lyon/RustProjects/legion", branch="master" } 
+legion = { git = "https://github.com/TomGillen/legion.git" }
 nalgebra = "0.19.0"
 num = "0.2.1"
 ron = "0.5.1"

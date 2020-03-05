@@ -4,7 +4,6 @@
 use gdnative::*;
 
 use legion::prelude::*;
-use lazy_static::*;
 
 use std::collections::HashMap;
 
@@ -79,10 +78,10 @@ impl WolfGang {
 
         let camera = camera::initialize_camera(&mut world);
 
-        // world.insert(
-        //     (),
-        //     (0..1).map(|_| (level_map::MapChunkData::new(), custom_mesh::MeshData::new(),))
-        // );
+        world.insert(
+            (),
+            (0..1).map(|_| (level_map::MapChunkData::new(), custom_mesh::MeshData::new(),))
+        );
 
         world.insert(
             (),
@@ -128,9 +127,10 @@ impl WolfGang {
             .add_system(level_map::create_system())
             .add_system(selection_box::create_system())
             .add_system(selection_box::create_coord_to_pos_system())
+            .add_system(custom_mesh::create_tag_system())
             .flush()
             //systems which add nodes should go first
-            .add_thread_local(custom_mesh::create_system_local())
+            .add_thread_local(custom_mesh::create_draw_system_local())
             //systems that work on nodes follow
             .add_thread_local_fn(selection_box::create_orthogonal_dir_thread_local_fn())
             .add_thread_local_fn(selection_box::create_movement_thread_local_fn())
