@@ -9,6 +9,7 @@ pub trait PointData<N: Scalar> : Copy {
     fn get_point(&self) -> Vector3<N>;
 }
 
+#[derive(Copy, Clone)]
 #[allow(dead_code)]
 enum Paternity {
     ProudParent,
@@ -42,6 +43,7 @@ impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: Poi
     }
 }
 
+#[derive(Clone)]
 #[allow(dead_code)]
 pub struct Octree <N: Scalar, T: PointData<N>>{
     aabb: AABB<N>,

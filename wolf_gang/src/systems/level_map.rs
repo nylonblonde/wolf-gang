@@ -39,13 +39,42 @@ pub fn create_system() -> Box<dyn Schedulable> {
                 .filter(changed::<MapChunkData>())
             )
             .build(move |commands, world, resource, queries| {
-                for (entity, (map_data, mut mesh_data)) in queries.iter_entities_mut(&mut *world) {
+                for (map_data, mut mesh_data) in queries.iter_mut(&mut *world) {
                     godot_print!("{:?}", "there should only be one tick");
                     mesh_data.verts = Vector3Array::new();
                     mesh_data.normals = Vector3Array::new();
                     mesh_data.uvs = Vector2Array::new();
                     mesh_data.indices = Int32Array::new();
 
+                    for tile in map_data.octree.clone().into_iter() {
+
+                        let point = tile.get_point();
+
+                        let point = map_coords_to_world(point);
+
+                        mesh_data.verts.push(&Vector3::new(point.x, point.y+TILE_DIMENSIONS.y, point.z));
+                        mesh_data.verts.push(&Vector3::new(point.x+TILE_DIMENSIONS.x, point.y+TILE_DIMENSIONS.y, point.z+TILE_DIMENSIONS.z));
+                        mesh_data.verts.push(&Vector3::new(point.x, point.y+TILE_DIMENSIONS.y, point.z+TILE_DIMENSIONS.z));
+                        mesh_data.verts.push(&Vector3::new(point.x+TILE_DIMENSIONS.x, point.y+TILE_DIMENSIONS.y, point.z));
+
+                        mesh_data.uvs.push(&Vector2::new(0.,1.));
+                        mesh_data.uvs.push(&Vector2::new(1.,1.));
+                        mesh_data.uvs.push(&Vector2::new(0.,0.));
+                        mesh_data.uvs.push(&Vector2::new(1.,0.));
+
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                        mesh_data.indices.push(0);
+                        mesh_data.indices.push(1);
+                        mesh_data.indices.push(2);
+
+                        mesh_data.indices.push(1);
+                        mesh_data.indices.push(0);
+                        mesh_data.indices.push(3);
+                        }
                 }
             })
 } 
