@@ -45,6 +45,28 @@ fn odd_subdivision() {
     assert_eq!(octree.count(), count);
 }
 
+#[test]
+// Not sure if this is a great test, because it could be merely adding duplicate entries under a further subdivision?
+fn overwrite_element() {
+    let aabb = AABB::new(
+        Point::new(0,0,0), Point::new(4,4,4)
+    );
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb
+    );
+
+    let mut count = 0;
+    fill_octree(aabb, &mut octree, &mut count);
+
+
+    let vec = Vec::<i32>::new();
+
+    let iter = vec.into_iter();
+
+    assert!(octree.insert(TileData::new(Point::zeros())));
+}
+
 fn fill_octree(aabb: AABB, octree: &mut Octree<i32, TileData>, count: &mut usize) {
     let min = aabb.get_min();
     let max = aabb.get_max();
@@ -61,3 +83,4 @@ fn fill_octree(aabb: AABB, octree: &mut Octree<i32, TileData>, count: &mut usize
     }
 
 }
+

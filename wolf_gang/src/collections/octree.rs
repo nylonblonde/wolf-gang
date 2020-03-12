@@ -1,4 +1,5 @@
 use std::ops::{AddAssign, SubAssign, DivAssign};
+use std::slice::Iter;
 
 use nalgebra::{Scalar, Vector3};
 use num::{Num, NumCast};
@@ -12,6 +13,33 @@ pub trait PointData<N: Scalar> : Copy {
 enum Paternity {
     ProudParent,
     ChildFree
+}
+
+pub struct OctreeIter <N: Scalar, T: PointData<N>> {
+    elements: std::vec::IntoIter<T>,
+    phantom: std::marker::PhantomData<N>
+}
+
+impl<'a, N: Scalar, T: PointData<N>> Iterator for OctreeIter<N, T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        match self.elements.next() {
+            Some(r) => Some(r),
+            None => None
+        }
+    }
+}
+
+impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N>> IntoIterator for Octree<N, T> {
+    type Item = T;
+    type IntoIter = OctreeIter<N, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        let aabb = self.aabb;
+        OctreeIter{
+            elements: self.query_range(aabb).into_iter(),
+            phantom: std::marker::PhantomData
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -183,7 +211,7 @@ impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: Poi
         }
     }
 
-    pub fn query_range(&mut self, range: AABB<N>) -> Vec<T> {
+    pub fn query_range(self, range: AABB<N>) -> Vec<T> {
 
         let mut elements_in_range = vec![];
         
@@ -212,9 +240,9 @@ impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: Poi
             return elements_in_range
         }
 
-        for child_option in &mut self.children {
+        for child_option in self.children {
             if let Some(_) = child_option {
-                elements_in_range.append(&mut child_option.as_mut().unwrap().query_range(range));
+                elements_in_range.append(&mut child_option.unwrap().query_range(range));
             }
         }
 
