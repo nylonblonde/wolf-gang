@@ -12,6 +12,7 @@ use nalgebra::{Rotation2, Rotation3};
 use num::Float;
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 use crate::geometry::aabb;
 use crate::custom_mesh;
@@ -258,6 +259,45 @@ pub fn create_coord_to_pos_system() -> Box<dyn Schedulable> {
                 position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
             }
         })
+}
+
+pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+    Box::new(|world: &mut World, resources: &mut Resources|{
+
+        let map = resources.get_mut::<level_map::Map>();
+
+        if map.is_none() { godot_print!("Couldn't get map resource!"); return }
+
+        let map = map.unwrap();
+
+        let selection_box_query = <(Read<SelectionBox>, Read<level_map::CoordPos>)>::query();
+
+        let confirm = input::Action(("confirm").to_string());
+
+        let input_query = <Read<input::InputActionComponent>>::query()
+            .filter(tag_value(&confirm));
+
+        let mut to_insert: Vec<level_map::TileData> = Vec::new();
+
+        unsafe {
+            for input_component in input_query.iter_unchecked(world) {
+            
+                for (selection_box, coord_pos) in selection_box_query.iter_unchecked(world) {
+
+                    if input_component.just_pressed(){
+                        godot_print!("Pressed confirm at {:?}!", coord_pos.value);
+
+                        to_insert.push(level_map::TileData::new(coord_pos.value));
+                        
+                    }
+                }
+            }
+        }
+
+        for tile_data in to_insert.iter() {
+            map.insert(world, *tile_data);
+        }
+    })
 }
 
 /// Expands the dimensions of the selection box

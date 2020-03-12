@@ -73,20 +73,22 @@ impl WolfGang {
             delta: 0.
         });
 
+        resources.insert(level_map::Map::new());
+
         let mut world = self.world.as_mut().unwrap();
         input::initialize_input_config(world, input::CONFIG_PATH);
 
         let camera = camera::initialize_camera(&mut world);
 
-        world.insert(
-            (),
-            (0..1).map(|_| (level_map::MapChunkData::new(), custom_mesh::MeshData::new(),))
-        );
+        // world.insert(
+        //     (),
+        //     (0..1).map(|_| (level_map::MapChunkData::new(), custom_mesh::MeshData::new(),))
+        // );
 
-        world.insert(
-            (),
-            (0..1).map(|_| (level_map::Map::new(),))
-        );
+        // world.insert(
+        //     (),
+        //     (0..1).map(|_| (level_map::Map::new(),))
+        // );
 
         // let camera = "".to_string();
         selection_box::initialize_selection_box(world, camera);
@@ -135,6 +137,7 @@ impl WolfGang {
             .add_thread_local_fn(selection_box::create_orthogonal_dir_thread_local_fn())
             .add_thread_local_fn(selection_box::create_movement_thread_local_fn())
             .add_thread_local_fn(selection_box::create_expansion_thread_local_fn())
+            .add_thread_local_fn(selection_box::create_tile_insertion_thread_local_fn())
             .add_thread_local_fn(camera::create_focal_point_thread_local_fn())
             .add_thread_local_fn(camera::create_camera_angle_thread_local_fn())
             .add_thread_local_fn(camera::create_follow_selection_box_thread_local_fn())

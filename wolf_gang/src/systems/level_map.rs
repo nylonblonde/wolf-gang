@@ -1,5 +1,6 @@
 use crate::custom_mesh; 
 use crate::geometry::aabb;
+use crate::collections::octree::{Octree, PointData};
 
 use gdnative::*;
 
@@ -40,27 +41,11 @@ pub fn create_system() -> Box<dyn Schedulable> {
             .build(move |commands, world, resource, queries| {
                 for (entity, (map_data, mut mesh_data)) in queries.iter_entities_mut(&mut *world) {
                     godot_print!("{:?}", "there should only be one tick");
-                    mesh_data.verts.push(&Vector3::new(2.0,0.0,0.0));
-                    mesh_data.verts.push(&Vector3::new(1.0,0.0,0.0));
-                    mesh_data.verts.push(&Vector3::new(2.0,0.0,1.0));
-                    mesh_data.verts.push(&Vector3::new(1.0,0.0,1.0));
+                    mesh_data.verts = Vector3Array::new();
+                    mesh_data.normals = Vector3Array::new();
+                    mesh_data.uvs = Vector2Array::new();
+                    mesh_data.indices = Int32Array::new();
 
-                    mesh_data.normals.push(&Vector3::new(0.0,1.0,0.0));
-                    mesh_data.normals.push(&Vector3::new(0.0,1.0,0.0));
-                    mesh_data.normals.push(&Vector3::new(0.0,1.0,0.0));
-                    mesh_data.normals.push(&Vector3::new(0.0,1.0,0.0));
-
-                    mesh_data.uvs.push(&Vector2::new(0.0,0.0));
-                    mesh_data.uvs.push(&Vector2::new(0.0,0.0));
-                    mesh_data.uvs.push(&Vector2::new(0.0,0.0));
-                    mesh_data.uvs.push(&Vector2::new(0.0,0.0));
-
-                    mesh_data.indices.push(2);
-                    mesh_data.indices.push(1);
-                    mesh_data.indices.push(0);
-                    mesh_data.indices.push(2);
-                    mesh_data.indices.push(3);
-                    mesh_data.indices.push(1);
                 }
             })
 } 
@@ -75,32 +60,63 @@ pub fn map_coords_to_world(map_coord: Point) -> nalgebra::Vector3<f32> {
 }
 
 pub struct Map {
-    chunk_dimensions: AABB,
-    map_chunk_pool: HashMap<Point, MapChunkData>
+    chunk_dimensions: Point,
+    // map_chunk_pool: HashMap<Point, MapChunkData>
 }
 
 impl Map {
     pub fn new() -> Self {
         Map { 
-            map_chunk_pool: HashMap::new(),
-            chunk_dimensions: AABB::new(Point::new(0,0,0), Point::new(10,10,10))
+            // map_chunk_pool: HashMap::new(),
+            chunk_dimensions: Point::new(10,10,10)
         }
     }
 
-    
+    pub fn insert(self: &Self, world: &mut legion::world::World, tile_data: TileData) {
+
+        let point = tile_data.get_point();
+
+        //Matrix<i32> doesn't implement div so we gotta do it manually
+        //Gotta convert to and from floats to ensure that we get the floor as negative ints round to ceiling
+        let chunk_point = Point::new(
+            (point.x as f32 / self.chunk_dimensions.x as f32).floor() as i32,
+            (point.y as f32 / self.chunk_dimensions.y as f32).floor() as i32,
+            (point.z as f32 / self.chunk_dimensions.z as f32).floor() as i32,
+        );
+
+        let map_chunk_query = <Write<MapChunkData>>::query()
+            .filter(tag_value(&chunk_point));
+
+        let mut exists: bool = false;
+        match map_chunk_query.iter_mut(world).next() {
+            Some(mut map_chunk) => {
+                if !map_chunk.octree.insert(tile_data) {
+                    godot_print!("Failed to insert {:?} tile data into the new map_chunk at {:?}", point, chunk_point);
+                }
+                exists = true; 
+            },
+            None => {} 
+        }
+
+        if exists { return }
+
+        let mut map_chunk = MapChunkData{
+            octree: Octree::new(AABB::new(chunk_point+self.chunk_dimensions/2, self.chunk_dimensions))
+        };
+
+        if !map_chunk.octree.insert(tile_data){
+            godot_print!("Failed to insert {:?} tile data into the new map_chunk at {:?}", point, chunk_point);
+        }
+        
+        world.insert((chunk_point.clone(),), vec![
+            (map_chunk, custom_mesh::MeshData::new()),
+        ]);
+
+    }
 }
 
-//TODO: evaluate whether MapChunkData should be stored in a vec or octree
 pub struct MapChunkData {
-    tiles: Vec<Vector3>,
-}
-
-impl MapChunkData {
-    pub fn new() -> Self {
-        MapChunkData {
-            tiles: Vec::<Vector3>::new(),
-        }
-    }
+    octree: Octree<i32, TileData>,
 }
 
 #[derive(Clone)]
