@@ -46,9 +46,12 @@ pub fn create_system() -> Box<dyn Schedulable> {
                     mesh_data.uvs = Vector2Array::new();
                     mesh_data.indices = Int32Array::new();
 
+                    let mut offset = 0;
                     for tile in map_data.octree.clone().into_iter() {
 
                         let point = tile.get_point();
+
+                        godot_print!("drawing {:?}", point);
 
                         let point = map_coords_to_world(point);
 
@@ -67,14 +70,16 @@ pub fn create_system() -> Box<dyn Schedulable> {
                         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
                         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
 
-                        mesh_data.indices.push(0);
-                        mesh_data.indices.push(1);
-                        mesh_data.indices.push(2);
+                        mesh_data.indices.push(offset);
+                        mesh_data.indices.push(offset+1);
+                        mesh_data.indices.push(offset+2);
 
-                        mesh_data.indices.push(1);
-                        mesh_data.indices.push(0);
-                        mesh_data.indices.push(3);
-                        }
+                        mesh_data.indices.push(offset+1);
+                        mesh_data.indices.push(offset);
+                        mesh_data.indices.push(offset+3);
+
+                        offset += 4;
+                    }
                 }
             })
 } 
@@ -117,30 +122,42 @@ impl Map {
             .filter(tag_value(&chunk_point));
 
         let mut exists: bool = false;
-        match map_chunk_query.iter_mut(world).next() {
-            Some(mut map_chunk) => {
+
+        for mut map_chunk in map_chunk_query.iter_mut(&mut *world){
+        // match map_chunk_query.iter_mut(world).next() {
+        //     Some(mut map_chunk) => {
                 if !map_chunk.octree.insert(tile_data) {
-                    godot_print!("Failed to insert {:?} tile data into the new map_chunk at {:?}", point, chunk_point);
+                    godot_print!("Failed to insert {:?} tile data into the existing map_chunk at {:?}", point, chunk_point);
+                } else {
+                    godot_print!("Inserted {:?} tile data into the existing map_chunk at {:?}", point, chunk_point);
+                    exists = true; 
                 }
-                exists = true; 
-            },
-            None => {} 
+        //     },
+        //     None => {} 
+        // }
         }
 
         if exists { return }
 
+        let center = Point::new(
+            chunk_point.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
+            chunk_point.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
+            chunk_point.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
+        );
+
         let mut map_chunk = MapChunkData{
-            octree: Octree::new(AABB::new(chunk_point+self.chunk_dimensions/2, self.chunk_dimensions))
+            octree: Octree::new(AABB::new(center, self.chunk_dimensions))
         };
 
         if !map_chunk.octree.insert(tile_data){
-            godot_print!("Failed to insert {:?} tile data into the new map_chunk at {:?}", point, chunk_point);
-        }
-        
-        world.insert((chunk_point.clone(),), vec![
-            (map_chunk, custom_mesh::MeshData::new()),
-        ]);
+            godot_print!("Failed to insert {:?} tile data into the new map chunk at {:?}", point, chunk_point);
+        } else {
+            godot_print!("Inserted {:?} tile data into the new map_chunk at {:?}", point, chunk_point);
 
+            world.insert((chunk_point.clone(),), vec![
+                (map_chunk, custom_mesh::MeshData::new()),
+            ]);
+        }
     }
 }
 

@@ -69,6 +69,10 @@ impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: Poi
         }
     }
 
+    pub fn get_aabb(&self) -> AABB<N> {
+        self.aabb
+    } 
+
     fn subdivide(&mut self) {
 
         let min = self.aabb.get_min();
@@ -150,9 +154,22 @@ impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: Poi
 
     pub fn insert(&mut self, element: T) -> bool{  
 
-        if !self.aabb.contains_point(element.get_point()) {
+        let pt = element.get_point();
+
+        if !self.aabb.contains_point(pt) {
             // println!("{:?} didn't fit between {:?} and {:?}",element.get_point(), self.aabb.get_min(), self.aabb.get_max());
             return false
+        }
+
+        //if element already exists at point, replace it
+        for el in &mut self.elements {
+            match el {
+                Some(r) if r.get_point() == pt => {
+                    *el = Some(*r);
+                    return true
+                },
+                _ => {}
+            }
         }
         
         match &self.paternity { //do first match because you still need to insert into children after subdividing, not either/or
