@@ -390,17 +390,20 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
                         let mut new_aabb = crate::geometry::aabb::AABB::new(Point::zeros(), selection_box.aabb.dimensions + adjusted);
 
                         if new_aabb.dimensions.x == 0 {
-                            new_aabb.dimensions.x += adjusted.x;
+                            new_aabb.dimensions.x += adjusted.x * 2;
+                            coord_pos.value.x += adjusted.x;
                         }
 
                         if new_aabb.dimensions.y == 0 {
-                            new_aabb.dimensions.y += adjusted.y;
+                            new_aabb.dimensions.y += adjusted.y * 2;
+                            coord_pos.value.y -= adjusted.y;
                         }
 
                         if new_aabb.dimensions.z == 0 {
-                            new_aabb.dimensions.z += adjusted.z;
+                            new_aabb.dimensions.z += adjusted.z * 2;
+                            coord_pos.value.z -= adjusted.z;
                         }
-                       
+
                         let mut min = selection_box.aabb.get_min();
                         let max = selection_box.aabb.get_max();
 
