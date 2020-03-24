@@ -279,8 +279,6 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
 
         let mut to_insert: Option<AABB> = None;
 
-        // let mut to_insert: Vec<level_map::TileData> = Vec::new();
-
         unsafe {
             for input_component in input_query.iter_unchecked(world) {
             
@@ -288,34 +286,6 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
 
                     if input_component.just_pressed(){
                         godot_print!("Pressed confirm at {:?}!", coord_pos.value);
-
-                        // // to_insert.push(level_map::TileData::new(coord_pos.value));
-
-                        // let sig_z = num::signum(selection_box.aabb.dimensions.z);
-                        // let sig_y = num::signum(selection_box.aabb.dimensions.y);
-                        // let sig_x = num::signum(selection_box.aabb.dimensions.x);
-
-                        // let min = selection_box.aabb.get_min();   
-                        // let max = selection_box.aabb.get_max();                                         
-
-                        // //treat the max as min if the dimensions are negative
-                        // let min = Point::new(
-                        //     if sig_x > 0 { min.x } else { max.x },
-                        //     if sig_y > 0 { min.y } else { max.y },
-                        //     if sig_z > 0 { min.z } else { max.z }
-                        // ) + coord_pos.value;
-
-                        // let max_z = min.z + selection_box.aabb.dimensions.z.abs();
-                        // let max_y = min.y + selection_box.aabb.dimensions.y.abs();
-                        // let max_x = min.x + selection_box.aabb.dimensions.x.abs();
-
-                        // for z in min.z..max_z {
-                        //     for y in min.y..max_y {
-                        //         for x in min.x..max_x {
-                        //             to_insert.push(level_map::TileData::new(Point::new(x,y,z)));
-                        //         }
-                        //     }
-                        // }
 
                         to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
                         
@@ -330,11 +300,7 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
             },
             _ => {}
         }
-        // map.insert(world, to_insert);
 
-        // for tile_data in to_insert.iter() {
-        //     map.insert(world, *tile_data);
-        // }
     })
 }
 
@@ -405,17 +371,14 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
 
                         if new_aabb.dimensions.x == 0 {
                             new_aabb.dimensions.x += adjusted.x * 2;
-                            // coord_pos.value.x += adjusted.x;
                         }
 
                         if new_aabb.dimensions.y == 0 {
                             new_aabb.dimensions.y += adjusted.y * 2;
-                            // coord_pos.value.y -= adjusted.y;
                         }
 
                         if new_aabb.dimensions.z == 0 {
                             new_aabb.dimensions.z += adjusted.z * 2;
-                            // coord_pos.value.z -= adjusted.z;
                         }
 
                         let mut min = selection_box.aabb.get_min();
@@ -441,14 +404,6 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
                             max.z = tmp_min;
                             new_max.z = tmp_new_min;
                         }
-
-                        // let signs = Point::new(
-                        //     num::signum(new_aabb.dimensions.x),
-                        //     num::signum(new_aabb.dimensions.y),
-                        //     num::signum(new_aabb.dimensions.z)
-                        // );
-
-                        // let diff = new_min - min;
 
                         let diff = Point::new(
                             if new_aabb.dimensions.x < 0 { new_max.x - max.x } else { new_min.x - min.x },
@@ -494,20 +449,24 @@ pub fn create_system() -> Box<dyn Schedulable> {
                 let true_center = (max + min) / 2.0;
                 let true_dimensions = level_map::map_coords_to_world(selection_box.aabb.dimensions);
 
+                let abs_dimensions = Vector3D::new(
+                    true_dimensions.x.abs(),
+                    true_dimensions.y.abs(),
+                    true_dimensions.z.abs()
+                );
+
                 for i in 0..3 { 
 
                     let mut verts: Vector3Array = Vector3Array::new();  
                     let mut normals: Vector3Array = Vector3Array::new();
                     let mut uvs: Vector2Array = Vector2Array::new();
 
-                    let smaller_x = num::signum(true_dimensions.x) * Float::min(1.0, true_dimensions.x.abs() /2.0);
-                    let smaller_y = num::signum(true_dimensions.y) * Float::min(1.0, true_dimensions.y.abs() /2.0);
-                    let smaller_z = num::signum(true_dimensions.z) * Float::min(1.0, true_dimensions.z.abs() /2.0);
+                    let smaller_x = /* num::signum(true_dimensions.x) * */ Float::min(1.0, abs_dimensions.x /2.0);
+                    let smaller_y = /* num::signum(true_dimensions.y) * */ Float::min(1.0, abs_dimensions.y /2.0);
+                    let smaller_z = /* num::signum(true_dimensions.z) * */ Float::min(1.0, abs_dimensions.z /2.0);
 
-                    let margin = Float::min(smaller_x.abs(), Float::min(smaller_y.abs(), smaller_z.abs()));
-                    let margin_x = margin * num::signum(smaller_x);
-                    let margin_y = margin * num::signum(smaller_y);
-                    let margin_z = margin * num::signum(smaller_z);
+                    let margin = Float::min(smaller_x, Float::min(smaller_y, smaller_z));
+
                     match i {
                         0 => { // top and bottom
 
@@ -516,78 +475,41 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                             let top_right = Vector3D::new(max.x , max.y , max.z );
                             let inner_top_right = Vector3D::new( //inner top right
-                                max.x  - margin_x,
+                                max.x  - margin,
                                 max.y ,
-                                max.z  - margin_z
+                                max.z  - margin
                             );
 
                             pts.push(Vector3D::new(min.x , max.y , max.z )); //0 top left
                             pts.push(top_right); //1
                             pts.push(Vector3D::new( //2 inner top left
-                                min.x  + margin_x,
+                                min.x  + margin,
                                 max.y ,
-                                max.z  - margin_z
+                                max.z  - margin
                             ));
                             pts.push(inner_top_right); //3
                             pts.push(top_right); //4
                             pts.push(Vector3D::new(max.x , max.y , min.z )); //5 bottom right
                             pts.push(inner_top_right); //6
                             pts.push(Vector3D::new( //7 inner bottom right
-                                    max.x  - margin_x,
+                                    max.x  - margin,
                                     max.y ,
-                                    min.z  + margin_z
+                                    min.z  + margin
                             ));
 
                             let mut uv: Vec<Vector2D> = Vec::new();
 
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.x , 0.0));
-                            uv.push(Vector2D::new(margin_x, margin_z));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.x  - margin_x, margin_z));
-
-                            if true_dimensions.z < 0.0 {
-                                for val in uv.iter_mut() {
-                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
-                                }
-                            }
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.x , 0.0));
+                            uv.push(Vector2D::new(margin, margin));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.x - margin, margin));
 
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.z , 0.0));
-                            uv.push(Vector2D::new(margin_z, margin_x));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.z  - margin_z, margin_x));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.z , 0.0));
+                            uv.push(Vector2D::new(margin, margin));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.z - margin, margin));
 
-                            if true_dimensions.x < 0.0 {
-                                for val in uv.iter_mut().skip(4) {
-                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
-                                }
-                            }
-
-                            //Set variables for rotating the vertices so that faces face outwards even with negative dimensions
-                            let adjusted_center = Vector3D::new(true_center.x, max.y, true_center.z);
-                            let mut angle = 0.0;
-                            if true_dimensions.x < 0.0 {
-                                angle += std::f32::consts::PI;
-                            }
-                            if true_dimensions.y < 0.0 {
-                                angle += std::f32::consts::PI;
-                            }
-                            if true_dimensions.z < 0.0 {
-                                angle += std::f32::consts::PI;
-                            }
-                            let rot = Rotation3::new(Vector3D::x() * angle);
-
-                            for iter in pts.iter_mut().zip(uv.iter_mut()) {
-                                let (pt, u) = iter;
-
-                                //rotate the vertices so that they face outwards even with negative dimensions
-                                if angle > 0.0 {
-                                    *pt = rot * (*pt - adjusted_center) + adjusted_center;  
-                                }
-
-                                //flip the UVs if negative
-                                if true_dimensions.y < 0. {
-                                    *u = Vector2D::new(-u.x, u.y)
-                                }
+                            for (pt, u) in pts.iter().zip(uv.iter()) {
 
                                 uvs.push(&Vector2::new(u.x, u.y));
                                 verts.push(&Vector3::new(pt.x, pt.y, pt.z));
@@ -613,8 +535,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 normals.push(&Vector3::new(0.0, 1.0, 0.0));
                             }
 
-                            for iter in pts.iter().zip(uv.iter()) {
-                                let (pt, u) = iter;
+                            for (pt, u) in pts.iter().zip(uv.iter()) {
                                 let new_pt = pt - true_center;
 
                                 let rot = Rotation3::new(Vector3D::x() * std::f32::consts::PI);
@@ -633,16 +554,16 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             let top_right = Vector3D::new(max.x , max.y , max.z );
                             let inner_top_right = Vector3D::new( //inner top right
                                 max.x ,
-                                max.y  - margin_y,
-                                max.z  - margin_z
+                                max.y  - margin,
+                                max.z  - margin
                             );
 
                             pts.push(Vector3D::new(max.x , max.y , min.z )); //0 top left
                             pts.push(top_right); //1
                             pts.push(Vector3D::new( //2 inner top left
                                 max.x ,
-                                max.y  - margin_y,
-                                min.z  + margin_z
+                                max.y  - margin,
+                                min.z  + margin
                             ));
                             pts.push(inner_top_right); //3
                             pts.push(top_right); //4
@@ -650,57 +571,23 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             pts.push(inner_top_right); //6
                             pts.push(Vector3D::new( //7 inner bottom right
                                 max.x ,
-                                min.y  + margin_y,
-                                max.z  - margin_z
+                                min.y  + margin,
+                                max.z  - margin
                             ));
 
                             let mut uv: Vec<Vector2D> = Vec::new();
 
-                            uv.push(Vector2D::new(1.0 * true_dimensions.z , 0.0));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.z , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.z  - margin_z, margin_y));
-                            uv.push(Vector2D::new(margin_z, margin_y));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.z  - margin, margin));
+                            uv.push(Vector2D::new(margin, margin));
 
-                            if true_dimensions.y < 0.0 {
-                                for val in uv.iter_mut() {
-                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
-                                }
-                            }
-
-                            uv.push(Vector2D::new(1.0 * true_dimensions.y , 0.0));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.y , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin_y, margin_z));
-                            uv.push(Vector2D::new(margin_y, margin_z));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.y  - margin, margin));
+                            uv.push(Vector2D::new(margin, margin));
 
-                            if true_dimensions.z < 0.0 {
-                                for val in uv.iter_mut().skip(4) {
-                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
-                                }
-                            }
-
-                            let adjusted_center = Vector3D::new(max.x, true_center.y, true_center.z);
-                            let mut angle = 0.0;
-                            if true_dimensions.x < 0.0 {
-                                angle += std::f32::consts::PI;
-                            }
-                            if true_dimensions.y < 0.0 {
-                                angle += std::f32::consts::PI;
-                            }
-                            if true_dimensions.z < 0.0 {
-                                angle += std::f32::consts::PI;
-                            }
-                            let rot = Rotation3::new(Vector3D::z() * angle);
-
-                            for iter in pts.iter_mut().zip(uv.iter_mut()) {
-                                let (pt, u) = iter;
-
-                                if angle > 0.0 {
-                                    *pt = rot * (*pt - adjusted_center) + adjusted_center;  
-                                }
-
-                                if true_dimensions.x < 0. {
-                                    *u = Vector2D::new(-u.x, u.y)
-                                }
+                            for (pt, u) in pts.iter().zip(uv.iter()) {
 
                                 uvs.push(&Vector2::new(u.x, u.y));
                                 verts.push(&Vector3::new(pt.x, pt.y, pt.z));
@@ -726,8 +613,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 normals.push(&Vector3::new(1.0, 0.0, 0.0));
                             }
 
-                            for iter in pts.iter().zip(uv.iter()) {
-                                let (pt, u) = iter;
+                            for (pt, u) in pts.iter().zip(uv.iter()) {
                                 let new_pt = pt - true_center;
 
                                 let rot = Rotation3::new(Vector3D::y() * std::f32::consts::PI);
@@ -744,16 +630,16 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                             let top_right = Vector3D::new(max.x , max.y , min.z );
                             let inner_top_right = Vector3D::new( //inner top right
-                                max.x  - margin_x,
-                                max.y  - margin_y,
+                                max.x  - margin,
+                                max.y  - margin,
                                 min.z 
                             );
 
                             pts.push(Vector3D::new(min.x , max.y , min.z )); //0 top left
                             pts.push(top_right); //1
                             pts.push(Vector3D::new( //2 inner top left
-                                min.x  + margin_x,
-                                max.y  - margin_y,
+                                min.x  + margin,
+                                max.y  - margin,
                                 min.z 
                             ));
                             pts.push(inner_top_right); //3
@@ -761,58 +647,24 @@ pub fn create_system() -> Box<dyn Schedulable> {
                             pts.push(Vector3D::new(max.x , min.y , min.z )); //5 bottom right
                             pts.push(inner_top_right); //6
                             pts.push(Vector3D::new( //7 inner bottom right
-                                max.x  - margin_x,
-                                min.y  + margin_y,
+                                max.x  - margin,
+                                min.y  + margin,
                                 min.z 
                             ));
 
                             let mut uv: Vec<Vector2D> = Vec::new();
 
-                            uv.push(Vector2D::new(1.0 * true_dimensions.x , 0.0));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.x , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.x  - margin_x, margin_y));
-                            uv.push(Vector2D::new(margin_x, margin_y));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.x  - margin, margin));
+                            uv.push(Vector2D::new(margin, margin));
 
-                            if true_dimensions.y < 0.0 {
-                                for val in uv.iter_mut() {
-                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
-                                }
-                            }
-
-                            uv.push(Vector2D::new(1.0 * true_dimensions.y , 0.0));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.y , 0.0));
                             uv.push(Vector2D::new(0.0, 0.0));
-                            uv.push(Vector2D::new(1.0 * true_dimensions.y  - margin_y, margin_x));
-                            uv.push(Vector2D::new(margin_y, margin_x));
+                            uv.push(Vector2D::new(1.0 * abs_dimensions.y  - margin, margin));
+                            uv.push(Vector2D::new(margin, margin));
 
-                            if true_dimensions.x < 0.0 {
-                                for val in uv.iter_mut().skip(4) {
-                                    *val = Rotation2::new(std::f32::consts::PI) * *val;
-                                }
-                            }
-
-                            let adjusted_center = Vector3D::new(true_center.x, true_center.y, min.z);
-                            let mut angle = 0.0;
-                            if true_dimensions.x < 0.0 {
-                                angle += std::f32::consts::PI;
-                            }
-                            if true_dimensions.y < 0.0 {
-                                angle += std::f32::consts::PI;
-                            }
-                            if true_dimensions.z < 0.0 {
-                                angle += std::f32::consts::PI;
-                            }
-                            let rot = Rotation3::new(Vector3D::y() * angle);
-
-                            for iter in pts.iter_mut().zip(uv.iter_mut()) {
-                                let (pt, u) = iter;
-
-                                if angle > 0.0 {
-                                    *pt = rot * (*pt - adjusted_center) + adjusted_center;  
-                                }
-
-                                if true_dimensions.z < 0. {
-                                    *u = Vector2D::new(-u.x, u.y)
-                                }
+                            for (pt, u) in pts.iter().zip(uv.iter()) {
 
                                 uvs.push(&Vector2::new(u.x, u.y));
                                 verts.push(&Vector3::new(pt.x, pt.y, pt.z));
@@ -838,8 +690,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 normals.push(&Vector3::new(0.0, 0.0, 1.0));
                             }
 
-                            for iter in pts.iter().zip(uv.iter()) {
-                                let (pt, u) = iter;
+                            for (pt, u) in pts.iter().zip(uv.iter()) {
                                 let new_pt = pt - true_center;
 
                                 let rot = Rotation3::new(Vector3D::y() * std::f32::consts::PI);

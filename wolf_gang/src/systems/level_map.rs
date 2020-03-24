@@ -114,10 +114,6 @@ impl Map {
 
         godot_print!("center: {:?} dim: {:?}", aabb.center, aabb.dimensions);
 
-        // let x_max = min.x + aabb.dimensions.x;
-        // let y_max = min.y + aabb.dimensions.y;
-        // let z_max = min.z + aabb.dimensions.z;
-
         let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
         let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
         let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
@@ -204,119 +200,11 @@ impl Map {
                         }) {
                             godot_print!("Inserted {:?}", pt);
                         }
-
                     }
                 }
             }
-
         }
-
-        // let mut to_add: HashMap<Entity, MapChunkData> = HashMap::new();
-
-        // for entity in entities {
-        //     let map_chunk = world.get_component_mut::<MapChunkData>(entity);
-
-        //     match map_chunk {
-        //         Some(mut r) => {
-
-        //             let chunk_aabb = r.octree.get_aabb();
-        //             let chunk_min = chunk_aabb.get_min();
-        //             let chunk_max = chunk_aabb.get_max();
-
-        //             let min_x = std::cmp::max(chunk_min.x, min.x);
-        //             let min_y = std::cmp::max(chunk_min.y, min.y);
-        //             let min_z = std::cmp::max(chunk_min.z, min.z);
-
-        //             let max_x = std::cmp::min(chunk_max.x, max.x);
-        //             let max_y = std::cmp::min(chunk_max.y, max.y);
-        //             let max_z = std::cmp::min(chunk_max.z, max.z);
-
-        //             for z in min_z..max_z {
-        //                 for y in min_y..max_y {
-        //                     for x in min_x..max_x {
-
-        //                         let pt = Point::new(x,y,z);
-
-        //                         godot_print!("Inserting {:?}", pt);
-
-        //                         r.octree.insert(TileData{
-        //                             point: pt,
-        //                             ..tile_data
-        //                         });
-
-        //                     }
-        //                 }
-        //             }
-        //             to_add.insert(entity, r.clone());
-
-        //         },
-        //         None => {}
-        //     }
-        // }
-
-        // for (entity, map_chunk) in to_add {
-
-        //     godot_print!("adding {:?} to {:?}", map_chunk.octree.get_aabb().center, entity);
-
-        //     world.add_component(entity, map_chunk).unwrap();
-        // }
-
     }
-
-
-    // pub fn insert(self: &Self, world: &mut legion::world::World, tile_data: TileData) {
-
-    //     let point = tile_data.get_point();
-
-    //     //Matrix<i32> doesn't implement div so we gotta do it manually
-    //     //Gotta convert to and from floats to ensure that we get the floor as negative ints round to ceiling
-    //     let chunk_point = Point::new(
-    //         (point.x as f32 / self.chunk_dimensions.x as f32).floor() as i32,
-    //         (point.y as f32 / self.chunk_dimensions.y as f32).floor() as i32,
-    //         (point.z as f32 / self.chunk_dimensions.z as f32).floor() as i32,
-    //     );
-
-    //     let map_chunk_query = <Write<MapChunkData>>::query()
-    //         .filter(tag_value(&chunk_point));
-
-    //     let mut exists: bool = false;
-
-    //     // for mut map_chunk in map_chunk_query.iter_mut(&mut *world){
-    //     match map_chunk_query.iter_mut(world).next() {
-    //         Some(mut map_chunk) => {
-    //             if map_chunk.octree.insert(tile_data) {
-    //                 godot_print!("Inserted {:?} tile data into the existing map_chunk at {:?}", point, chunk_point);
-    //                 exists = true; 
-    //             } else {
-    //                 godot_print!("Failed to insert {:?} tile data into the existing map_chunk at {:?}", point, chunk_point);
-    //             }
-    //         },
-    //         None => {} 
-    //     }
-    //     // }
-
-    //     if exists { return }
-
-    //     let center = Point::new(
-    //         chunk_point.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
-    //         chunk_point.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
-    //         chunk_point.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
-    //     );
-
-    //     let mut map_chunk = MapChunkData{
-    //         octree: Octree::new(AABB::new(center, self.chunk_dimensions))
-    //     };
-
-    //     if map_chunk.octree.insert(tile_data){
-    //         godot_print!("Inserted {:?} tile data into the new map_chunk at {:?}", point, chunk_point);
-
-    //         world.insert((chunk_point.clone(),), vec![
-    //             (map_chunk, custom_mesh::MeshData::new()),
-    //         ]);
-    //     } else {
-    //         godot_print!("Failed to insert {:?} tile data into the new map chunk at {:?}", point, chunk_point);
-    //     }
-    // }
 }
 
 #[derive(Clone)]
