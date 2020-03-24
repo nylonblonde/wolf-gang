@@ -112,19 +112,19 @@ impl Map {
         let min = aabb.get_min();
         let max = aabb.get_max();
 
-        godot_print!("{:?} {:?}", min, max);
+        godot_print!("center: {:?} dim: {:?}", aabb.center, aabb.dimensions);
 
-        let x_max = min.x + aabb.dimensions.x;
-        let y_max = min.y + aabb.dimensions.y;
-        let z_max = min.z + aabb.dimensions.z;
+        // let x_max = min.x + aabb.dimensions.x;
+        // let y_max = min.y + aabb.dimensions.y;
+        // let z_max = min.z + aabb.dimensions.z;
 
         let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
         let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
         let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
 
-        let x_max_chunk = (x_max as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
-        let y_max_chunk = (y_max as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
-        let z_max_chunk = (z_max as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
+        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
+        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
+        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
 
         let mut entities: HashSet<Entity> = HashSet::new();
 

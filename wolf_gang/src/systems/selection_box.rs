@@ -405,30 +405,58 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
 
                         if new_aabb.dimensions.x == 0 {
                             new_aabb.dimensions.x += adjusted.x * 2;
-                            coord_pos.value.x += adjusted.x;
+                            // coord_pos.value.x += adjusted.x;
                         }
 
                         if new_aabb.dimensions.y == 0 {
                             new_aabb.dimensions.y += adjusted.y * 2;
-                            coord_pos.value.y -= adjusted.y;
+                            // coord_pos.value.y -= adjusted.y;
                         }
 
                         if new_aabb.dimensions.z == 0 {
                             new_aabb.dimensions.z += adjusted.z * 2;
-                            coord_pos.value.z -= adjusted.z;
+                            // coord_pos.value.z -= adjusted.z;
                         }
 
                         let mut min = selection_box.aabb.get_min();
-                        let max = selection_box.aabb.get_max();
+                        let mut max = selection_box.aabb.get_max();
 
                         let mut new_min = new_aabb.get_min();
-                        let new_max = new_aabb.get_max();
+                        let mut new_max = new_aabb.get_max();
 
                         //Adjust the offset based off of camera direction
-                        if camera_adjusted_dir.right.x < 0. { min.x = max.x; new_min.x = new_max.x }; 
-                        if camera_adjusted_dir.right.z < 0. { min.z = max.z; new_min.z = new_max.z };
+                        if camera_adjusted_dir.right.x < 0. { 
+                            let tmp_min = min.x;
+                            let tmp_new_min = new_min.x;
+                            min.x = max.x; 
+                            new_min.x = new_max.x; 
+                            max.x = tmp_min;
+                            new_max.x = tmp_new_min;
+                        } 
+                        if camera_adjusted_dir.right.z < 0. { 
+                            let tmp_min = min.z;
+                            let tmp_new_min = new_min.z;
+                            min.z = max.z; 
+                            new_min.z = new_max.z; 
+                            max.z = tmp_min;
+                            new_max.z = tmp_new_min;
+                        }
 
-                        coord_pos.value -= new_min - min;
+                        // let signs = Point::new(
+                        //     num::signum(new_aabb.dimensions.x),
+                        //     num::signum(new_aabb.dimensions.y),
+                        //     num::signum(new_aabb.dimensions.z)
+                        // );
+
+                        // let diff = new_min - min;
+
+                        let diff = Point::new(
+                            if new_aabb.dimensions.x < 0 { new_max.x - max.x } else { new_min.x - min.x },
+                            if new_aabb.dimensions.y < 0 { new_max.y - max.y } else { new_min.y - min.y },
+                            if new_aabb.dimensions.z < 0 { new_max.z - max.z } else { new_min.z - min.z },
+                        );
+
+                        coord_pos.value -= diff;
 
                         selection_box.aabb.dimensions = new_aabb.dimensions;
 
