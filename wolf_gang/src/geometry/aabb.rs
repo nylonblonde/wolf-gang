@@ -1,5 +1,7 @@
 use nalgebra::{Vector3, Scalar};
-use num::{Num, NumCast};
+use num::{
+    Num, NumCast,Signed
+};
 
 #[derive(Clone, Copy)]
 pub struct AABB<F: Scalar> {
@@ -7,7 +9,7 @@ pub struct AABB<F: Scalar> {
     pub dimensions: Vector3<F>,
 }
 
-impl<F: Scalar + Num + NumCast + Ord> AABB<F> {
+impl<F: Signed + Scalar + Num + NumCast + Ord> AABB<F> {
     pub fn new(center: Vector3<F>, dimensions: Vector3<F>) -> Self {
         Self {
             center,
@@ -32,24 +34,24 @@ impl<F: Scalar + Num + NumCast + Ord> AABB<F> {
         //     z => z
         // };
         Vector3::new(
-            max.x - self.dimensions.x,
-            max.y - self.dimensions.y,
-            max.z - self.dimensions.z
+            max.x - self.dimensions.x.abs(),
+            max.y - self.dimensions.y.abs(),
+            max.z - self.dimensions.z.abs()
         )
     }
 
     pub fn get_max(&self) -> Vector3<F> {
         //We perform this match in case our format is Int, and 1/2 == 0
-        let x = match self.center.x + self.dimensions.x/ NumCast::from(2).unwrap() {
-            x if self.center.x == x => { self.center.x + self.dimensions.x },
+        let x = match self.center.x + self.dimensions.x.abs()/ NumCast::from(2).unwrap() {
+            x if self.center.x == x => { self.center.x + self.dimensions.x.abs() },
             x => x
         };
-        let y = match self.center.y + self.dimensions.y/ NumCast::from(2).unwrap() {
-            y if self.center.y == y => { self.center.y + self.dimensions.y },
+        let y = match self.center.y + self.dimensions.y.abs()/ NumCast::from(2).unwrap() {
+            y if self.center.y == y => { self.center.y + self.dimensions.y.abs() },
             y => y
         };
-        let z = match self.center.z + self.dimensions.z/ NumCast::from(2).unwrap() {
-            z if self.center.z == z => { self.center.z + self.dimensions.z },
+        let z = match self.center.z + self.dimensions.z.abs()/ NumCast::from(2).unwrap() {
+            z if self.center.z == z => { self.center.z + self.dimensions.z.abs() },
             z => z
         };
         Vector3::new(

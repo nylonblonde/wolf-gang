@@ -2,7 +2,7 @@ use std::ops::{AddAssign, SubAssign, DivAssign};
 use std::slice::Iter;
 
 use nalgebra::{Scalar, Vector3};
-use num::{Num, NumCast};
+use num::{Num, NumCast, Signed};
 use crate::geometry::aabb::AABB;
 
 pub trait PointData<N: Scalar> : Copy {
@@ -31,7 +31,7 @@ impl<'a, N: Scalar, T: PointData<N>> Iterator for OctreeIter<N, T> {
     }
 }
 
-impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N>> IntoIterator for Octree<N, T> {
+impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N>> IntoIterator for Octree<N, T> {
     type Item = T;
     type IntoIter = OctreeIter<N, T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -54,7 +54,7 @@ pub struct Octree <N: Scalar, T: PointData<N>>{
 }
 
 #[allow(dead_code)]
-impl<N: Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N>> Octree<N, T> {
+impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N>> Octree<N, T> {
 
     pub fn new(aabb: AABB<N>) -> Octree<N, T> {
         println!("Creating new Octree with a min of {:?} and a max of {:?}", aabb.get_min(), aabb.get_max());

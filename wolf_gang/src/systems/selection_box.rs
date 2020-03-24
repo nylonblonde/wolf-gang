@@ -65,7 +65,7 @@ impl SelectionBox {
 pub struct RelativeCamera(pub String);
 
 pub fn initialize_selection_box(world: &mut World, camera_name: String) {
-   
+
     let mut mesh: ImmediateGeometry = ImmediateGeometry::new();
 
     let node_name = unsafe { 
@@ -105,7 +105,7 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
         Some(Ordering::Less) => -1.,
         Some(_) => 1.
     };
- 
+
     let forward = nalgebra::UnitQuaternion::<f32>::from_axis_angle(up, adjust_angle*dir) * forward;
 
     a.dot(&forward).partial_cmp(
@@ -277,7 +277,9 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
         let input_query = <Read<input::InputActionComponent>>::query()
             .filter(tag_value(&confirm));
 
-        let mut to_insert: Vec<level_map::TileData> = Vec::new();
+        let mut to_insert: Option<AABB> = None;
+
+        // let mut to_insert: Vec<level_map::TileData> = Vec::new();
 
         unsafe {
             for input_component in input_query.iter_unchecked(world) {
@@ -287,40 +289,52 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
                     if input_component.just_pressed(){
                         godot_print!("Pressed confirm at {:?}!", coord_pos.value);
 
-                        let sig_z = num::signum(selection_box.aabb.dimensions.z);
-                        let sig_y = num::signum(selection_box.aabb.dimensions.y);
-                        let sig_x = num::signum(selection_box.aabb.dimensions.x);
+                        // // to_insert.push(level_map::TileData::new(coord_pos.value));
 
-                        let min = selection_box.aabb.get_min();   
-                        let max = selection_box.aabb.get_max();                                         
+                        // let sig_z = num::signum(selection_box.aabb.dimensions.z);
+                        // let sig_y = num::signum(selection_box.aabb.dimensions.y);
+                        // let sig_x = num::signum(selection_box.aabb.dimensions.x);
 
-                        //treat the max as min if the dimensions are negative
-                        let min = Point::new(
-                            if sig_x > 0 { min.x } else { max.x },
-                            if sig_y > 0 { min.y } else { max.y },
-                            if sig_z > 0 { min.z } else { max.z }
-                        ) + coord_pos.value;
+                        // let min = selection_box.aabb.get_min();   
+                        // let max = selection_box.aabb.get_max();                                         
 
-                        let max_z = min.z + selection_box.aabb.dimensions.z.abs();
-                        let max_y = min.y + selection_box.aabb.dimensions.y.abs();
-                        let max_x = min.x + selection_box.aabb.dimensions.x.abs();
+                        // //treat the max as min if the dimensions are negative
+                        // let min = Point::new(
+                        //     if sig_x > 0 { min.x } else { max.x },
+                        //     if sig_y > 0 { min.y } else { max.y },
+                        //     if sig_z > 0 { min.z } else { max.z }
+                        // ) + coord_pos.value;
 
-                        for z in min.z..max_z {
-                            for y in min.y..max_y {
-                                for x in min.x..max_x {
-                                    to_insert.push(level_map::TileData::new(Point::new(x,y,z)));
-                                }
-                            }
-                        }
+                        // let max_z = min.z + selection_box.aabb.dimensions.z.abs();
+                        // let max_y = min.y + selection_box.aabb.dimensions.y.abs();
+                        // let max_x = min.x + selection_box.aabb.dimensions.x.abs();
+
+                        // for z in min.z..max_z {
+                        //     for y in min.y..max_y {
+                        //         for x in min.x..max_x {
+                        //             to_insert.push(level_map::TileData::new(Point::new(x,y,z)));
+                        //         }
+                        //     }
+                        // }
+
+                        to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
                         
                     }
                 }
             }
         }
 
-        for tile_data in to_insert.iter() {
-            map.insert(world, *tile_data);
+        match to_insert {
+            Some(r) => {
+                map.insert(world, level_map::TileData::new(Point::zeros()), r);
+            },
+            _ => {}
         }
+        // map.insert(world, to_insert);
+
+        // for tile_data in to_insert.iter() {
+        //     map.insert(world, *tile_data);
+        // }
     })
 }
 
