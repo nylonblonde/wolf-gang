@@ -279,17 +279,15 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
 
         let mut to_insert: Option<AABB> = None;
 
-        unsafe {
-            for input_component in input_query.iter_unchecked(world) {
-            
-                for (selection_box, coord_pos) in selection_box_query.iter_unchecked(world) {
+        for input_component in input_query.iter(world) {
+        
+            for (selection_box, coord_pos) in selection_box_query.iter(world) {
 
-                    if input_component.just_pressed(){
-                        godot_print!("Pressed confirm at {:?}!", coord_pos.value);
+                if input_component.just_pressed(){
+                    godot_print!("Pressed confirm at {:?}!", coord_pos.value);
 
-                        to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
-                        
-                    }
+                    to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
+                    
                 }
             }
         }
@@ -326,14 +324,14 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
                 | tag_value(&expand_selection_down)
             );
 
-        unsafe { 
 
-            for(input_component, action) in input_query.iter_unchecked(world) {                    
+        for(input_component, action) in input_query.iter(world) {                    
+            
+            if input_component.repeated(time.delta, 0.25) {
                 
-                if input_component.repeated(time.delta, 0.25) {
-                    
-                    let selection_box_query = <(Write<SelectionBox>, Write<crate::level_map::CoordPos>, Read<CameraAdjustedDirection>)>::query();
-
+                let selection_box_query = <(Write<SelectionBox>, Write<crate::level_map::CoordPos>, Read<CameraAdjustedDirection>)>::query();
+                
+                unsafe { 
                     for (mut selection_box, mut coord_pos, camera_adjusted_dir) in selection_box_query.iter_unchecked(world) {
 
                         let mut expansion = Point::zeros();

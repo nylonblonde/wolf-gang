@@ -210,44 +210,90 @@ impl Map {
             }
         }
 
-        //TODO: This doesn't work, we need to filter it so only the edited chunks update.
-        let query = <Write<MapChunkData>>::query();
+        let mut to_add: HashMap<Entity, MapChunkData> = HashMap::new();
 
-        for (entity, mut map_chunk) in query.iter_entities_mut(&mut *world) {
-            if !entities.contains(&entity) {
-                continue
-            }
+        for entity in entities {
+            let map_chunk = world.get_component_mut::<MapChunkData>(entity);
 
-            let chunk_aabb = map_chunk.octree.get_aabb();
-            let chunk_min = chunk_aabb.get_min();
-            let chunk_max = chunk_aabb.get_max();
+            match map_chunk {
+                Some(mut map_chunk) => {
+                    let chunk_aabb = map_chunk.octree.get_aabb();
+                    let chunk_min = chunk_aabb.get_min();
+                    let chunk_max = chunk_aabb.get_max();
 
-            let min_x = std::cmp::max(chunk_min.x, min.x);
-            let min_y = std::cmp::max(chunk_min.y, min.y);
-            let min_z = std::cmp::max(chunk_min.z, min.z);
+                    let min_x = std::cmp::max(chunk_min.x, min.x);
+                    let min_y = std::cmp::max(chunk_min.y, min.y);
+                    let min_z = std::cmp::max(chunk_min.z, min.z);
 
-            let max_x = std::cmp::min(chunk_max.x, max.x);
-            let max_y = std::cmp::min(chunk_max.y, max.y);
-            let max_z = std::cmp::min(chunk_max.z, max.z);
+                    let max_x = std::cmp::min(chunk_max.x, max.x);
+                    let max_y = std::cmp::min(chunk_max.y, max.y);
+                    let max_z = std::cmp::min(chunk_max.z, max.z);
 
-            for z in min_z..max_z {
-                for y in min_y..max_y {
-                    for x in min_x..max_x {
+                    for z in min_z..max_z {
+                        for y in min_y..max_y {
+                            for x in min_x..max_x {
 
-                        let pt = Point::new(x,y,z);
+                                let pt = Point::new(x,y,z);
 
-                        // godot_print!("Inserting {:?}", pt);
-
-                        if map_chunk.octree.insert(TileData{
-                            point: pt,
-                            ..tile_data
-                        }) {
-                            // godot_print!("Inserted {:?}", pt);
+                                if map_chunk.octree.insert(TileData{
+                                    point: pt,
+                                    ..tile_data
+                                }) {
+                                    // godot_print!("Inserted {:?}", pt);
+                                }
+                            }
                         }
                     }
-                }
+
+                    to_add.insert(entity, map_chunk.clone());
+                },
+                None => {}
             }
         }
+
+        for (entity, map_chunk) in to_add {
+            world.add_component(entity, map_chunk).unwrap();
+        }
+
+        //TODO: This doesn't work, we need to filter it so only the edited chunks update.
+        // let query = <Write<MapChunkData>>::query();
+        // let query = query.clone().filter(tag_value(&1u32));
+
+        // for (entity, mut map_chunk) in query.iter_entities_mut(&mut *world) {
+        //     if !entities.contains(&entity) {
+        //         continue
+        //     }
+
+        //     let chunk_aabb = map_chunk.octree.get_aabb();
+        //     let chunk_min = chunk_aabb.get_min();
+        //     let chunk_max = chunk_aabb.get_max();
+
+        //     let min_x = std::cmp::max(chunk_min.x, min.x);
+        //     let min_y = std::cmp::max(chunk_min.y, min.y);
+        //     let min_z = std::cmp::max(chunk_min.z, min.z);
+
+        //     let max_x = std::cmp::min(chunk_max.x, max.x);
+        //     let max_y = std::cmp::min(chunk_max.y, max.y);
+        //     let max_z = std::cmp::min(chunk_max.z, max.z);
+
+        //     for z in min_z..max_z {
+        //         for y in min_y..max_y {
+        //             for x in min_x..max_x {
+
+        //                 let pt = Point::new(x,y,z);
+
+        //                 // godot_print!("Inserting {:?}", pt);
+
+        //                 if map_chunk.octree.insert(TileData{
+        //                     point: pt,
+        //                     ..tile_data
+        //                 }) {
+        //                     // godot_print!("Inserted {:?}", pt);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
     }
 }
 
