@@ -73,7 +73,7 @@ impl WolfGang {
             delta: 0.
         });
 
-        resources.insert(level_map::Map::new());
+        resources.insert(level_map::Map::default());    
 
         let mut world = self.world.as_mut().unwrap();
         input::initialize_input_config(world, input::CONFIG_PATH);
@@ -134,11 +134,12 @@ impl WolfGang {
             //systems which add nodes should go first
             .add_thread_local(custom_mesh::create_draw_system_local())
             //systems that work on nodes follow
-            .add_thread_local_fn(level_map::create_drawing_thread_local_fn())
+            
             .add_thread_local_fn(selection_box::create_orthogonal_dir_thread_local_fn())
             .add_thread_local_fn(selection_box::create_movement_thread_local_fn())
             .add_thread_local_fn(selection_box::create_expansion_thread_local_fn())
             .add_thread_local_fn(selection_box::create_tile_insertion_thread_local_fn())
+            .add_thread_local_fn(level_map::create_drawing_thread_local_fn())
             .add_thread_local_fn(camera::create_focal_point_thread_local_fn())
             .add_thread_local_fn(camera::create_camera_angle_thread_local_fn())
             .add_thread_local_fn(camera::create_follow_selection_box_thread_local_fn())

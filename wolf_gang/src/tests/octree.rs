@@ -75,7 +75,7 @@ fn query_point() {
     let mut count = 0;
     fill_octree(aabb, &mut octree, &mut count);
 
-    assert!(octree.clone().query_point(Point::new(0,2,0)).is_some());
+    assert!(octree.clone().query_point(Point::new(0,1,0)).is_some());
     assert!(octree.clone().query_point(Point::new(0,3,0)).is_none());
 }
 

@@ -129,7 +129,7 @@ pub fn create_orthogonal_dir_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
                 let cam_query = <Read<transform::rotation::Direction>>::query()
                     .filter(tag_value(&node_name) & changed::<transform::rotation::Direction>());
 
-                match cam_query.iter_unchecked(world).next() {
+                match cam_query.iter(world).next() {
                     Some(dir) => {
 
                         // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
@@ -198,7 +198,7 @@ pub fn create_movement_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resou
         //this should be fine as no systems runs in parallel with local thread
         unsafe { 
 
-            for(input_component, action) in input_query.iter_unchecked(world) {                    
+            for(input_component, action) in input_query.iter(world) {                    
                 
                 if input_component.repeated(time.delta, 0.25) {
                     

@@ -142,20 +142,23 @@ pub struct Map {
     // map_chunk_pool: HashMap<Point, MapChunkData>
 }
 
-impl Map {
-    pub fn new() -> Self {
+impl Default for Map {
+    fn default() -> Self {
         Map { 
             // map_chunk_pool: HashMap::new(),
             chunk_dimensions: Point::new(10,10,10)
         }
     }
+}
+
+impl Map {
 
     pub fn insert(&self, world: &mut legion::world::World, tile_data: TileData, aabb: AABB) {
 
         let min = aabb.get_min();
         let max = aabb.get_max();
 
-        godot_print!("center: {:?} dim: {:?}", aabb.center, aabb.dimensions);
+        println!("center: {:?} dim: {:?}", aabb.center, aabb.dimensions);
 
         let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
         let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
@@ -178,6 +181,7 @@ impl Map {
                     let mut exists = false;
                     match map_chunk_exists_query.iter_entities(&mut *world).next() {
                         Some((entity, _)) => {
+                            println!("Map chunk exists already");
                             entities.insert(entity);
                             exists = true;
                         },
@@ -185,8 +189,7 @@ impl Map {
                     }
 
                     if !exists {
-
-                        godot_print!("Creating a new map chunk at {:?}", pt);
+                        println!("Creating a new map chunk at {:?}", pt);
 
                         let entity = world.insert((pt,),vec![
                             (
@@ -200,6 +203,7 @@ impl Map {
                                         self.chunk_dimensions
                                     ))
                                 },
+                                #[cfg(not(test))]
                                 custom_mesh::MeshData::new()
                             )
                         ])[0];
@@ -239,7 +243,7 @@ impl Map {
                                     point: pt,
                                     ..tile_data
                                 }) {
-                                    // godot_print!("Inserted {:?}", pt);
+                                    // println!("Inserted {:?}", pt);
                                 }
                             }
                         }
@@ -303,6 +307,12 @@ pub struct MapChunkData {
 }
 
 impl MapChunkData {
+    pub fn new(aabb: AABB) -> Self {
+        MapChunkData {
+            octree: Octree::new(aabb)
+        }
+    }
+
     pub fn get_chunk_point(&self) -> Point {
         let aabb = self.octree.get_aabb();
         let min = aabb.get_min();
