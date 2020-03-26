@@ -20,19 +20,7 @@ impl<F: Signed + Scalar + Num + NumCast + Ord> AABB<F> {
     pub fn get_min(&self) -> Vector3<F> {
 
         let max = self.get_max();
-        // //We perform this match in case our format is Int, and 1/2 == 0
-        // let x = match self.center.x - self.dimensions.x/ NumCast::from(2).unwrap() {
-        //     x if self.center.x == x => { self.center.x - self.dimensions.x },
-        //     x => x
-        // };
-        // let y = match self.center.y - self.dimensions.y/ NumCast::from(2).unwrap() {
-        //     y if self.center.y == y => { self.center.y - self.dimensions.y },
-        //     y => y
-        // };
-        // let z = match self.center.z - self.dimensions.z/ NumCast::from(2).unwrap() {
-        //     z if self.center.z == z => { self.center.z - self.dimensions.z },
-        //     z => z
-        // };
+
         Vector3::new(
             max.x - self.dimensions.x.abs(),
             max.y - self.dimensions.y.abs(),

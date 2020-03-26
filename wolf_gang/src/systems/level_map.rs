@@ -34,55 +34,98 @@ impl Default for CoordPos {
 
 pub const TILE_DIMENSIONS: TileDimensions = TileDimensions {x: 1.0, y: 0.2, z: 1.0};
 
-pub fn create_system() -> Box<dyn Schedulable> {
-    SystemBuilder::<()>::new("map_system")
-            .with_query(<(Read<MapChunkData>, Write<custom_mesh::MeshData>)>::query()
-                .filter(changed::<MapChunkData>())
-            )
-            .build(move |commands, world, resource, queries| {
-                for (map_data, mut mesh_data) in queries.iter_mut(&mut *world) {
-                    godot_print!("{:?}", "there should only be one tick");
-                    mesh_data.verts = Vector3Array::new();
-                    mesh_data.normals = Vector3Array::new();
-                    mesh_data.uvs = Vector2Array::new();
-                    mesh_data.indices = Int32Array::new();
-
-                    let mut offset = 0;
-                    for tile in map_data.octree.clone().into_iter() {
-
-                        let point = tile.get_point();
-
-                        godot_print!("drawing {:?}", point);
-
-                        let point = map_coords_to_world(point);
-
-                        mesh_data.verts.push(&Vector3::new(point.x, point.y+TILE_DIMENSIONS.y, point.z));
-                        mesh_data.verts.push(&Vector3::new(point.x+TILE_DIMENSIONS.x, point.y+TILE_DIMENSIONS.y, point.z+TILE_DIMENSIONS.z));
-                        mesh_data.verts.push(&Vector3::new(point.x, point.y+TILE_DIMENSIONS.y, point.z+TILE_DIMENSIONS.z));
-                        mesh_data.verts.push(&Vector3::new(point.x+TILE_DIMENSIONS.x, point.y+TILE_DIMENSIONS.y, point.z));
-
-                        mesh_data.uvs.push(&Vector2::new(0.,1.));
-                        mesh_data.uvs.push(&Vector2::new(1.,1.));
-                        mesh_data.uvs.push(&Vector2::new(0.,0.));
-                        mesh_data.uvs.push(&Vector2::new(1.,0.));
-
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-
-                        mesh_data.indices.push(offset);
-                        mesh_data.indices.push(offset+1);
-                        mesh_data.indices.push(offset+2);
-
-                        mesh_data.indices.push(offset+1);
-                        mesh_data.indices.push(offset);
-                        mesh_data.indices.push(offset+3);
-
-                        offset += 4;
+pub fn create_add_material_system() -> Box<dyn Schedulable> {
+    SystemBuilder::new("map_add_material_system")
+        .with_query(<Read<custom_mesh::MeshData>>::query()
+            .filter(component::<MapChunkData>() & !component::<custom_mesh::Material>())
+        )
+        .build(move |commands, world, _, query| {
+            for (entity, _) in query.iter_entities(&mut *world) {
+                commands.exec_mut(move |world| {
+                    match world.add_component(entity, custom_mesh::Material::from_str("res://materials/ground.material")) {
+                        Ok(_) => { godot_print!("Added material to ground!"); },
+                        _ => { godot_print!("Couldn't attach material to level map!"); }
                     }
+                });
+            }
+        })
+}
+
+pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
+    let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>)>::query()
+        .filter(changed::<MapChunkData>());
+    
+    Box::new(move |world, _| {
+
+        unsafe {
+            for (map_data, mut mesh_data) in write_mesh_query.iter_unchecked(world) {
+                godot_print!("Drawing {:?}", map_data.get_chunk_point());
+                mesh_data.verts = Vector3Array::new();
+                mesh_data.normals = Vector3Array::new();
+                mesh_data.uvs = Vector2Array::new();
+                mesh_data.indices = Int32Array::new();
+
+                let points_done: HashSet::<Point> = HashSet::new();
+
+                let mut offset = 0;
+                for tile in map_data.octree.clone().into_iter() {
+
+                    let point = tile.get_point();
+                    if points_done.contains(&point){
+                        continue;
+                    }
+
+                    let point_above = point + Point::y();
+
+                    if map_data.octree.clone().query_point(point_above).is_some() {
+                        continue;
+                    }
+
+                    let chunk_point_above = map_data.get_chunk_point()+Point::y();
+
+                    let map_data_above_query = <Read<MapChunkData>>::query()
+                        .filter(tag_value(&chunk_point_above));
+
+                    match map_data_above_query.iter_unchecked(world).next() {
+                        Some(map_data_above) => {
+                            if map_data_above.octree.clone().query_point(point_above).is_some() {
+                                continue;
+                            }
+                        },
+                        None => {}
+                    }
+
+                    // godot_print!("drawing {:?}", point);
+
+                    let point = map_coords_to_world(point);
+                    mesh_data.verts.push(&Vector3::new(point.x, point.y+TILE_DIMENSIONS.y, point.z+TILE_DIMENSIONS.z));
+                    mesh_data.verts.push(&Vector3::new(point.x+TILE_DIMENSIONS.x, point.y+TILE_DIMENSIONS.y, point.z+TILE_DIMENSIONS.z));
+                    mesh_data.verts.push(&Vector3::new(point.x, point.y+TILE_DIMENSIONS.y, point.z));
+                    mesh_data.verts.push(&Vector3::new(point.x+TILE_DIMENSIONS.x, point.y+TILE_DIMENSIONS.y, point.z));
+
+                    mesh_data.uvs.push(&Vector2::new(0.,0.));
+                    mesh_data.uvs.push(&Vector2::new(1.,0.));
+                    mesh_data.uvs.push(&Vector2::new(0.,1.));
+                    mesh_data.uvs.push(&Vector2::new(1.,1.));
+
+                    mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                    mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                    mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                    mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                    mesh_data.indices.push(offset+2);
+                    mesh_data.indices.push(offset+1);
+                    mesh_data.indices.push(offset);
+
+                    mesh_data.indices.push(offset+3);
+                    mesh_data.indices.push(offset+1);
+                    mesh_data.indices.push(offset+2);
+
+                    offset += 4;
                 }
-            })
+            }
+        }
+    })
 } 
 
 /// Applies the const TILE_DIMENSIONS to each map coord to get its conversion in 3D space.
@@ -167,6 +210,7 @@ impl Map {
             }
         }
 
+        //TODO: This doesn't work, we need to filter it so only the edited chunks update.
         let query = <Write<MapChunkData>>::query();
 
         for (entity, mut map_chunk) in query.iter_entities_mut(&mut *world) {
@@ -192,13 +236,13 @@ impl Map {
 
                         let pt = Point::new(x,y,z);
 
-                        godot_print!("Inserting {:?}", pt);
+                        // godot_print!("Inserting {:?}", pt);
 
                         if map_chunk.octree.insert(TileData{
                             point: pt,
                             ..tile_data
                         }) {
-                            godot_print!("Inserted {:?}", pt);
+                            // godot_print!("Inserted {:?}", pt);
                         }
                     }
                 }
@@ -210,6 +254,20 @@ impl Map {
 #[derive(Clone)]
 pub struct MapChunkData {
     octree: Octree<i32, TileData>,
+}
+
+impl MapChunkData {
+    pub fn get_chunk_point(&self) -> Point {
+        let aabb = self.octree.get_aabb();
+        let min = aabb.get_min();
+        let dimensions = aabb.dimensions;
+
+        Point::new(
+            (min.x as f32 / dimensions.x as f32).floor() as i32,
+            (min.y as f32 / dimensions.y as f32).floor() as i32,
+            (min.z as f32 / dimensions.z as f32).floor() as i32,
+        )
+    }
 }
 
 #[derive(Clone)]

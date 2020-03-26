@@ -230,6 +230,41 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         }
     }
 
+    pub fn query_point(self, point: Vector3<N>) -> Option<T> {
+
+        if !self.aabb.contains_point(point){
+            return None;
+        }
+
+        for &element in self.elements.iter() {
+
+            match element {
+                Some(el) => {
+                    if el.get_point() == point  {
+                        return element
+                    }
+                },
+                _ => continue
+            }
+        }
+
+        if let Paternity::ChildFree = self.paternity {
+            return None
+        }
+
+        for child_option in self.children {
+            if let Some(child) = child_option {
+                let child_query = child.query_point(point);
+
+                if child_query.is_some() {
+                    return child_query; 
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn query_range(self, range: AABB<N>) -> Vec<T> {
 
         let mut elements_in_range = vec![];
@@ -246,8 +281,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
 
             match element {
                 None => continue,
-                Some(_) => {
-                    let el = element.unwrap();
+                Some(el) => {
                     if self.aabb.contains_point(el.get_point()) {
                         elements_in_range.push(el);
                     }
@@ -260,8 +294,8 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         }
 
         for child_option in self.children {
-            if let Some(_) = child_option {
-                elements_in_range.append(&mut child_option.unwrap().query_range(range));
+            if let Some(child) = child_option {
+                elements_in_range.append(&mut child.query_range(range));
             }
         }
 

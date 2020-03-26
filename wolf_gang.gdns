@@ -1,7 +1,9 @@
 [gd_resource type="NativeScript" load_steps=2 format=2]
 
 [sub_resource type="GDNativeLibrary" id=1]
+entry/OSX.64 = "res://target/debug/libwolf_gang.dylib"
 entry/X11.64 = "res://target/debug/libwolf_gang.so"
+dependency/OSX.64 = [  ]
 dependency/X11.64 = [  ]
 
 [resource]

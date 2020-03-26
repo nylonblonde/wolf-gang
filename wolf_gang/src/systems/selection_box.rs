@@ -81,7 +81,7 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
                 level_map::CoordPos::default(),
                 transform::position::Position::default(), 
                 CameraAdjustedDirection::default(),
-                custom_mesh::Material::from_str("res://select_box.material")
+                custom_mesh::Material::from_str("res://materials/select_box.material")
             )
         ]
     );
@@ -461,9 +461,11 @@ pub fn create_system() -> Box<dyn Schedulable> {
                     let mut normals: Vector3Array = Vector3Array::new();
                     let mut uvs: Vector2Array = Vector2Array::new();
 
-                    let smaller_x = /* num::signum(true_dimensions.x) * */ Float::min(1.0, abs_dimensions.x /2.0);
-                    let smaller_y = /* num::signum(true_dimensions.y) * */ Float::min(1.0, abs_dimensions.y /2.0);
-                    let smaller_z = /* num::signum(true_dimensions.z) * */ Float::min(1.0, abs_dimensions.z /2.0);
+                    let max_margin = 0.9;
+
+                    let smaller_x = Float::min(max_margin, abs_dimensions.x /2.0);
+                    let smaller_y = Float::min(max_margin, abs_dimensions.y /2.0);
+                    let smaller_z = Float::min(max_margin, abs_dimensions.z /2.0);
 
                     let margin = Float::min(smaller_x, Float::min(smaller_y, smaller_z));
 

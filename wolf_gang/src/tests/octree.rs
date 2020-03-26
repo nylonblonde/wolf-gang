@@ -59,12 +59,24 @@ fn overwrite_element() {
     let mut count = 0;
     fill_octree(aabb, &mut octree, &mut count);
 
-
-    let vec = Vec::<i32>::new();
-
-    let iter = vec.into_iter();
-
     assert!(octree.insert(TileData::new(Point::zeros())));
+}
+
+#[test]
+fn query_point() {
+    let aabb = AABB::new(
+        Point::new(0,0,0), Point::new(4,4,4)
+    );
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb
+    );
+
+    let mut count = 0;
+    fill_octree(aabb, &mut octree, &mut count);
+
+    assert!(octree.clone().query_point(Point::new(0,2,0)).is_some());
+    assert!(octree.clone().query_point(Point::new(0,3,0)).is_none());
 }
 
 fn fill_octree(aabb: AABB, octree: &mut Octree<i32, TileData>, count: &mut usize) {
