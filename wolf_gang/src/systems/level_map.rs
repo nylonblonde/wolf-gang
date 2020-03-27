@@ -156,7 +156,7 @@ impl Map {
     pub fn insert(&self, world: &mut legion::world::World, tile_data: TileData, aabb: AABB) {
 
         let min = aabb.get_min();
-        let max = aabb.get_max();
+        let max = aabb.get_max() - Point::new(1,1,1);
 
         println!("center: {:?} dim: {:?}", aabb.center, aabb.dimensions);
 
@@ -164,17 +164,20 @@ impl Map {
         let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
         let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
 
-        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
-        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
-        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
+        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32;
+        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32;
+        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32;
 
         let mut entities: HashSet<Entity> = HashSet::new();
 
-        for z in z_min_chunk..z_max_chunk {
-            for y in y_min_chunk..y_max_chunk {
-                for x in x_min_chunk..x_max_chunk {
+        for z in z_min_chunk..z_max_chunk+1 {
+            for y in y_min_chunk..y_max_chunk+1 {
+                for x in x_min_chunk..x_max_chunk+1 {
 
                     let pt = Point::new(x,y,z);
+
+                    println!("Testing for chunk at {:?}", pt);
+
                     let map_chunk_exists_query = <Read<MapChunkData>>::query()
                         .filter(tag_value(&pt));
 
@@ -223,7 +226,7 @@ impl Map {
                 Some(mut map_chunk) => {
                     let chunk_aabb = map_chunk.octree.get_aabb();
                     let chunk_min = chunk_aabb.get_min();
-                    let chunk_max = chunk_aabb.get_max();
+                    let chunk_max = chunk_aabb.get_max() - Point::new(1,1,1);
 
                     let min_x = std::cmp::max(chunk_min.x, min.x);
                     let min_y = std::cmp::max(chunk_min.y, min.y);
@@ -233,9 +236,13 @@ impl Map {
                     let max_y = std::cmp::min(chunk_max.y, max.y);
                     let max_z = std::cmp::min(chunk_max.z, max.z);
 
-                    for z in min_z..max_z {
-                        for y in min_y..max_y {
-                            for x in min_x..max_x {
+                    println!("Range of z is {} to {}", min_z, max_z+1);
+                    println!("Range of y is {} to {}", min_y, max_y+1);
+                    println!("Range of x is {} to {}", min_x, max_x+1);
+
+                    for z in min_z..max_z+1 {
+                        for y in min_y..max_y+1 {
+                            for x in min_x..max_x+1 {
 
                                 let pt = Point::new(x,y,z);
 
@@ -243,7 +250,7 @@ impl Map {
                                     point: pt,
                                     ..tile_data
                                 }) {
-                                    // println!("Inserted {:?}", pt);
+                                    println!("Inserted {:?}", pt);
                                 }
                             }
                         }
