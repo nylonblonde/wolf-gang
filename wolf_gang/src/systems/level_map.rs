@@ -56,7 +56,7 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
 
 pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
     let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>)>::query()
-        // .filter(changed::<MapChunkData>())
+        .filter(changed::<MapChunkData>())
         ;
     
     Box::new(move |world, _| {
@@ -93,7 +93,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     match map_data_above_query.iter_unchecked(world).next() {
                         Some(map_data_above) => {
-                            if map_data_above.octree.clone().query_point(point_above).is_some() {
+                            if map_data_above.octree.query_point(point_above).is_some() {
                                 continue;
                             }
                         },
@@ -406,7 +406,7 @@ impl MapChunkData {
         let chunk_top_y = self.octree.get_aabb().get_max().y-1;
         let mut pt = point;
         
-        //If we're checking from a chunk that is higher up, bring us down to the current chunk
+        // If we're checking from a chunk that is higher up, bring us down to the current chunk
         if pt.y > chunk_top_y {
             pt.y = chunk_top_y;
         }
@@ -416,24 +416,32 @@ impl MapChunkData {
             None => HashSet::new()
         };
 
-        let mut lowest: i32 = pt.y;
-        let mut bottom: i32 = pt.y;
+        let mut lowest: i32 = point.y;
+        let mut bottom: i32 = point.y;
 
         for y in (chunk_bottom_y..pt.y+1).rev() {
-            
+
             pt.y = y;
 
-            lowest = pt.y;
-            bottom = pt.y;
-            
+            if checked.contains(&pt) {
+                continue;
+            }
             //put this pt into checked so we don't get redundant checks or infinite loops when we check neighbors' bottoms
             checked.insert(pt);
+
+            match self.octree.query_point(pt) {
+                Some(_) => {
+                    lowest = pt.y;
+                    bottom = pt.y;  
+                },
+                None => break
+            }
 
             let neighbors = [
                 pt + Point::z(),
                 pt - Point::z(),
                 pt + Point::x(),
-                pt - Point::z()
+                pt - Point::x()
             ];
 
             //check the bottoms of adjacent points
@@ -484,28 +492,32 @@ impl MapChunkData {
 
             let point_below = pt - Point::y();
 
-            if y > chunk_bottom_y { 
-                match self.octree.query_point(point_below) {
-                    Some(_) => continue,
-                    None => break
+            match self.octree.query_point(point_below) {
+                Some(_) => continue,
+                None if y > chunk_bottom_y => break,
+                None =>  {
+                    let chunk_point_below = self.get_chunk_point()-Point::y();
+
+                    let map_data_below_query = <Read<MapChunkData>>::query()
+                        .filter(tag_value(&chunk_point_below));
+
+                    match map_data_below_query.iter(world).next() {
+                        Some(map_data) => {
+                            match self.octree.get_aabb().contains_point(pt) {
+                                true => {
+                                    let res = map_data.get_bottom(point, world, None); 
+                                    bottom = res.0;
+                                    if lowest > res.1 {
+                                        lowest = res.1;
+                                    }
+                                },
+                                false => {}
+                            }
+                        },
+                        None => {}
+                    };
                 }
-            }
-            
-            let chunk_point_below = self.get_chunk_point()-Point::y();
-
-            let map_data_below_query = <Read<MapChunkData>>::query()
-                .filter(tag_value(&chunk_point_below));
-
-            match map_data_below_query.iter(world).next() {
-                Some(map_data) => {
-                    let res = map_data.get_bottom(point, world, Some(checked.clone())); 
-                    // bottom = res.0;
-                    if lowest > res.1 {
-                        lowest = res.1;
-                    }
-                },
-                None => {}
-            };
+            }            
         }
 
         (bottom, lowest)
