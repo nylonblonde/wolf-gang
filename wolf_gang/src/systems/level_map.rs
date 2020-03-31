@@ -56,13 +56,18 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
 
 pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
     let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>)>::query()
-        .filter(changed::<MapChunkData>())
+        // .filter(changed::<MapChunkData>())
+            .filter(tag_value(&ManuallyChange(true)))
         ;
     
     Box::new(move |world, _| {
 
+        let mut changed: Vec<Entity> = Vec::new();
+
         unsafe {
-            for (map_data, mut mesh_data) in write_mesh_query.iter_unchecked(world) {
+            for (entity, (map_data, mut mesh_data)) in write_mesh_query.iter_entities_unchecked(world) {
+
+                changed.push(entity);
 
                 godot_print!("Drawing {:?}", map_data.get_chunk_point());
                 mesh_data.verts = Vector3Array::new();
@@ -193,6 +198,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                 }
             }
         }
+
+        for entity in changed {
+            world.add_tag(entity, ManuallyChange(false)).unwrap();
+        }
     })
 } 
 
@@ -204,6 +213,9 @@ pub fn map_coords_to_world(map_coord: Point) -> nalgebra::Vector3<f32> {
         map_coord.z as f32 * TILE_DIMENSIONS.z
     )
 }
+
+#[derive(Copy, Clone, PartialEq)]
+pub struct ManuallyChange(bool);
 
 pub struct Map {
     chunk_dimensions: Point,
@@ -332,6 +344,7 @@ impl Map {
 
         for (entity, map_chunk) in to_add {
             world.add_component(entity, map_chunk).unwrap();
+            world.add_tag(entity, ManuallyChange(true)).unwrap();
         }
 
         // // TODO: This doesn't work, we need to filter it so only the edited chunks update.
@@ -416,15 +429,11 @@ impl MapChunkData {
 
             pt.y = y;
 
-            godot_print!("y {} chunk_bottom_y {}",y, chunk_bottom_y);
-
             match self.octree.query_point(pt) {
                 Some(_) => {
                     bottom = pt.y;  
                 },
                 None if y < chunk_bottom_y => {
-
-                    godot_print!("We made it here");
 
                     let chunk_point_below = self.get_chunk_point()-Point::y();
 
@@ -434,30 +443,18 @@ impl MapChunkData {
                     match map_data_below_query.iter(world).next() {
                         Some(map_data) => {
 
-                            godot_print!("Found the chunk below");
-                            
                             let res = map_data.get_bottom(point, world); 
-                            godot_print!("res is {}", res);
                             if bottom > res {
                                 bottom = res;
                             }
                             break
-                                
+
                         },
                         None => break
                     };
                 },
                 None => break
-            }
-
-            // let point_below = pt - Point::y();
-
-            // match self.octree.query_point(point_below) {
-            //     Some(_) => continue,
-            //     None =>  {
-                    
-            //     }
-            // }            
+            }         
         }
 
         bottom
