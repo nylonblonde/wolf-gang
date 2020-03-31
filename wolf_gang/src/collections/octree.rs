@@ -230,7 +230,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         }
     }
 
-    pub fn query_point(self, point: Vector3<N>) -> Option<T> {
+    pub fn query_point(&self, point: Vector3<N>) -> Option<T> {
 
         if !self.aabb.contains_point(point){
             return None;
@@ -252,7 +252,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
             return None
         }
 
-        for child_option in self.children {
+        for child_option in &self.children {
             if let Some(child) = child_option {
                 let child_query = child.query_point(point);
 
@@ -265,7 +265,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         None
     }
 
-    pub fn query_range(self, range: AABB<N>) -> Vec<T> {
+    pub fn query_range(&self, range: AABB<N>) -> Vec<T> {
 
         let mut elements_in_range = vec![];
         
@@ -293,7 +293,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
             return elements_in_range
         }
 
-        for child_option in self.children {
+        for child_option in &self.children {
             if let Some(child) = child_option {
                 elements_in_range.append(&mut child.query_range(range));
             }

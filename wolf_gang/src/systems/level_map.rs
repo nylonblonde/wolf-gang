@@ -32,7 +32,10 @@ impl Default for CoordPos {
     }
 }
 
-pub const TILE_DIMENSIONS: TileDimensions = TileDimensions {x: 1.0, y: 0.2, z: 1.0};
+pub const TILE_DIMENSIONS: TileDimensions = TileDimensions {x: 1.0, y: 0.25, z: 1.0};
+pub const TILE_PIXELS: f32 = 64.;
+pub const SHEET_PIXELS: f32 = 1024.;
+pub const TILE_SIZE: f32 = TILE_PIXELS/SHEET_PIXELS;
 
 pub fn create_add_material_system() -> Box<dyn Schedulable> {
     SystemBuilder::new("map_add_material_system")
@@ -53,12 +56,14 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
 
 pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
     let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>)>::query()
-        .filter(changed::<MapChunkData>());
+        // .filter(changed::<MapChunkData>())
+        ;
     
     Box::new(move |world, _| {
 
         unsafe {
             for (map_data, mut mesh_data) in write_mesh_query.iter_unchecked(world) {
+
                 godot_print!("Drawing {:?}", map_data.get_chunk_point());
                 mesh_data.verts = Vector3Array::new();
                 mesh_data.normals = Vector3Array::new();
@@ -77,7 +82,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     let point_above = point + Point::y();
 
-                    if map_data.octree.clone().query_point(point_above).is_some() {
+                    if map_data.octree.query_point(point_above).is_some() {
                         continue;
                     }
 
@@ -97,16 +102,22 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     // godot_print!("drawing {:?}", point);
 
-                    let point = map_coords_to_world(point);
-                    mesh_data.verts.push(&Vector3::new(point.x, point.y+TILE_DIMENSIONS.y, point.z+TILE_DIMENSIONS.z));
-                    mesh_data.verts.push(&Vector3::new(point.x+TILE_DIMENSIONS.x, point.y+TILE_DIMENSIONS.y, point.z+TILE_DIMENSIONS.z));
-                    mesh_data.verts.push(&Vector3::new(point.x, point.y+TILE_DIMENSIONS.y, point.z));
-                    mesh_data.verts.push(&Vector3::new(point.x+TILE_DIMENSIONS.x, point.y+TILE_DIMENSIONS.y, point.z));
+                    let world_point = map_coords_to_world(point);
+
+                    let top_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
+                    let top_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
+                    let bottom_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
+                    let bottom_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
+
+                    mesh_data.verts.push(&top_left);
+                    mesh_data.verts.push(&top_right);
+                    mesh_data.verts.push(&bottom_left);
+                    mesh_data.verts.push(&bottom_right);
 
                     mesh_data.uvs.push(&Vector2::new(0.,0.));
-                    mesh_data.uvs.push(&Vector2::new(1.,0.));
-                    mesh_data.uvs.push(&Vector2::new(0.,1.));
-                    mesh_data.uvs.push(&Vector2::new(1.,1.));
+                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,0.));
+                    mesh_data.uvs.push(&Vector2::new(0.,TILE_SIZE));
+                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,TILE_SIZE));
 
                     mesh_data.normals.push(&Vector3::new(0.,1.,0.));
                     mesh_data.normals.push(&Vector3::new(0.,1.,0.));
@@ -122,6 +133,63 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     mesh_data.indices.push(offset+2);
 
                     offset += 4;
+
+                    let (bottom, lowest) = map_data.get_bottom(point, world, None);
+
+                    let lowest = lowest as f32 * TILE_DIMENSIONS.y;
+                    let bottom = bottom as f32 * TILE_DIMENSIONS.y;
+
+                    // let bottom_world_pt = map_coords_to_world(bottom_point);
+
+                    let height = world_point.y + TILE_DIMENSIONS.y - lowest;
+                    
+                    //draw the sides
+                    let floor_top_left = Vector3::new(
+                        world_point.x, bottom, world_point.z+TILE_DIMENSIONS.z
+                    );
+                    let floor_top_right = Vector3::new(
+                        world_point.x+TILE_DIMENSIONS.x, bottom, world_point.z+TILE_DIMENSIONS.z
+                    );
+                    let floor_bottom_left = Vector3::new(
+                        world_point.x, bottom, world_point.z
+                    );
+                    let floor_bottom_right = Vector3::new(
+                        world_point.x+TILE_DIMENSIONS.x, bottom, world_point.z
+                    );
+
+                    mesh_data.verts.push(&top_left);
+                    mesh_data.verts.push(&top_right);
+                    mesh_data.verts.push(&floor_top_left);
+                    mesh_data.verts.push(&floor_top_right);
+
+                    mesh_data.normals.push(&Vector3::new(0.,0.,1.));
+                    mesh_data.normals.push(&Vector3::new(0.,0.,1.));
+                    mesh_data.normals.push(&Vector3::new(0.,0.,1.));
+                    mesh_data.normals.push(&Vector3::new(0.,0.,1.));
+
+                    let vertical_offset = TILE_SIZE;
+
+                    mesh_data.uvs.push(&Vector2::new(0.,vertical_offset));
+                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,vertical_offset));
+                    mesh_data.uvs.push(&Vector2::new(0.,vertical_offset + TILE_SIZE * height));
+                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,vertical_offset + TILE_SIZE * height));
+
+                    // mesh_data.uvs.push(&Vector2::new(0.,-height));
+                    // mesh_data.uvs.push(&Vector2::new(1.,-height));
+                    // mesh_data.uvs.push(&Vector2::new(0.,0.));
+                    // mesh_data.uvs.push(&Vector2::new(1.,0.));
+
+                    mesh_data.indices.push(offset);
+                    mesh_data.indices.push(offset+1);
+                    mesh_data.indices.push(offset+2);
+
+                    mesh_data.indices.push(offset+2);
+                    mesh_data.indices.push(offset+1);
+                    mesh_data.indices.push(offset+3);
+
+                    offset += 4;
+
+                    godot_print!("bottom: {:?}", (bottom, lowest));
                 }
             }
         }
@@ -168,7 +236,7 @@ impl Map {
         let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32;
         let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32;
 
-        let mut entities: HashSet<Entity> = HashSet::new();
+        let mut entities: Vec<Entity> = Vec::new();
 
         for z in z_min_chunk..z_max_chunk+1 {
             for y in y_min_chunk..y_max_chunk+1 {
@@ -182,10 +250,10 @@ impl Map {
                         .filter(tag_value(&pt));
 
                     let mut exists = false;
-                    match map_chunk_exists_query.iter_entities(&mut *world).next() {
+                    match map_chunk_exists_query.iter_entities(world).next() {
                         Some((entity, _)) => {
                             println!("Map chunk exists already");
-                            entities.insert(entity);
+                            entities.push(entity);
                             exists = true;
                         },
                         _ => {}
@@ -207,11 +275,11 @@ impl Map {
                                     ))
                                 },
                                 #[cfg(not(test))]
-                                custom_mesh::MeshData::new()
+                                custom_mesh::MeshData::new(),
                             )
                         ])[0];
 
-                        entities.insert(entity);
+                        entities.push(entity);
                     }
                 }
             }
@@ -266,18 +334,16 @@ impl Map {
             world.add_component(entity, map_chunk).unwrap();
         }
 
-        //TODO: This doesn't work, we need to filter it so only the edited chunks update.
-        // let query = <Write<MapChunkData>>::query();
-        // let query = query.clone().filter(tag_value(&1u32));
+        // // TODO: This doesn't work, we need to filter it so only the edited chunks update.
+        // let query = <(Write<MapChunkData>, Tagged<Point>)>::query()
 
-        // for (entity, mut map_chunk) in query.iter_entities_mut(&mut *world) {
-        //     if !entities.contains(&entity) {
-        //         continue
-        //     }
+        // for (mut map_chunk, chunk_pt) in query.iter_mut(&mut *world) {
+
+        //     println!("Updating chunk {:?}", chunk_pt);
 
         //     let chunk_aabb = map_chunk.octree.get_aabb();
         //     let chunk_min = chunk_aabb.get_min();
-        //     let chunk_max = chunk_aabb.get_max();
+        //     let chunk_max = chunk_aabb.get_max() - Point::new(1,1,1);
 
         //     let min_x = std::cmp::max(chunk_min.x, min.x);
         //     let min_y = std::cmp::max(chunk_min.y, min.y);
@@ -287,9 +353,9 @@ impl Map {
         //     let max_y = std::cmp::min(chunk_max.y, max.y);
         //     let max_z = std::cmp::min(chunk_max.z, max.z);
 
-        //     for z in min_z..max_z {
-        //         for y in min_y..max_y {
-        //             for x in min_x..max_x {
+        //     for z in min_z..max_z+1 {
+        //         for y in min_y..max_y+1 {
+        //             for x in min_x..max_x+1 {
 
         //                 let pt = Point::new(x,y,z);
 
@@ -330,6 +396,119 @@ impl MapChunkData {
             (min.y as f32 / dimensions.y as f32).floor() as i32,
             (min.z as f32 / dimensions.z as f32).floor() as i32,
         )
+    }
+
+
+    /// Get the y coordinate where the bottom of the connected tiles sits. Returns a tuple where the first result is 
+    /// the vertical column's bottom, and the second result is the lowest point in all the attached adjacent tiles.
+    fn get_bottom(&self, point: Point, world: &legion::world::World, checked: Option<HashSet<Point>>) -> (i32, i32) {
+        let chunk_bottom_y = self.octree.get_aabb().get_min().y;
+        let chunk_top_y = self.octree.get_aabb().get_max().y-1;
+        let mut pt = point;
+        
+        //If we're checking from a chunk that is higher up, bring us down to the current chunk
+        if pt.y > chunk_top_y {
+            pt.y = chunk_top_y;
+        }
+
+        let checked = &mut match checked {
+            Some(r) => r,
+            None => HashSet::new()
+        };
+
+        let mut lowest: i32 = pt.y;
+        let mut bottom: i32 = pt.y;
+
+        for y in (chunk_bottom_y..pt.y+1).rev() {
+            
+            pt.y = y;
+
+            lowest = pt.y;
+            bottom = pt.y;
+            
+            //put this pt into checked so we don't get redundant checks or infinite loops when we check neighbors' bottoms
+            checked.insert(pt);
+
+            let neighbors = [
+                pt + Point::z(),
+                pt - Point::z(),
+                pt + Point::x(),
+                pt - Point::z()
+            ];
+
+            //check the bottoms of adjacent points
+            for neighbor in &neighbors {
+
+                if checked.contains(neighbor) {
+                    continue;
+                }
+
+                checked.insert(*neighbor);
+
+                //check if neighbor exists in this chunk. If so, do get_bottom. If not query the adjacent chunk
+                match self.octree.get_aabb().contains_point(*neighbor) {
+                    true => {
+
+                        match self.octree.query_point(*neighbor) {
+                            Some(_) => {
+                                let res = self.get_bottom(*neighbor, world, Some(checked.clone()));
+                                if lowest > res.1 {
+                                    lowest = res.1;
+                                }
+                            }, 
+                            None => continue
+                        }
+
+                    },
+                    false => {
+                        let dir = pt - neighbor;
+
+                        let adjacent_chunk_pt = self.get_chunk_point()+dir;
+
+                        let map_data_below_query = <Read<MapChunkData>>::query()
+                            .filter(tag_value(&adjacent_chunk_pt));
+
+                        match map_data_below_query.iter(world).next() {
+                            Some(map_data) => { 
+                                let res = map_data.get_bottom(*neighbor, world, Some(checked.clone()));
+                                if lowest > res.1 {
+                                    lowest = res.1;
+                                }
+                            },
+                            None => continue
+                        };
+                        
+                    }
+                }
+            }
+
+            let point_below = pt - Point::y();
+
+            if y > chunk_bottom_y { 
+                match self.octree.query_point(point_below) {
+                    Some(_) => continue,
+                    None => break
+                }
+            }
+            
+            let chunk_point_below = self.get_chunk_point()-Point::y();
+
+            let map_data_below_query = <Read<MapChunkData>>::query()
+                .filter(tag_value(&chunk_point_below));
+
+            match map_data_below_query.iter(world).next() {
+                Some(map_data) => {
+                    let res = map_data.get_bottom(point, world, Some(checked.clone())); 
+                    // bottom = res.0;
+                    if lowest > res.1 {
+                        lowest = res.1;
+                    }
+                },
+                None => {}
+            };
+        }
+
+        (bottom, lowest)
     }
 }
 

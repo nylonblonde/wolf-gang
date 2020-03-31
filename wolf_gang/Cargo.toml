@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 gdnative = "0.7"
-#legion =  { git = "file:/home/lyon/RustProjects/legion", branch="master" } 
+# legion =  { git = "file:/Users/lyon/RustProjects/legion", branch="experimental" } 
 legion = { git = "https://github.com/TomGillen/legion.git" }
 nalgebra = "0.19.0"
 num = "0.2.1"
