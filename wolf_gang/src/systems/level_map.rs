@@ -134,14 +134,13 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     offset += 4;
 
-                    let (bottom, lowest) = map_data.get_bottom(point, world, None);
+                    let bottom = map_data.get_bottom(point, world);
 
-                    let lowest = lowest as f32 * TILE_DIMENSIONS.y;
+                    // let lowest = lowest as f32 * TILE_DIMENSIONS.y;
                     let bottom = bottom as f32 * TILE_DIMENSIONS.y;
 
                     // let bottom_world_pt = map_coords_to_world(bottom_point);
 
-                    let height = world_point.y + TILE_DIMENSIONS.y - lowest;
                     
                     //draw the sides
                     let floor_top_left = Vector3::new(
@@ -167,17 +166,18 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     mesh_data.normals.push(&Vector3::new(0.,0.,1.));
                     mesh_data.normals.push(&Vector3::new(0.,0.,1.));
 
-                    let vertical_offset = TILE_SIZE;
+                    let top = world_point.y + TILE_DIMENSIONS.y;
+                    let height = (top - bottom) * TILE_SIZE;
 
-                    mesh_data.uvs.push(&Vector2::new(0.,vertical_offset));
-                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,vertical_offset));
-                    mesh_data.uvs.push(&Vector2::new(0.,vertical_offset + TILE_SIZE * height));
-                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,vertical_offset + TILE_SIZE * height));
+                    // mesh_data.uvs.push(&Vector2::new(0.,vertical_offset));
+                    // mesh_data.uvs.push(&Vector2::new(TILE_SIZE,vertical_offset));
+                    // mesh_data.uvs.push(&Vector2::new(0.,vertical_offset + TILE_SIZE * height));
+                    // mesh_data.uvs.push(&Vector2::new(TILE_SIZE,vertical_offset + TILE_SIZE * height));
 
-                    // mesh_data.uvs.push(&Vector2::new(0.,-height));
-                    // mesh_data.uvs.push(&Vector2::new(1.,-height));
-                    // mesh_data.uvs.push(&Vector2::new(0.,0.));
-                    // mesh_data.uvs.push(&Vector2::new(1.,0.));
+                    mesh_data.uvs.push(&Vector2::new(0.,-1.-height - bottom * TILE_SIZE));
+                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,-1.-height - bottom * TILE_SIZE));
+                    mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
+                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,-1.-bottom * TILE_SIZE));
 
                     mesh_data.indices.push(offset);
                     mesh_data.indices.push(offset+1);
@@ -189,7 +189,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     offset += 4;
 
-                    godot_print!("bottom: {:?}", (bottom, lowest));
+                    // godot_print!("bottom: {:?}", (bottom, lowest));
                 }
             }
         }
@@ -399,9 +399,8 @@ impl MapChunkData {
     }
 
 
-    /// Get the y coordinate where the bottom of the connected tiles sits. Returns a tuple where the first result is 
-    /// the vertical column's bottom, and the second result is the lowest point in all the attached adjacent tiles.
-    fn get_bottom(&self, point: Point, world: &legion::world::World, checked: Option<HashSet<Point>>) -> (i32, i32) {
+    /// Get the y coordinate where the bottom of the connected tiles sits.
+    fn get_bottom(&self, point: Point, world: &legion::world::World) -> i32 {
         let chunk_bottom_y = self.octree.get_aabb().get_min().y;
         let chunk_top_y = self.octree.get_aabb().get_max().y-1;
         let mut pt = point;
@@ -411,91 +410,22 @@ impl MapChunkData {
             pt.y = chunk_top_y;
         }
 
-        let checked = &mut match checked {
-            Some(r) => r,
-            None => HashSet::new()
-        };
-
-        let mut lowest: i32 = point.y;
         let mut bottom: i32 = point.y;
 
-        for y in (chunk_bottom_y..pt.y+1).rev() {
+        for y in (chunk_bottom_y-1..pt.y+1).rev() {
 
             pt.y = y;
 
-            if checked.contains(&pt) {
-                continue;
-            }
-            //put this pt into checked so we don't get redundant checks or infinite loops when we check neighbors' bottoms
-            checked.insert(pt);
+            godot_print!("y {} chunk_bottom_y {}",y, chunk_bottom_y);
 
             match self.octree.query_point(pt) {
                 Some(_) => {
-                    lowest = pt.y;
                     bottom = pt.y;  
                 },
-                None => break
-            }
+                None if y < chunk_bottom_y => {
 
-            let neighbors = [
-                pt + Point::z(),
-                pt - Point::z(),
-                pt + Point::x(),
-                pt - Point::x()
-            ];
+                    godot_print!("We made it here");
 
-            //check the bottoms of adjacent points
-            for neighbor in &neighbors {
-
-                if checked.contains(neighbor) {
-                    continue;
-                }
-
-                checked.insert(*neighbor);
-
-                //check if neighbor exists in this chunk. If so, do get_bottom. If not query the adjacent chunk
-                match self.octree.get_aabb().contains_point(*neighbor) {
-                    true => {
-
-                        match self.octree.query_point(*neighbor) {
-                            Some(_) => {
-                                let res = self.get_bottom(*neighbor, world, Some(checked.clone()));
-                                if lowest > res.1 {
-                                    lowest = res.1;
-                                }
-                            }, 
-                            None => continue
-                        }
-
-                    },
-                    false => {
-                        let dir = pt - neighbor;
-
-                        let adjacent_chunk_pt = self.get_chunk_point()+dir;
-
-                        let map_data_below_query = <Read<MapChunkData>>::query()
-                            .filter(tag_value(&adjacent_chunk_pt));
-
-                        match map_data_below_query.iter(world).next() {
-                            Some(map_data) => { 
-                                let res = map_data.get_bottom(*neighbor, world, Some(checked.clone()));
-                                if lowest > res.1 {
-                                    lowest = res.1;
-                                }
-                            },
-                            None => continue
-                        };
-                        
-                    }
-                }
-            }
-
-            let point_below = pt - Point::y();
-
-            match self.octree.query_point(point_below) {
-                Some(_) => continue,
-                None if y > chunk_bottom_y => break,
-                None =>  {
                     let chunk_point_below = self.get_chunk_point()-Point::y();
 
                     let map_data_below_query = <Read<MapChunkData>>::query()
@@ -503,24 +433,34 @@ impl MapChunkData {
 
                     match map_data_below_query.iter(world).next() {
                         Some(map_data) => {
-                            match self.octree.get_aabb().contains_point(pt) {
-                                true => {
-                                    let res = map_data.get_bottom(point, world, None); 
-                                    bottom = res.0;
-                                    if lowest > res.1 {
-                                        lowest = res.1;
-                                    }
-                                },
-                                false => {}
+
+                            godot_print!("Found the chunk below");
+                            
+                            let res = map_data.get_bottom(point, world); 
+                            godot_print!("res is {}", res);
+                            if bottom > res {
+                                bottom = res;
                             }
+                            break
+                                
                         },
-                        None => {}
+                        None => break
                     };
-                }
-            }            
+                },
+                None => break
+            }
+
+            // let point_below = pt - Point::y();
+
+            // match self.octree.query_point(point_below) {
+            //     Some(_) => continue,
+            //     None =>  {
+                    
+            //     }
+            // }            
         }
 
-        (bottom, lowest)
+        bottom
     }
 }
 
