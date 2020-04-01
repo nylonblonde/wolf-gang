@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 type AABB = aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;
+type Vector3D = nalgebra::Vector3<f32>;
 
 pub struct TileDimensions {
     pub x: f32,
@@ -107,12 +108,20 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     // godot_print!("drawing {:?}", point);
 
+                    let mut border_points: Vec<Vector3> = Vec::new();
+
                     let world_point = map_coords_to_world(point);
 
                     let top_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
                     let top_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
                     let bottom_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
                     let bottom_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
+
+                    //needs to be added in clockwise or counterclockwise order
+                    border_points.push(top_right);
+                    border_points.push(top_left);
+                    border_points.push(bottom_left);
+                    border_points.push(bottom_right);
 
                     mesh_data.verts.push(&top_left);
                     mesh_data.verts.push(&top_right);
@@ -141,60 +150,62 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     let bottom = map_data.get_bottom(point, world);
 
-                    // let lowest = lowest as f32 * TILE_DIMENSIONS.y;
                     let bottom = bottom as f32 * TILE_DIMENSIONS.y;
-
-                    // let bottom_world_pt = map_coords_to_world(bottom_point);
-
-                    
-                    //draw the sides
-                    let floor_top_left = Vector3::new(
-                        world_point.x, bottom, world_point.z+TILE_DIMENSIONS.z
-                    );
-                    let floor_top_right = Vector3::new(
-                        world_point.x+TILE_DIMENSIONS.x, bottom, world_point.z+TILE_DIMENSIONS.z
-                    );
-                    let floor_bottom_left = Vector3::new(
-                        world_point.x, bottom, world_point.z
-                    );
-                    let floor_bottom_right = Vector3::new(
-                        world_point.x+TILE_DIMENSIONS.x, bottom, world_point.z
-                    );
-
-                    mesh_data.verts.push(&top_left);
-                    mesh_data.verts.push(&top_right);
-                    mesh_data.verts.push(&floor_top_left);
-                    mesh_data.verts.push(&floor_top_right);
-
-                    mesh_data.normals.push(&Vector3::new(0.,0.,1.));
-                    mesh_data.normals.push(&Vector3::new(0.,0.,1.));
-                    mesh_data.normals.push(&Vector3::new(0.,0.,1.));
-                    mesh_data.normals.push(&Vector3::new(0.,0.,1.));
-
                     let top = world_point.y + TILE_DIMENSIONS.y;
-                    let height = (top - bottom) * TILE_SIZE;
+                    let height = top - bottom;
 
-                    // mesh_data.uvs.push(&Vector2::new(0.,vertical_offset));
-                    // mesh_data.uvs.push(&Vector2::new(TILE_SIZE,vertical_offset));
-                    // mesh_data.uvs.push(&Vector2::new(0.,vertical_offset + TILE_SIZE * height));
-                    // mesh_data.uvs.push(&Vector2::new(TILE_SIZE,vertical_offset + TILE_SIZE * height));
+                    let center = Vector3D::new(world_point.x, 0., world_point.z) + Vector3D::new(TILE_DIMENSIONS.x as f32, 0., TILE_DIMENSIONS.z as f32) / 2.;
 
-                    mesh_data.uvs.push(&Vector2::new(0.,-1.-height - bottom * TILE_SIZE));
-                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,-1.-height - bottom * TILE_SIZE));
-                    mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
-                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,-1.-bottom * TILE_SIZE));
+                    // let mut j = 0;
+                    let border_points_len = border_points.len();
 
-                    mesh_data.indices.push(offset);
-                    mesh_data.indices.push(offset+1);
-                    mesh_data.indices.push(offset+2);
+                    godot_print!("offset before {}", offset);
 
-                    mesh_data.indices.push(offset+2);
-                    mesh_data.indices.push(offset+1);
-                    mesh_data.indices.push(offset+3);
+                    //define the sides
+                    for i in 0..border_points_len {
+                        
+                        // if i < border_points_len {
+                            let border_point = border_points.get(i).unwrap();
 
-                    offset += 4;
+                            //top
+                            mesh_data.verts.push(&border_point);
 
-                    // godot_print!("bottom: {:?}", (bottom, lowest));
+                            //bottom
+                            mesh_data.verts.push(&(*border_point - Vector3::new(0., height, 0.)));
+
+                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                            let uv_width = 1.; //num::Float::max(top_right.x - top_left.x, top_right.z - top_left.z);
+
+                            if i % 2 == 0 {
+                                mesh_data.uvs.push(&Vector2::new(0.,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                                mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
+                            } else {
+                                mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                                mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-bottom * TILE_SIZE));
+                            }
+                            offset += 2;
+
+                    }
+
+                    let len = border_points_len as i32 * 2;
+
+                    let end = mesh_data.verts.len();
+                    let begin = end - len;
+
+                    let mut i = 0;
+                    while i < len {
+                        mesh_data.indices.push(i % len + begin);
+                        mesh_data.indices.push((i+1) % len + begin);
+                        mesh_data.indices.push((i+2) % len + begin);
+
+                        mesh_data.indices.push((i+2) % len + begin);
+                        mesh_data.indices.push((i+1) % len + begin);
+                        mesh_data.indices.push((i+3) % len + begin);
+                        i += 2;
+                    }
+
                 }
             }
         }
