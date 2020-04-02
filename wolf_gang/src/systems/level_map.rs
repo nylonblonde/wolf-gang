@@ -66,6 +66,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
         let mut changed: Vec<Entity> = Vec::new();
 
         unsafe {
+
             for (entity, (map_data, mut mesh_data)) in write_mesh_query.iter_entities_unchecked(world) {
 
                 changed.push(entity);
@@ -76,41 +77,59 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                 mesh_data.uvs = Vector2Array::new();
                 mesh_data.indices = Int32Array::new();
 
-                let points_done: HashSet::<Point> = HashSet::new();
+                let mut checked: HashSet::<Point> = HashSet::new();
 
                 let mut offset = 0;
                 for tile in map_data.octree.clone().into_iter() {
 
                     let point = tile.get_point();
-                    if points_done.contains(&point){
-                        continue;
+
+                    if checked.contains(&point) {
+                        continue
                     }
 
-                    let point_above = point + Point::y();
+                    checked.insert(point);
 
-                    if map_data.octree.query_point(point_above).is_some() {
-                        continue;
+                    let mut top = point;
+                    let mut draw_top: bool = true;
+                    let chunk_top_y = map_data.octree.get_aabb().get_max().y;
+
+                    //iterate from this point to either the top or the top of the chunk
+                    for y in point.y..chunk_top_y+1 {
+                        top.y = y;
+
+                        let point_above = top+Point::y();
+                        checked.insert(point_above);
+
+                        match map_data.octree.query_point(point_above) {
+                            Some(_) => continue,
+                            None if y+1 == chunk_top_y => {
+                                
+                                let chunk_point_above = map_data.get_chunk_point()+Point::y();
+
+                                let chunk_point_above_query = <Read<MapChunkData>>::query()
+                                    .filter(tag_value(&chunk_point_above));
+
+                                match chunk_point_above_query.iter(world).next() {
+                                    Some(map_data) => {
+                                        
+                                        match map_data.octree.query_point(point_above) {
+                                            Some(_) => { draw_top = false; },
+                                            None => break
+                                        }
+
+                                    },
+                                    None => break
+                                }
+
+                            },
+                            None => break
+                        }
                     }
-
-                    let chunk_point_above = map_data.get_chunk_point()+Point::y();
-
-                    let map_data_above_query = <Read<MapChunkData>>::query()
-                        .filter(tag_value(&chunk_point_above));
-
-                    match map_data_above_query.iter_unchecked(world).next() {
-                        Some(map_data_above) => {
-                            if map_data_above.octree.query_point(point_above).is_some() {
-                                continue;
-                            }
-                        },
-                        None => {}
-                    }
-
-                    // godot_print!("drawing {:?}", point);
 
                     let mut border_points: Vec<Vector3> = Vec::new();
 
-                    let world_point = map_coords_to_world(point);
+                    let world_point = map_coords_to_world(top);
 
                     let top_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
                     let top_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
@@ -123,43 +142,80 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     border_points.push(bottom_left);
                     border_points.push(bottom_right);
 
-                    mesh_data.verts.push(&top_left);
-                    mesh_data.verts.push(&top_right);
-                    mesh_data.verts.push(&bottom_left);
-                    mesh_data.verts.push(&bottom_right);
+                    if draw_top { 
+                        mesh_data.verts.push(&top_left);
+                        mesh_data.verts.push(&top_right);
+                        mesh_data.verts.push(&bottom_left);
+                        mesh_data.verts.push(&bottom_right);
 
-                    mesh_data.uvs.push(&Vector2::new(0.,0.));
-                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,0.));
-                    mesh_data.uvs.push(&Vector2::new(0.,TILE_SIZE));
-                    mesh_data.uvs.push(&Vector2::new(TILE_SIZE,TILE_SIZE));
+                        mesh_data.uvs.push(&Vector2::new(0.,0.));
+                        mesh_data.uvs.push(&Vector2::new(TILE_SIZE,0.));
+                        mesh_data.uvs.push(&Vector2::new(0.,TILE_SIZE));
+                        mesh_data.uvs.push(&Vector2::new(TILE_SIZE,TILE_SIZE));
 
-                    mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                    mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                    mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                    mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
 
-                    mesh_data.indices.push(offset+2);
-                    mesh_data.indices.push(offset+1);
-                    mesh_data.indices.push(offset);
+                        mesh_data.indices.push(offset+2);
+                        mesh_data.indices.push(offset+1);
+                        mesh_data.indices.push(offset);
 
-                    mesh_data.indices.push(offset+3);
-                    mesh_data.indices.push(offset+1);
-                    mesh_data.indices.push(offset+2);
+                        mesh_data.indices.push(offset+3);
+                        mesh_data.indices.push(offset+1);
+                        mesh_data.indices.push(offset+2);
 
-                    offset += 4;
+                        offset += 4;
+                    }
 
-                    let bottom = map_data.get_bottom(point, world);
+                    let mut draw_bottom: bool = true;
 
-                    let bottom = bottom as f32 * TILE_DIMENSIONS.y;
+                    let mut bottom = point;
+                    let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;
+
+                    for y in (chunk_bottom_y-1..point.y+1).rev() {
+                        bottom.y = y;
+
+                        let point_below = bottom - Point::y();
+                        
+                        checked.insert(point_below);
+
+                        match map_data.octree.query_point(point_below) {
+                            Some(_) => continue,
+                            None if y == chunk_bottom_y => {
+                                let chunk_point_below = map_data.get_chunk_point() - Point::y();
+                                
+                                let chunk_point_below_query = <Read<MapChunkData>>::query()
+                                    .filter(tag_value(&chunk_point_below));
+
+                                match chunk_point_below_query.iter(world).next() {
+
+                                    Some(map_data) => {
+                                        match map_data.octree.query_point(point_below) {
+                                            Some(_) => {
+                                                draw_bottom = false;
+                                                break
+                                            },
+                                            None => break
+                                        }
+                                    },
+                                    None => break
+                                }
+                            },
+                            None => break
+                        }
+                        
+                    }
+
+                    let bottom = map_coords_to_world(bottom).y;
+
                     let top = world_point.y + TILE_DIMENSIONS.y;
                     let height = top - bottom;
 
                     let center = Vector3D::new(world_point.x, 0., world_point.z) + Vector3D::new(TILE_DIMENSIONS.x as f32, 0., TILE_DIMENSIONS.z as f32) / 2.;
 
-                    // let mut j = 0;
                     let border_points_len = border_points.len();
-
-                    godot_print!("offset before {}", offset);
 
                     //define the sides
                     for i in 0..border_points_len {
@@ -357,44 +413,6 @@ impl Map {
             world.add_component(entity, map_chunk).unwrap();
             world.add_tag(entity, ManuallyChange(true)).unwrap();
         }
-
-        // // TODO: This doesn't work, we need to filter it so only the edited chunks update.
-        // let query = <(Write<MapChunkData>, Tagged<Point>)>::query()
-
-        // for (mut map_chunk, chunk_pt) in query.iter_mut(&mut *world) {
-
-        //     println!("Updating chunk {:?}", chunk_pt);
-
-        //     let chunk_aabb = map_chunk.octree.get_aabb();
-        //     let chunk_min = chunk_aabb.get_min();
-        //     let chunk_max = chunk_aabb.get_max() - Point::new(1,1,1);
-
-        //     let min_x = std::cmp::max(chunk_min.x, min.x);
-        //     let min_y = std::cmp::max(chunk_min.y, min.y);
-        //     let min_z = std::cmp::max(chunk_min.z, min.z);
-
-        //     let max_x = std::cmp::min(chunk_max.x, max.x);
-        //     let max_y = std::cmp::min(chunk_max.y, max.y);
-        //     let max_z = std::cmp::min(chunk_max.z, max.z);
-
-        //     for z in min_z..max_z+1 {
-        //         for y in min_y..max_y+1 {
-        //             for x in min_x..max_x+1 {
-
-        //                 let pt = Point::new(x,y,z);
-
-        //                 // godot_print!("Inserting {:?}", pt);
-
-        //                 if map_chunk.octree.insert(TileData{
-        //                     point: pt,
-        //                     ..tile_data
-        //                 }) {
-        //                     // godot_print!("Inserted {:?}", pt);
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
     }
 }
 
