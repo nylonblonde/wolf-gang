@@ -317,51 +317,57 @@ impl Map {
 
         let mut entities: Vec<Entity> = Vec::new();
 
-        for z in z_min_chunk..z_max_chunk+1 {
-            for y in y_min_chunk..y_max_chunk+1 {
-                for x in x_min_chunk..x_max_chunk+1 {
+        let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
 
-                    let pt = Point::new(x,y,z);
+        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) + Point::new(1,1,1) - min_chunk;
 
-                    println!("Testing for chunk at {:?}", pt);
+        let volume = dimensions.x * dimensions.y * dimensions.z;
 
-                    let map_chunk_exists_query = <Read<MapChunkData>>::query()
-                        .filter(tag_value(&pt));
+        godot_print!("dimensions {:?}", dimensions);
 
-                    let mut exists = false;
-                    match map_chunk_exists_query.iter_entities(world).next() {
-                        Some((entity, _)) => {
-                            println!("Map chunk exists already");
-                            entities.push(entity);
-                            exists = true;
-                        },
-                        _ => {}
-                    }
+        for i in 0..volume {
+            let x = x_min_chunk + i % dimensions.x;
+            let y = y_min_chunk + (i / dimensions.x) % dimensions.y;
+            let z = z_min_chunk + i / (dimensions.x * dimensions.y);
 
-                    if !exists {
-                        println!("Creating a new map chunk at {:?}", pt);
+            let pt = Point::new(x,y,z);
 
-                        let entity = world.insert((pt,),vec![
-                            (
-                                MapChunkData{
-                                    octree: Octree::new(AABB::new(
-                                        Point::new(
-                                            pt.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
-                                            pt.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
-                                            pt.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
-                                        ),
-                                        self.chunk_dimensions
-                                    ))
-                                },
-                                #[cfg(not(test))]
-                                custom_mesh::MeshData::new(),
-                            )
-                        ])[0];
+            let map_chunk_exists_query = <Read<MapChunkData>>::query()
+                .filter(tag_value(&pt));
 
-                        entities.push(entity);
-                    }
-                }
+            let mut exists = false;
+            match map_chunk_exists_query.iter_entities(world).next() {
+                Some((entity, _)) => {
+                    println!("Map chunk exists already");
+                    entities.push(entity);
+                    exists = true;
+                },
+                _ => {}
             }
+
+            if !exists {
+                println!("Creating a new map chunk at {:?}", pt);
+
+                let entity = world.insert((pt,),vec![
+                    (
+                        MapChunkData{
+                            octree: Octree::new(AABB::new(
+                                Point::new(
+                                    pt.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
+                                    pt.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
+                                    pt.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
+                                ),
+                                self.chunk_dimensions
+                            ))
+                        },
+                        #[cfg(not(test))]
+                        custom_mesh::MeshData::new(),
+                    )
+                ])[0];
+
+                entities.push(entity);
+            }
+
         }
 
         let mut to_add: HashMap<Entity, MapChunkData> = HashMap::new();
@@ -383,23 +389,26 @@ impl Map {
                     let max_y = std::cmp::min(chunk_max.y, max.y);
                     let max_z = std::cmp::min(chunk_max.z, max.z);
 
-                    println!("Range of z is {} to {}", min_z, max_z+1);
-                    println!("Range of y is {} to {}", min_y, max_y+1);
-                    println!("Range of x is {} to {}", min_x, max_x+1);
+                    godot_print!("Range of z is {} to {}", min_z, max_z+1);
+                    godot_print!("Range of y is {} to {}", min_y, max_y+1);
+                    godot_print!("Range of x is {} to {}", min_x, max_x+1);
 
-                    for z in min_z..max_z+1 {
-                        for y in min_y..max_y+1 {
-                            for x in min_x..max_x+1 {
+                    let min = Point::new(min_x, min_y, min_z);
+                    let dimensions = Point::new(max_x, max_y, max_z) + Point::new(1,1,1) - min;
+                    let volume = dimensions.x * dimensions.y * dimensions.z;
 
-                                let pt = Point::new(x,y,z);
+                    for i in 0..volume {
+                        let x = min_x + i % dimensions.x;
+                        let y = min_y + (i / dimensions.x) % dimensions.y;
+                        let z = min_z + i / (dimensions.x * dimensions.y);
+                    
+                        let pt = Point::new(x,y,z);
 
-                                if map_chunk.octree.insert(TileData{
-                                    point: pt,
-                                    ..tile_data
-                                }) {
-                                    println!("Inserted {:?}", pt);
-                                }
-                            }
+                        if map_chunk.octree.insert(TileData{
+                            point: pt,
+                            ..tile_data
+                        }) {
+                            println!("Inserted {:?}", pt);
                         }
                     }
 
