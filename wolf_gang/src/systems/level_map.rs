@@ -57,8 +57,8 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
 
 pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
     let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>)>::query()
-        // .filter(changed::<MapChunkData>())
-            .filter(tag_value(&ManuallyChange(true)))
+        .filter(changed::<MapChunkData>())
+            // .filter(tag_value(&ManuallyChange(true)))
         ;
     
     Box::new(move |world, _| {
@@ -360,32 +360,12 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
 
                         offset += 2;
-                        // len += 2;
 
                     }
-
-                    // let end = mesh_data.verts.len();
-                    // let begin = end - len;
-
-                    // let mut i = 0;
-                    // while i < len {
-                    //     mesh_data.indices.push(i % len + begin);
-                    //     mesh_data.indices.push((i+1) % len + begin);
-                    //     mesh_data.indices.push((i+2) % len + begin);
-
-                    //     mesh_data.indices.push((i+2) % len + begin);
-                    //     mesh_data.indices.push((i+1) % len + begin);
-                    //     mesh_data.indices.push((i+3) % len + begin);
-                    //     i += 2;
-                    // }
-                    
                 }
             }
         }
 
-        for entity in changed {
-            world.add_tag(entity, ManuallyChange(false)).unwrap();
-        }
     })
 } 
 
@@ -397,9 +377,6 @@ pub fn map_coords_to_world(map_coord: Point) -> nalgebra::Vector3<f32> {
         map_coord.z as f32 * TILE_DIMENSIONS.z
     )
 }
-
-#[derive(Copy, Clone, PartialEq)]
-pub struct ManuallyChange(bool);
 
 pub struct Map {
     chunk_dimensions: Point,
@@ -517,7 +494,9 @@ impl Map {
                             point: pt,
                             ..tile_data
                         }) {
-                            println!("Inserted {:?}", pt);
+                            // println!("Inserted {:?}", pt);
+                        } else {
+                            println!("Failed to insert {:?}", pt);
                         }
                     }
 
@@ -529,7 +508,7 @@ impl Map {
 
         for (entity, map_chunk) in to_add {
             world.add_component(entity, map_chunk).unwrap();
-            world.add_tag(entity, ManuallyChange(true)).unwrap();
+            // world.add_tag(entity, ManuallyChange(true)).unwrap();
         }
     }
 }

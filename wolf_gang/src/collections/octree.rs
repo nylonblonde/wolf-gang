@@ -89,7 +89,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
 
         println!("subdividing at center {:?} : {:?} {:?}", self.aabb.center, min, max);
         //down back left
-        let sub_max = min + (self.aabb.center - min);
+        let sub_max = self.aabb.center;
         let downbackleft = AABB::<N>::from_extents(
             min,
             sub_max
@@ -292,7 +292,6 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         for child_option in &self.children {
             if let Some(child) = child_option {
                 let child_query = child.query_point(point);
-                println!("{:?}", child_query);
 
                 if child_query.is_some() {
 

@@ -61,6 +61,21 @@ fn tiny_test() {
 }
 
 #[test]
+fn large_test() {
+    let aabb = AABB::from_extents(
+        Point::new(0,0,0), Point::new(9,9,9));
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb
+    );
+
+    let mut count = 0;
+    fill_octree(aabb, &mut octree, &mut count);
+
+    assert_eq!(octree.count(), count);
+}
+
+#[test]
 fn contains_point() {
     let aabb = AABB::new(Point::new(-5,5,5), Point::new(-10,10,10));
 
