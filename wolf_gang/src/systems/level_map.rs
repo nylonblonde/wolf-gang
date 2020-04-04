@@ -103,7 +103,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         match map_data.octree.query_point(point_above) {
                             Some(_) => continue,
-                            None if y+1 == chunk_top_y => {
+                            None if y == chunk_top_y => {
                                 
                                 let chunk_point_above = map_data.get_chunk_point()+Point::y();
 
@@ -112,7 +112,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                                 match chunk_point_above_query.iter(world).next() {
                                     Some(map_data) => {
-
                                         match map_data.octree.query_point(point_above) {
                                             Some(_) => { 
                                                 draw_top = false; 
@@ -222,11 +221,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             }
                         }
                     }
-
-                    // godot_print!("Drawing for {:?}", point);
-                    // for side in &draw_sides {
-                    //     godot_print!("draw {:?}", side);
-                    // }
 
                     let mut bottom = point;
                     let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;

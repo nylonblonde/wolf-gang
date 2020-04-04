@@ -1,6 +1,6 @@
 use core::fmt::Debug;
 use std::ops::{AddAssign, SubAssign, DivAssign};
-use std::slice::Iter;
+
 use std::error;
 use std::fmt;
 
@@ -203,14 +203,18 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
 
         let volume = dimensions.x * dimensions.y * dimensions.z;
 
-        if total_volume == volume {
-            Ok({})
+        if cfg!(debug_assertions) {
+            if total_volume == volume {
+                Ok({})
+            } else {
+                Err(
+                    SubdivisionError{
+                        error_type: SubdivisionErrorType::IncorrectDimensions(total_volume, volume)
+                    }
+                )
+            }
         } else {
-            Err(
-                SubdivisionError{
-                    error_type: SubdivisionErrorType::IncorrectDimensions(total_volume, volume)
-                }
-            )
+            Ok({})
         }
     }
 
