@@ -262,7 +262,10 @@ pub fn create_coord_to_pos_system() -> Box<dyn Schedulable> {
 }
 
 pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
-    Box::new(|world: &mut World, resources: &mut Resources|{
+
+    let selection_box_moved_query = <Read<SelectionBox>>::query().filter(changed::<level_map::CoordPos>());
+
+    Box::new(move |world: &mut World, resources: &mut Resources|{
 
         let map = resources.get_mut::<level_map::Map>();
 
@@ -283,7 +286,7 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
         
             for (selection_box, coord_pos) in selection_box_query.iter(world) {
 
-                if input_component.just_pressed(){
+                if input_component.just_pressed() || selection_box_moved_query.iter(world).next().is_some() {
                     godot_print!("Pressed confirm at {:?}!", coord_pos.value);
 
                     to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
@@ -303,7 +306,7 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
 }
 
 /// Expands the dimensions of the selection box
-pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {    
     Box::new(|world: &mut World, resources: &mut Resources|{
         let time = resources.get::<crate::Time>().unwrap();
 
@@ -323,7 +326,6 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
                 | tag_value(&expand_selection_up)
                 | tag_value(&expand_selection_down)
             );
-
 
         for(input_component, action) in input_query.iter(world) {                    
             

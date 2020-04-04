@@ -57,9 +57,7 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
 
 pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
     let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>)>::query()
-        .filter(changed::<MapChunkData>())
-            // .filter(tag_value(&ManuallyChange(true)))
-        ;
+        .filter(changed::<MapChunkData>());
     
     Box::new(move |world, _| {
 
@@ -129,6 +127,50 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                     }
 
+                    let neighbor_dirs = [
+                        Point::x(),
+                        -Point::x(),
+                        Point::z(),
+                        -Point::z(),
+                    ];
+
+                    let mut draw_sides: HashSet<Point> = HashSet::new();
+
+                    for dir in &neighbor_dirs {
+
+                        let neighbor = top + dir;
+
+                        match map_data.octree.query_point(neighbor) {
+                            Some(_) => continue,
+                            None => {
+
+                                match map_data.octree.get_aabb().contains_point(neighbor) {
+                                    false => {
+                                        let chunk_point_dir = map_data.get_chunk_point() + dir;
+
+                                        let chunk_point_dir_query = <Read<MapChunkData>>::query()
+                                            .filter(tag_value(&chunk_point_dir));
+
+                                        match chunk_point_dir_query.iter(world).next() {
+                                            Some(map_data) => {
+                                                
+                                                match map_data.octree.query_point(neighbor) {
+                                                    Some(_) => continue,
+                                                    None => {
+                                                        draw_sides.insert(*dir);
+                                                    }
+                                                }
+
+                                            },
+                                            None => { draw_sides.insert(*dir); }
+                                        }
+                                    },
+                                    true => { draw_sides.insert(*dir); }
+                                }
+                            }
+                        }
+                    }
+
                     let mut border_points: Vec<Vector3> = Vec::new();
 
                     let world_point = map_coords_to_world(top);
@@ -169,57 +211,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         mesh_data.indices.push(offset+2);
 
                         offset += 4;
-                    }
-
-                    let neighbor_dirs = [
-                        Point::x(),
-                        -Point::x(),
-                        Point::z(),
-                        -Point::z(),
-                    ];
-
-                    let mut draw_sides: HashSet<Point> = HashSet::new();
-
-                    for dir in &neighbor_dirs {
-
-                        let neighbor = top + dir;
-
-                        // godot_print!("top = {:?} neighbor = {:?}", top, neighbor);
-
-                        match map_data.octree.query_point(neighbor) {
-                            Some(_) => continue,
-                            None => {
-                                // godot_print!("point {:?} checking if map data contains {:?}", point, neighbor);
-                                // godot_print!("map_data min {:?} map_data max {:?}", map_data.octree.get_aabb().get_min(), map_data.octree.get_aabb().get_max());
-
-                                match map_data.octree.get_aabb().contains_point(neighbor) {
-                                    false => {
-                                        let chunk_point_dir = map_data.get_chunk_point() + dir;
-
-                                        let chunk_point_dir_query = <Read<MapChunkData>>::query()
-                                            .filter(tag_value(&chunk_point_dir));
-                                            // godot_print!("point {:?} looking for chunk {:?}", point, chunk_point_dir);
-
-                                        match chunk_point_dir_query.iter(world).next() {
-                                            Some(map_data) => {
-                                                
-                                                // godot_print!("point {:?} found chunk {:?}", point, chunk_point_dir);
-
-                                                match map_data.octree.query_point(neighbor) {
-                                                    Some(_) => continue,
-                                                    None => {
-                                                        draw_sides.insert(*dir);
-                                                    }
-                                                }
-
-                                            },
-                                            None => { draw_sides.insert(*dir); }
-                                        }
-                                    },
-                                    true => { draw_sides.insert(*dir); }
-                                }
-                            }
-                        }
                     }
 
                     let mut bottom = point;
@@ -335,9 +326,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
 
                         if draw_sides.contains(&dir) {
-                            // godot_print!("{:?} should be drawing the {:?} side", point, dir);
-
-                            // godot_print!("offset {:?} + begin {:?} = {:?}", offset % indices_len, begin, offset % indices_len + begin);
 
                             let j = offset - begin;
 
@@ -605,4 +593,3 @@ impl crate::collections::octree::PointData<i32> for TileData {
         self.point
     }
 }
-
