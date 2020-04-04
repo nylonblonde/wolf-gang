@@ -120,7 +120,7 @@ fn overwrite_element() {
     let mut count = 0;
     fill_octree(aabb, &mut octree, &mut count);
 
-    assert!(octree.insert(TileData::new(Point::zeros())));
+    assert!(octree.insert(TileData::new(Point::zeros())).is_ok());
 }
 
 #[test]
@@ -149,8 +149,11 @@ fn fill_octree(aabb: AABB, octree: &mut Octree<i32, TileData>, count: &mut usize
         for y in min.y..max.y+1 {
             for x in min.x..max.x+1 { 
                 *count += 1;
-                if octree.insert(TileData::new(Point::new(x,y,z))) == false {
-                    panic!("Failed to insert at ({}, {}, {})", x,y,z);
+                match octree.insert(TileData::new(Point::new(x,y,z))) {
+                    Ok(_) => {},
+                    Err(err) => {
+                        panic!("{:?}", err);
+                    }
                 }
             }
         }

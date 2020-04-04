@@ -490,13 +490,16 @@ impl Map {
                     
                         let pt = Point::new(x,y,z);
 
-                        if map_chunk.octree.insert(TileData{
+                        match map_chunk.octree.insert(TileData{
                             point: pt,
                             ..tile_data
                         }) {
+                            Ok(_) => {
                             // println!("Inserted {:?}", pt);
-                        } else {
-                            println!("Failed to insert {:?}", pt);
+                            },
+                            Err(err) => {
+                                println!("{:?}", err);
+                            }
                         }
                     }
 

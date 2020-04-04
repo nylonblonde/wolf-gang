@@ -1,6 +1,8 @@
 use core::fmt::Debug;
 use std::ops::{AddAssign, SubAssign, DivAssign};
 use std::slice::Iter;
+use std::error;
+use std::fmt;
 
 use nalgebra::{Scalar, Vector3};
 use num::{Num, NumCast, Signed};
@@ -10,7 +12,7 @@ pub trait PointData<N: Scalar> : Copy {
     fn get_point(&self) -> Vector3<N>;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 #[allow(dead_code)]
 enum Paternity {
     ProudParent,
@@ -44,13 +46,13 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Octree <N: Scalar, T: PointData<N>>{
     aabb: AABB<N>,
     num_elements: usize,
-    elements: [Option<T>; 8],
-    children: Vec<Option<Octree<N, T>>>,
+    elements: [Option<T>; 32],
+    children: Vec<Octree<N, T>>,
     paternity: Paternity
 }
 
@@ -63,9 +65,8 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         Octree {
             aabb,
             num_elements: 0,
-            elements: [Option::<T>::None; 8],
-            children: vec![None, None, None, None, 
-                            None, None, None, None], //Going ahead and allocating for the vector
+            elements: [Option::<T>::None; 32],
+            children: Vec::new(),
             paternity: Paternity::ChildFree
         }
     }
@@ -74,10 +75,18 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         self.aabb
     } 
 
-    fn subdivide(&mut self) {
+    fn subdivide(&mut self) -> Result<(), SubdivisionError<N>> {
 
+        let zero: N = NumCast::from(0).unwrap();
         let one: N = NumCast::from(1).unwrap();
         let two: N = NumCast::from(2).unwrap();
+
+        // Hacky way of checking if it's an integer and then adjusting min so all values behave like indices
+        let adj = if one/two == zero {
+            one
+        } else {
+            zero
+        };
 
         let min = self.aabb.get_min();
         let max = self.aabb.get_max();
@@ -87,114 +96,134 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         let smaller_half = dimensions/two;
         let larger_half = dimensions - smaller_half;
 
-        println!("subdividing at center {:?} : {:?} {:?}", self.aabb.center, min, max);
         //down back left
-        let sub_max = self.aabb.center;
+        let sub_max = min + larger_half;
         let downbackleft = AABB::<N>::from_extents(
             min,
             sub_max
         );
+        self.children.push(Octree::new(downbackleft));
 
-        println!("downbackleft min {:?} max {:?}", downbackleft.get_min(), downbackleft.get_max());
+        if dimensions.x > one {
+            //down back right
+            let sub_min = min + Vector3::new(larger_half.x + adj, zero, zero);
+            let sub_max = Vector3::new(
+                max.x, sub_min.y + larger_half.y, sub_min.z + larger_half.z
+            );
 
-        //down back right
-        let sub_min = Vector3::new(min.x + downbackleft.dimensions.x, min.y, min.z);
-        let sub_max = Vector3::new(
-            max.x, sub_min.y + self.aabb.center.y - min.y, sub_min.z + self.aabb.center.z - min.z
-        );
+            let downbackright = AABB::<N>::from_extents(
+                sub_min,
+                sub_max
+            );
+            self.children.push(Octree::new(downbackright));
 
-        let downbackright = AABB::<N>::from_extents(
-            sub_min,
-            sub_max
-        );
+            if dimensions.z > one {
+                //down forward right
+                let sub_min = min + Vector3::new(larger_half.x + adj, zero, larger_half.z + adj);
+                let sub_max = Vector3::new(
+                    max.x, sub_min.y + larger_half.y, max.z
+                );
+                let downforwardright = AABB::<N>::from_extents(
+                    sub_min,
+                    sub_max
+                );
+                self.children.push(Octree::new(downforwardright));
 
-        println!("downbackright min {:?} max {:?}", downbackright.get_min(), downbackright.get_max());
+                if dimensions.y > one {
+                    //up forward right
+                    let sub_min = min + Vector3::new(larger_half.x + adj, larger_half.y + adj, larger_half.z + adj);
+                    let upforwardright = AABB::<N>::from_extents(
+                        sub_min,
+                        max
+                    );
+                    self.children.push(Octree::new(upforwardright));
+                }
+            }
+        }
 
-        //down forward left
-        let sub_min = Vector3::new(min.x, min.y, min.z + downbackleft.dimensions.z);
-        let sub_max = Vector3::new(
-            sub_min.x + self.aabb.center.x - min.x, sub_min.y + self.aabb.center.y - min.y, max.z
-        );
+        if dimensions.z > one {
+            //down forward left
+            let sub_min = min + Vector3::new(zero, zero, larger_half.z + adj);
+            let sub_max = Vector3::new(
+                sub_min.x + larger_half.x, sub_min.y + larger_half.y, max.z
+            );
 
-        let downforwardleft = AABB::<N>::from_extents(
-            sub_min, 
-            sub_max
-        );
+            let downforwardleft = AABB::<N>::from_extents(
+                sub_min, 
+                sub_max
+            );
+            self.children.push(Octree::new(downforwardleft));
 
-        println!("downforwardleft min {:?} max {:?}", downforwardleft.get_min(), downforwardleft.get_max());
+            if dimensions.y > one {
+                //up forward left
+                let sub_min = min + Vector3::new(zero, larger_half.y + adj, larger_half.z + adj);
+                let sub_max = Vector3::new(
+                    sub_min.x + larger_half.x, max.y, max.z
+                );
+                let upforwardleft = AABB::<N>::from_extents(
+                    sub_min,
+                    sub_max
+                );
+                self.children.push(Octree::new(upforwardleft));
+            }
+        }
 
-        let sub_min = Vector3::new(min.x + downbackleft.dimensions.x, min.y, min.z + downbackleft.dimensions.z);
-        let sub_max = Vector3::new(
-            max.x, sub_min.y + self.aabb.center.y - min.y, max.z
-        );
-        let downforwardright = AABB::<N>::from_extents(
-            sub_min,
-            sub_max
-        );
+        if dimensions.y > one {
+            //up back left
+            let sub_min = min + Vector3::new(zero, larger_half.y + adj, zero);
+            let sub_max = Vector3::new(
+                sub_min.x + larger_half.x, max.y, sub_min.z + larger_half.z
+            );
+            let upbackleft = AABB::<N>::from_extents(
+                sub_min,
+                sub_max
+            );
+            self.children.push(Octree::new(upbackleft));
 
-        println!("downforwardright min {:?} max {:?}", downforwardright.get_min(), downforwardright.get_max());
-
-        let sub_min = Vector3::new(min.x, min.y + downbackleft.dimensions.y, min.z);
-        let sub_max = Vector3::new(
-            sub_min.x + self.aabb.center.x - min.x, max.y, sub_min.z + self.aabb.center.z - min.z
-        );
-        let upbackleft = AABB::<N>::from_extents(
-            sub_min,
-            sub_max
-        );
-
-        println!("upbackleft min {:?} max {:?}", upbackleft.get_min(), upbackleft.get_max());
-
-        let sub_min = Vector3::new(min.x + downbackleft.dimensions.x, min.y + downbackleft.dimensions.y, min.z);
-        let sub_max = Vector3::new(
-            max.z, max.y, sub_min.z + self.aabb.center.z - min.z
-        );
-        let upbackright = AABB::<N>::from_extents(
-            sub_min,
-            sub_max
-        );
-
-        println!("upbackright min {:?} max {:?}", upbackright.get_min(), upbackright.get_max());
-        
-        let sub_min = Vector3::new(min.x, min.y + downbackleft.dimensions.y, min.z + downbackleft.dimensions.z);
-        let sub_max = Vector3::new(
-            sub_min.x + self.aabb.center.x - min.x, max.y, max.z
-        );
-        let upforwardleft = AABB::<N>::from_extents(
-            sub_min,
-            sub_max
-        );
-
-        println!("upforwardleft min {:?} max {:?}", upforwardleft.get_min(), upforwardleft.get_max());
-
-        let sub_min = min + downbackleft.dimensions;
-        let upforwardright = AABB::<N>::from_extents(
-            sub_min,
-            max
-        );
-
-        println!("upforwardright min {:?} max {:?}", upforwardright.get_min(), upforwardright.get_max());
-
-        self.children[0] = Some(Octree::new(downbackleft));
-        self.children[1] = Some(Octree::new(downbackright));
-        self.children[2] = Some(Octree::new(downforwardleft));
-        self.children[3] = Some(Octree::new(downforwardright));
-        self.children[4] = Some(Octree::new(upbackleft));
-        self.children[5] = Some(Octree::new(upbackright));
-        self.children[6] = Some(Octree::new(upforwardleft));
-        self.children[7] = Some(Octree::new(upforwardright));
+            if dimensions.x > one {
+                //up back right
+                let sub_min = min + Vector3::new(larger_half.x + adj, larger_half.y + adj, zero);
+                let sub_max = Vector3::new(
+                    max.x, max.y, sub_min.z + larger_half.z
+                );
+                let upbackright = AABB::<N>::from_extents(
+                    sub_min,
+                    sub_max
+                );
+                self.children.push(Octree::new(upbackright));
+            }
+        }
         
         self.paternity = Paternity::ProudParent;
 
+        let mut total_volume = zero;
+        for child in &self.children {
+            total_volume= total_volume + child.aabb.dimensions.x * child.aabb.dimensions.y * child.aabb.dimensions.z;
+        }
+
+        let volume = dimensions.x * dimensions.y * dimensions.z;
+
+        if total_volume == volume {
+            Ok({})
+        } else {
+            Err(
+                SubdivisionError{
+                    error_type: SubdivisionErrorType::IncorrectDimensions(total_volume, volume)
+                }
+            )
+        }
     }
 
-    pub fn insert(&mut self, element: T) -> bool{  
+    pub fn insert(&mut self, element: T) -> Result<(), InsertionError<N>>{  
 
         let pt = element.get_point();
 
         if !self.aabb.contains_point(pt) {
-            // println!("{:?} didn't fit between {:?} and {:?}",element.get_point(), self.aabb.get_min(), self.aabb.get_max());
-            return false
+            return Err(
+                InsertionError{
+                    error_type: InsertionErrorType::OutOfBounds(self.aabb)
+                }
+            )
         }
 
         //if element already exists at point, replace it
@@ -202,7 +231,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
             match el {
                 Some(r) if r.get_point() == pt => {
                     *el = Some(*r);
-                    return true
+                    return Ok({})
                 },
                 _ => {}
             }
@@ -215,11 +244,16 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
                 self.num_elements = self.num_elements + 1;
                 // println!("Inserted {:?} between {:?} and {:?} at position {}", element.get_point(), self.aabb.get_min(), self.aabb.get_max(), self.num_elements);
 
-                return true;
+                return Ok({});
             }
 
             Paternity::ChildFree => { 
-                self.subdivide();
+                match self.subdivide() {
+                    Ok(_) => {},
+                    Err(err) => {
+                        panic!("{:?}", err);
+                    }
+                }
             }
             
             _ => {}
@@ -229,19 +263,33 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         return match &self.paternity {
 
             Paternity::ProudParent => {
-                for i in 0..self.children.len() {
+
+                let mut result = Err(
+                    InsertionError {
+                        error_type: InsertionErrorType::BlockFull(self.aabb)
+                    }
+                );
+
+                for child in &mut self.children {
                     
                     //only return true if true because we need to check all of them
-                    if self.children[i].as_mut().unwrap().insert(element) == true {
-                        return true;
+                    
+                    match child.insert(element) {
+                        Ok(_) => return Ok({}),
+                        Err(err) => { result = Err(err) }
                     }
+                        
                             
                 }
 
-                false
+                result
             }
 
-            _ => false
+            _ => Err(
+                InsertionError {
+                    error_type: InsertionErrorType::Empty
+                }
+            )
         }
     }
 
@@ -259,7 +307,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
             Paternity::ChildFree => count,
             Paternity::ProudParent => {
                 for child in &self.children {
-                    count += child.as_ref().unwrap().count();
+                    count += child.count();
                 }
                 count
             }
@@ -289,15 +337,15 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         }
 
 
-        for child_option in &self.children {
-            if let Some(child) = child_option {
-                let child_query = child.query_point(point);
+        for child in &self.children {
 
-                if child_query.is_some() {
+            let child_query = child.query_point(point);
 
-                    return child_query; 
-                }
+            if child_query.is_some() {
+
+                return child_query; 
             }
+            
         }
 
         None
@@ -331,12 +379,56 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
             return elements_in_range
         }
 
-        for child_option in &self.children {
-            if let Some(child) = child_option {
-                elements_in_range.append(&mut child.query_range(range));
-            }
+        for child in &self.children {
+            elements_in_range.append(&mut child.query_range(range));
         }
 
         elements_in_range
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum SubdivisionErrorType<N: Scalar> {
+    IncorrectDimensions(N, N)
+}
+
+#[derive(Debug, Clone)]
+pub struct SubdivisionError<N: Scalar> {
+    error_type: SubdivisionErrorType<N>
+}
+
+impl<N: Scalar> fmt::Display for SubdivisionError<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.error_type)
+    }
+}
+
+impl<N: Scalar> error::Error for SubdivisionError<N> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        None
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum InsertionErrorType<N: Scalar> {
+    Empty,
+    BlockFull(AABB<N>),
+    OutOfBounds(AABB<N>),
+}
+
+#[derive(Debug, Clone)]
+pub struct InsertionError<N: Scalar> {
+    error_type: InsertionErrorType<N>
+}
+
+impl<N: Scalar> fmt::Display for InsertionError<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.error_type)
+    }
+}
+
+impl<N: Scalar> error::Error for InsertionError<N> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        None
     }
 }
