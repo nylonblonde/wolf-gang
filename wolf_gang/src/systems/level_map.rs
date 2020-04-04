@@ -112,9 +112,12 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                                 match chunk_point_above_query.iter(world).next() {
                                     Some(map_data) => {
-                                        
+
                                         match map_data.octree.query_point(point_above) {
-                                            Some(_) => { draw_top = false; },
+                                            Some(_) => { 
+                                                draw_top = false; 
+                                                break
+                                            },
                                             None => break
                                         }
 
@@ -169,10 +172,66 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         offset += 4;
                     }
 
-                    let mut draw_bottom: bool = true;
+                    let neighbor_dirs = [
+                        Point::x(),
+                        -Point::x(),
+                        Point::z(),
+                        -Point::z(),
+                    ];
+
+                    let mut draw_sides: HashSet<Point> = HashSet::new();
+
+                    for dir in &neighbor_dirs {
+
+                        let neighbor = top + dir;
+
+                        // godot_print!("top = {:?} neighbor = {:?}", top, neighbor);
+
+                        match map_data.octree.query_point(neighbor) {
+                            Some(_) => continue,
+                            None => {
+                                // godot_print!("point {:?} checking if map data contains {:?}", point, neighbor);
+                                // godot_print!("map_data min {:?} map_data max {:?}", map_data.octree.get_aabb().get_min(), map_data.octree.get_aabb().get_max());
+
+                                match map_data.octree.get_aabb().contains_point(neighbor) {
+                                    false => {
+                                        let chunk_point_dir = map_data.get_chunk_point() + dir;
+
+                                        let chunk_point_dir_query = <Read<MapChunkData>>::query()
+                                            .filter(tag_value(&chunk_point_dir));
+                                            // godot_print!("point {:?} looking for chunk {:?}", point, chunk_point_dir);
+
+                                        match chunk_point_dir_query.iter(world).next() {
+                                            Some(map_data) => {
+                                                
+                                                // godot_print!("point {:?} found chunk {:?}", point, chunk_point_dir);
+
+                                                match map_data.octree.query_point(neighbor) {
+                                                    Some(_) => continue,
+                                                    None => {
+                                                        draw_sides.insert(*dir);
+                                                    }
+                                                }
+
+                                            },
+                                            None => { draw_sides.insert(*dir); }
+                                        }
+                                    },
+                                    true => { draw_sides.insert(*dir); }
+                                }
+                            }
+                        }
+                    }
+
+                    // godot_print!("Drawing for {:?}", point);
+                    // for side in &draw_sides {
+                    //     godot_print!("draw {:?}", side);
+                    // }
 
                     let mut bottom = point;
                     let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;
+                    
+                    let mut draw_bottom: bool = true;
 
                     for y in (chunk_bottom_y-1..point.y+1).rev() {
                         bottom.y = y;
@@ -213,55 +272,113 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let top = world_point.y + TILE_DIMENSIONS.y;
                     let height = top - bottom;
 
-                    let center = Vector3D::new(world_point.x, 0., world_point.z) + Vector3D::new(TILE_DIMENSIONS.x as f32, 0., TILE_DIMENSIONS.z as f32) / 2.;
+                    let center = (Vector3::new(world_point.x, 0., world_point.z) * 2. + Vector3::new(TILE_DIMENSIONS.x as f32, 0., TILE_DIMENSIONS.z as f32)) / 2.;
 
                     let border_points_len = border_points.len();
+                    let begin = offset;
+                    let indices_len = border_points_len as i32 * 2;
+                    let mut index_count = offset;
 
                     //define the sides
                     for i in 0..border_points_len {
                         
-                        // if i < border_points_len {
-                            let border_point = border_points.get(i).unwrap();
+                        let border_point = border_points.get(i).unwrap();
 
-                            //top
-                            mesh_data.verts.push(&border_point);
+                        //get the direction
+                        let next_i = (i+1) % border_points_len;
+                        let next_point = border_points.get(next_i).unwrap();
 
-                            //bottom
-                            mesh_data.verts.push(&(*border_point - Vector3::new(0., height, 0.)));
+                        let right_dir = Vector3::new(1.,0.,0.);
+                        let forward_dir = Vector3::new(0.,0.,1.);
+                        let back_dir = -forward_dir;
+                        let left_dir = -right_dir;
 
-                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        let mut average = (*border_point + *next_point) / 2.;
+                        average.y = 0.;
+                    
 
-                            let uv_width = 1.; //num::Float::max(top_right.x - top_left.x, top_right.z - top_left.z);
+                        let average_dir = (average - center).normalize();
 
-                            if i % 2 == 0 {
-                                mesh_data.uvs.push(&Vector2::new(0.,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
-                                mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
-                            } else {
-                                mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
-                                mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-bottom * TILE_SIZE));
+                        let dir = std::cmp::max_by(forward_dir, 
+                            std::cmp::max_by(left_dir, 
+                                std::cmp::max_by(back_dir, 
+                                    right_dir, |lh, rh|{
+                                        // godot_print!("lh = {:?} rh = {:?} lh dot = {:?} rh dot = {:?}", lh, rh, lh.dot(average_dir), rh.dot(average_dir));
+                                        lh.dot(average_dir).partial_cmp(&rh.dot(average_dir)).unwrap()
+                                    }), 
+                                |lh, rh| {
+                                    // godot_print!("lh = {:?} rh = {:?} lh dot = {:?} rh dot = {:?}", lh, rh, lh.dot(average_dir), rh.dot(average_dir));
+
+                                    lh.dot(average_dir).partial_cmp(&rh.dot(average_dir)).unwrap()
+                                }), 
+                            |lh, rh| {
+                                // godot_print!("lh = {:?} rh = {:?} lh dot = {:?} rh dot = {:?}", lh, rh, lh.dot(average_dir), rh.dot(average_dir));
+
+                                lh.dot(average_dir).partial_cmp(&rh.dot(average_dir)).unwrap()
                             }
-                            offset += 2;
+                        );
+
+                        let dir = Point::new(dir.x as i32, dir.y as i32, dir.z as i32);
+                        // godot_print!("average_dir = {:?} dir = {:?}", average_dir, dir);
+
+                        //top
+                        mesh_data.verts.push(&border_point);
+
+                        //bottom
+                        mesh_data.verts.push(&(*border_point - Vector3::new(0., height, 0.)));
+
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                        let uv_width = 1.; //num::Float::max(top_right.x - top_left.x, top_right.z - top_left.z);
+
+                        if i % 2 == 0 {
+                            mesh_data.uvs.push(&Vector2::new(0.,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                            mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
+                        } else {
+                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-bottom * TILE_SIZE));
+                        }
+
+                        if draw_sides.contains(&dir) {
+                            // godot_print!("{:?} should be drawing the {:?} side", point, dir);
+
+                            // godot_print!("offset {:?} + begin {:?} = {:?}", offset % indices_len, begin, offset % indices_len + begin);
+
+                            let j = offset - begin;
+
+                            mesh_data.indices.push(j % indices_len + begin);
+                            mesh_data.indices.push((j+1) % indices_len + begin);
+                            mesh_data.indices.push((j+2) % indices_len + begin);
+
+                            mesh_data.indices.push((j+2) % indices_len + begin);
+                            mesh_data.indices.push((j+1) % indices_len + begin);
+                            mesh_data.indices.push((j+3) % indices_len + begin);
+
+                        } else {
+                            // godot_print!("{:?} is not drawing {:?}", point, dir);
+                        }
+
+                        offset += 2;
+                        // len += 2;
 
                     }
 
-                    let len = border_points_len as i32 * 2;
+                    // let end = mesh_data.verts.len();
+                    // let begin = end - len;
 
-                    let end = mesh_data.verts.len();
-                    let begin = end - len;
+                    // let mut i = 0;
+                    // while i < len {
+                    //     mesh_data.indices.push(i % len + begin);
+                    //     mesh_data.indices.push((i+1) % len + begin);
+                    //     mesh_data.indices.push((i+2) % len + begin);
 
-                    let mut i = 0;
-                    while i < len {
-                        mesh_data.indices.push(i % len + begin);
-                        mesh_data.indices.push((i+1) % len + begin);
-                        mesh_data.indices.push((i+2) % len + begin);
-
-                        mesh_data.indices.push((i+2) % len + begin);
-                        mesh_data.indices.push((i+1) % len + begin);
-                        mesh_data.indices.push((i+3) % len + begin);
-                        i += 2;
-                    }
-
+                    //     mesh_data.indices.push((i+2) % len + begin);
+                    //     mesh_data.indices.push((i+1) % len + begin);
+                    //     mesh_data.indices.push((i+3) % len + begin);
+                    //     i += 2;
+                    // }
+                    
                 }
             }
         }
@@ -303,27 +420,23 @@ impl Map {
     pub fn insert(&self, world: &mut legion::world::World, tile_data: TileData, aabb: AABB) {
 
         let min = aabb.get_min();
-        let max = aabb.get_max() - Point::new(1,1,1);
-
-        println!("center: {:?} dim: {:?}", aabb.center, aabb.dimensions);
+        let max = aabb.get_max();
 
         let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
         let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
         let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
 
-        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32;
-        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32;
-        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32;
+        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
+        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
+        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
 
         let mut entities: Vec<Entity> = Vec::new();
 
         let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
 
-        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) + Point::new(1,1,1) - min_chunk;
+        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) - min_chunk;
 
         let volume = dimensions.x * dimensions.y * dimensions.z;
-
-        godot_print!("dimensions {:?}", dimensions);
 
         for i in 0..volume {
             let x = x_min_chunk + i % dimensions.x;
@@ -379,22 +492,18 @@ impl Map {
                 Some(mut map_chunk) => {
                     let chunk_aabb = map_chunk.octree.get_aabb();
                     let chunk_min = chunk_aabb.get_min();
-                    let chunk_max = chunk_aabb.get_max() - Point::new(1,1,1);
+                    let chunk_max = chunk_aabb.get_max();
 
                     let min_x = std::cmp::max(chunk_min.x, min.x);
                     let min_y = std::cmp::max(chunk_min.y, min.y);
                     let min_z = std::cmp::max(chunk_min.z, min.z);
 
-                    let max_x = std::cmp::min(chunk_max.x, max.x);
-                    let max_y = std::cmp::min(chunk_max.y, max.y);
-                    let max_z = std::cmp::min(chunk_max.z, max.z);
-
-                    godot_print!("Range of z is {} to {}", min_z, max_z+1);
-                    godot_print!("Range of y is {} to {}", min_y, max_y+1);
-                    godot_print!("Range of x is {} to {}", min_x, max_x+1);
+                    let max_x = std::cmp::min(chunk_max.x, max.x) + 1;
+                    let max_y = std::cmp::min(chunk_max.y, max.y) + 1;
+                    let max_z = std::cmp::min(chunk_max.z, max.z) + 1;
 
                     let min = Point::new(min_x, min_y, min_z);
-                    let dimensions = Point::new(max_x, max_y, max_z) + Point::new(1,1,1) - min;
+                    let dimensions = Point::new(max_x, max_y, max_z) - min;
                     let volume = dimensions.x * dimensions.y * dimensions.z;
 
                     for i in 0..volume {
@@ -499,7 +608,7 @@ impl MapChunkData {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TileData {
     point: Point
 }

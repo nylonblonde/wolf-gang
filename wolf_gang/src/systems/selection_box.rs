@@ -442,7 +442,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
                 let mut offset = 0;
 
                 let min = level_map::map_coords_to_world(selection_box.aabb.get_min()) - level_map::map_coords_to_world(selection_box.aabb.center);
-                let max = level_map::map_coords_to_world(selection_box.aabb.get_max()) - level_map::map_coords_to_world(selection_box.aabb.center);
+                let max = level_map::map_coords_to_world(selection_box.aabb.get_max() + Point::new(1,1,1)) - level_map::map_coords_to_world(selection_box.aabb.center);
 
                 let true_center = (max + min) / 2.0;
                 let true_dimensions = level_map::map_coords_to_world(selection_box.aabb.dimensions);

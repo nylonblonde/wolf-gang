@@ -17,34 +17,69 @@ impl<F: Signed + Scalar + Num + NumCast + Ord> AABB<F> {
         }
     }
 
+    pub fn from_extents(min: Vector3<F>, max: Vector3<F>) -> Self {
+        let two: F = NumCast::from(2).unwrap();
+        let one: F = NumCast::from(1).unwrap();
+        let zero: F = NumCast::from(0).unwrap();
+
+        let mut dimensions = Vector3::new(
+            max.x - min.x,
+            max.y - min.y,
+            max.z - min.z
+        );
+
+        //hacky way to check if F is int, since max is inclusive
+        if one/two == zero {
+            dimensions.x = dimensions.x + one;
+            dimensions.y = dimensions.y + one;
+            dimensions.z = dimensions.z + one;
+        }
+
+        let center = Vector3::new(
+            min.x + dimensions.x/two,
+            min.y + dimensions.y/two,
+            min.z + dimensions.z/two
+        );
+
+        Self {
+            center,
+            dimensions
+        }
+    }
+
     pub fn get_min(&self) -> Vector3<F> {
 
-        let max = self.get_max();
-
+        let dimensions = self.dimensions.abs();
+        let two: F = NumCast::from(2).unwrap();
         Vector3::new(
-            max.x - self.dimensions.x.abs(),
-            max.y - self.dimensions.y.abs(),
-            max.z - self.dimensions.z.abs()
+            self.center.x - dimensions.x/two,
+            self.center.y - dimensions.y/two,
+            self.center.z - dimensions.z/two,
         )
     }
 
     pub fn get_max(&self) -> Vector3<F> {
-        //We perform this match in case our format is Int, and 1/2 == 0
-        let x = match self.center.x + self.dimensions.x.abs()/ NumCast::from(2).unwrap() {
-            x if self.center.x == x => { self.center.x + self.dimensions.x.abs() },
-            x => x
-        };
-        let y = match self.center.y + self.dimensions.y.abs()/ NumCast::from(2).unwrap() {
-            y if self.center.y == y => { self.center.y + self.dimensions.y.abs() },
-            y => y
-        };
-        let z = match self.center.z + self.dimensions.z.abs()/ NumCast::from(2).unwrap() {
-            z if self.center.z == z => { self.center.z + self.dimensions.z.abs() },
-            z => z
-        };
-        Vector3::new(
-            x,y,z
-        )
+
+        let dimensions = self.dimensions.abs();
+        let two: F = NumCast::from(2).unwrap();
+        let one: F = NumCast::from(1).unwrap();
+        let zero: F = NumCast::from(0).unwrap();
+        let min = self.get_min();
+
+        let mut max = Vector3::new(
+            min.x + dimensions.x,
+            min.y + dimensions.y,
+            min.z + dimensions.z
+        );
+
+        //hacky way to check if F is int, since max is inclusive
+        if one/two == zero {
+            max.x = max.x - one;
+            max.y = max.y - one;
+            max.z = max.z - one;
+        }
+
+        max
     }
 
     pub fn intersects_bounds(&self, other: AABB<F>) -> bool{

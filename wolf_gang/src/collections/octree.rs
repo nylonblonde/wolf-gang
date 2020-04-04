@@ -1,3 +1,4 @@
+use core::fmt::Debug;
 use std::ops::{AddAssign, SubAssign, DivAssign};
 use std::slice::Iter;
 
@@ -31,7 +32,7 @@ impl<'a, N: Scalar, T: PointData<N>> Iterator for OctreeIter<N, T> {
     }
 }
 
-impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N>> IntoIterator for Octree<N, T> {
+impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N> + Debug> IntoIterator for Octree<N, T> {
     type Item = T;
     type IntoIter = OctreeIter<N, T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -54,7 +55,7 @@ pub struct Octree <N: Scalar, T: PointData<N>>{
 }
 
 #[allow(dead_code)]
-impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N>> Octree<N, T> {
+impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N> + Debug> Octree<N, T> {
 
     pub fn new(aabb: AABB<N>) -> Octree<N, T> {
         println!("Creating new Octree with a min of {:?} and a max of {:?}", aabb.get_min(), aabb.get_max());
@@ -75,69 +76,104 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
 
     fn subdivide(&mut self) {
 
+        let one: N = NumCast::from(1).unwrap();
+        let two: N = NumCast::from(2).unwrap();
+
         let min = self.aabb.get_min();
         let max = self.aabb.get_max();
 
-        let smaller_half = self.aabb.dimensions/NumCast::from(2).unwrap();
-        let larger_half = self.aabb.dimensions - smaller_half;
+        let dimensions = self.aabb.dimensions.abs();
 
-        //This gets very complicated as we need to account for if the format is integer, and can't
-        //be halved properly. Any max values have to be the full dimensions minus the small side's max
-
-        let downbackleft = AABB::<N>::new(
-            self.aabb.center + (min - self.aabb.center)/NumCast::from(2).unwrap(), 
-            larger_half
-        );
+        let smaller_half = dimensions/two;
+        let larger_half = dimensions - smaller_half;
 
         println!("subdividing at center {:?} : {:?} {:?}", self.aabb.center, min, max);
-        println!("larger_half.x: {:?}, smaller_half.x: {:?}", larger_half.x, smaller_half.x);
-                
-        let downbackright = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(max.x, min.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
-            Vector3::new(
-                smaller_half.x, larger_half.y, larger_half.z
-            )
+        //down back left
+        let sub_max = min + (self.aabb.center - min);
+        let downbackleft = AABB::<N>::from_extents(
+            min,
+            sub_max
         );
 
-        let downforwardleft = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(min.x, min.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
-            Vector3::new(
-                larger_half.x, larger_half.y, smaller_half.z
-            )
+        println!("downbackleft min {:?} max {:?}", downbackleft.get_min(), downbackleft.get_max());
+
+        //down back right
+        let sub_min = Vector3::new(min.x + downbackleft.dimensions.x, min.y, min.z);
+        let sub_max = Vector3::new(
+            max.x, sub_min.y + self.aabb.center.y - min.y, sub_min.z + self.aabb.center.z - min.z
         );
 
-        let downforwardright = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(max.x, min.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
-            Vector3::new(
-                smaller_half.x, larger_half.y, smaller_half.z
-            )
+        let downbackright = AABB::<N>::from_extents(
+            sub_min,
+            sub_max
         );
 
-        let upbackleft = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(min.x, max.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
-            Vector3::new(
-                larger_half.x, smaller_half.y, larger_half.z
-            )
+        println!("downbackright min {:?} max {:?}", downbackright.get_min(), downbackright.get_max());
+
+        //down forward left
+        let sub_min = Vector3::new(min.x, min.y, min.z + downbackleft.dimensions.z);
+        let sub_max = Vector3::new(
+            sub_min.x + self.aabb.center.x - min.x, sub_min.y + self.aabb.center.y - min.y, max.z
         );
 
-        let upbackright = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(max.x, max.y, min.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
-            Vector3::new(
-                smaller_half.x, smaller_half.y, larger_half.z
-            )
+        let downforwardleft = AABB::<N>::from_extents(
+            sub_min, 
+            sub_max
         );
 
-        let upforwardleft = AABB::<N>::new(
-            self.aabb.center + (Vector3::new(min.x, max.y, max.z) - self.aabb.center)/NumCast::from(2).unwrap(), 
-            Vector3::new(
-                larger_half.x, smaller_half.y, smaller_half.z
-            )
+        println!("downforwardleft min {:?} max {:?}", downforwardleft.get_min(), downforwardleft.get_max());
+
+        let sub_min = Vector3::new(min.x + downbackleft.dimensions.x, min.y, min.z + downbackleft.dimensions.z);
+        let sub_max = Vector3::new(
+            max.x, sub_min.y + self.aabb.center.y - min.y, max.z
+        );
+        let downforwardright = AABB::<N>::from_extents(
+            sub_min,
+            sub_max
         );
 
-        let upforwardright = AABB::<N>::new(
-            self.aabb.center + (max - self.aabb.center)/NumCast::from(2).unwrap(), 
-            smaller_half
+        println!("downforwardright min {:?} max {:?}", downforwardright.get_min(), downforwardright.get_max());
+
+        let sub_min = Vector3::new(min.x, min.y + downbackleft.dimensions.y, min.z);
+        let sub_max = Vector3::new(
+            sub_min.x + self.aabb.center.x - min.x, max.y, sub_min.z + self.aabb.center.z - min.z
         );
+        let upbackleft = AABB::<N>::from_extents(
+            sub_min,
+            sub_max
+        );
+
+        println!("upbackleft min {:?} max {:?}", upbackleft.get_min(), upbackleft.get_max());
+
+        let sub_min = Vector3::new(min.x + downbackleft.dimensions.x, min.y + downbackleft.dimensions.y, min.z);
+        let sub_max = Vector3::new(
+            max.z, max.y, sub_min.z + self.aabb.center.z - min.z
+        );
+        let upbackright = AABB::<N>::from_extents(
+            sub_min,
+            sub_max
+        );
+
+        println!("upbackright min {:?} max {:?}", upbackright.get_min(), upbackright.get_max());
+        
+        let sub_min = Vector3::new(min.x, min.y + downbackleft.dimensions.y, min.z + downbackleft.dimensions.z);
+        let sub_max = Vector3::new(
+            sub_min.x + self.aabb.center.x - min.x, max.y, max.z
+        );
+        let upforwardleft = AABB::<N>::from_extents(
+            sub_min,
+            sub_max
+        );
+
+        println!("upforwardleft min {:?} max {:?}", upforwardleft.get_min(), upforwardleft.get_max());
+
+        let sub_min = min + downbackleft.dimensions;
+        let upforwardright = AABB::<N>::from_extents(
+            sub_min,
+            max
+        );
+
+        println!("upforwardright min {:?} max {:?}", upforwardright.get_min(), upforwardright.get_max());
 
         self.children[0] = Some(Octree::new(downbackleft));
         self.children[1] = Some(Octree::new(downbackright));
@@ -252,11 +288,14 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
             return None
         }
 
+
         for child_option in &self.children {
             if let Some(child) = child_option {
                 let child_query = child.query_point(point);
+                println!("{:?}", child_query);
 
                 if child_query.is_some() {
+
                     return child_query; 
                 }
             }
