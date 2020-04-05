@@ -37,6 +37,7 @@ pub const TILE_DIMENSIONS: TileDimensions = TileDimensions {x: 1.0, y: 0.25, z: 
 pub const TILE_PIXELS: f32 = 64.;
 pub const SHEET_PIXELS: f32 = 1024.;
 pub const TILE_SIZE: f32 = TILE_PIXELS/SHEET_PIXELS;
+pub const BEVEL_SIZE: f32 = 0.1;
 
 pub fn create_add_material_system() -> Box<dyn Schedulable> {
     SystemBuilder::new("map_add_material_system")
@@ -55,19 +56,57 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
         })
 }
 
-pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
-    let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>)>::query()
-        .filter(changed::<MapChunkData>());
-    
-    Box::new(move |world, _| {
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ChangeType {
+    Direct,
+    Indirect
+}
 
-        let mut changed: Vec<Entity> = Vec::new();
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct ManuallyChange(ChangeType);
+
+pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
+    let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>, Tagged<ManuallyChange>)>::query();
+    
+    let neighbor_dirs = [
+        Point::x(),
+        -Point::x(),
+        Point::z(),
+        -Point::z(),
+        Point::x()+Point::z(),
+        -Point::x()+Point::z(),
+        -Point::x()-Point::z(),
+        Point::x()+Point::z()
+    ];
+
+    Box::new(move |world, _| {
 
         unsafe {
 
-            for (entity, (map_data, mut mesh_data)) in write_mesh_query.iter_entities_unchecked(world) {
+            //for entities that need to have ManuallyChange added
+            let mut to_change: HashSet<Entity> = HashSet::new();
 
-                changed.push(entity);
+            //for entities that need to have ManuallyChange removed
+            let mut to_changed: HashSet<Entity> = HashSet::new();
+
+            for (entity, (map_data, mut mesh_data, changed)) in write_mesh_query.iter_entities_unchecked(world) {
+
+                to_changed.insert(entity);
+
+                //only manually change neighbors if it is a direct change
+                if changed.0 == ChangeType::Direct {
+                    for dir in &neighbor_dirs {
+                        
+                        let neighbor_chunk_pt = map_data.get_chunk_point() + dir;
+
+                        let neighbor_chunk_query = <Read<MapChunkData>>::query()
+                            .filter(tag_value(&neighbor_chunk_pt));
+
+                        for (entity, _) in neighbor_chunk_query.iter_entities_unchecked(world) {
+                            to_change.insert(entity);
+                        }
+                    }
+                }
 
                 godot_print!("Drawing {:?}", map_data.get_chunk_point());
                 mesh_data.verts = Vector3Array::new();
@@ -127,14 +166,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                     }
 
-                    let neighbor_dirs = [
-                        Point::x(),
-                        -Point::x(),
-                        Point::z(),
-                        -Point::z(),
-                    ];
-
-                    let mut draw_sides: HashSet<Point> = HashSet::new();
+                    let mut open_sides: HashSet<Point> = HashSet::new();
 
                     for dir in &neighbor_dirs {
 
@@ -157,23 +189,25 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                                 match map_data.octree.query_point(neighbor) {
                                                     Some(_) => continue,
                                                     None => {
-                                                        draw_sides.insert(*dir);
+                                                        open_sides.insert(*dir);
                                                     }
                                                 }
 
                                             },
-                                            None => { draw_sides.insert(*dir); }
+                                            None => { open_sides.insert(*dir); }
                                         }
                                     },
-                                    true => { draw_sides.insert(*dir); }
+                                    true => { open_sides.insert(*dir); }
                                 }
                             }
                         }
                     }
 
                     let mut border_points: Vec<Vector3> = Vec::new();
+                    let mut face_points: Vec<Vector3> = Vec::new();
 
                     let world_point = map_coords_to_world(top);
+                    let center = (Vector3::new(world_point.x, 0., world_point.z) * 2. + Vector3::new(TILE_DIMENSIONS.x as f32, 0., TILE_DIMENSIONS.z as f32)) / 2.;
 
                     let top_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
                     let top_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
@@ -181,21 +215,52 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let bottom_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
 
                     //needs to be added in clockwise or counterclockwise order
-                    border_points.push(top_right);
-                    border_points.push(top_left);
-                    border_points.push(bottom_left);
-                    border_points.push(bottom_right);
+                    face_points.push(top_right);
+                    face_points.push(top_left);
+                    face_points.push(bottom_left);
+                    face_points.push(bottom_right);
+
+                    let face_points_len = face_points.len();
+
+                    for i in 0..face_points_len {
+
+                        let face_point = face_points[i];
+                        let next_i = (i+1) % face_points_len;
+                        let next_point = face_points[next_i];
+
+                        let dir = get_direction_of_edge(face_point, next_point, center);
+
+                        if open_sides.contains(&dir) {
+                            let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, dir.y as f32 * BEVEL_SIZE, dir.z as f32 * BEVEL_SIZE);
+                            face_points[i] = face_point - bevel;
+                            face_points[next_i] = next_point - bevel;
+                        }
+
+                        if i > 0 {
+                            border_points.push(face_points[i]);
+
+                            if i == face_points_len - 1 {
+                                border_points.push(face_points[next_i]);
+                            }
+                        }
+                    }
 
                     if draw_top { 
-                        mesh_data.verts.push(&top_left);
-                        mesh_data.verts.push(&top_right);
-                        mesh_data.verts.push(&bottom_left);
-                        mesh_data.verts.push(&bottom_right);
+                        mesh_data.verts.push(&face_points[1]);
+                        mesh_data.verts.push(&face_points[0]);
+                        mesh_data.verts.push(&face_points[2]);
+                        mesh_data.verts.push(&face_points[3]);
 
-                        mesh_data.uvs.push(&Vector2::new(0.,0.));
-                        mesh_data.uvs.push(&Vector2::new(TILE_SIZE,0.));
-                        mesh_data.uvs.push(&Vector2::new(0.,TILE_SIZE));
-                        mesh_data.uvs.push(&Vector2::new(TILE_SIZE,TILE_SIZE));
+                        let left_offset = (face_points[1].x - top_left.x) * TILE_SIZE;
+                        let right_offset = (top_right.x - face_points[0].x) * TILE_SIZE;
+
+                        let top_offset = (top_left.z - face_points[1].z) * TILE_SIZE;
+                        let bottom_offset = (face_points[2].z - bottom_left.z) * TILE_SIZE;
+
+                        mesh_data.uvs.push(&Vector2::new(left_offset,top_offset));
+                        mesh_data.uvs.push(&Vector2::new(TILE_SIZE - right_offset,top_offset));
+                        mesh_data.uvs.push(&Vector2::new(left_offset,TILE_SIZE - bottom_offset));
+                        mesh_data.uvs.push(&Vector2::new(TILE_SIZE - right_offset,TILE_SIZE - bottom_offset));
 
                         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
                         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
@@ -257,8 +322,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let top = world_point.y + TILE_DIMENSIONS.y;
                     let height = top - bottom;
 
-                    let center = (Vector3::new(world_point.x, 0., world_point.z) * 2. + Vector3::new(TILE_DIMENSIONS.x as f32, 0., TILE_DIMENSIONS.z as f32)) / 2.;
-
                     let border_points_len = border_points.len();
                     let begin = offset;
                     let indices_len = border_points_len as i32 * 2;
@@ -273,37 +336,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         let next_i = (i+1) % border_points_len;
                         let next_point = border_points.get(next_i).unwrap();
 
-                        let right_dir = Vector3::new(1.,0.,0.);
-                        let forward_dir = Vector3::new(0.,0.,1.);
-                        let back_dir = -forward_dir;
-                        let left_dir = -right_dir;
-
-                        let mut average = (*border_point + *next_point) / 2.;
-                        average.y = 0.;
-                    
-
-                        let average_dir = (average - center).normalize();
-
-                        let dir = std::cmp::max_by(forward_dir, 
-                            std::cmp::max_by(left_dir, 
-                                std::cmp::max_by(back_dir, 
-                                    right_dir, |lh, rh|{
-                                        // godot_print!("lh = {:?} rh = {:?} lh dot = {:?} rh dot = {:?}", lh, rh, lh.dot(average_dir), rh.dot(average_dir));
-                                        lh.dot(average_dir).partial_cmp(&rh.dot(average_dir)).unwrap()
-                                    }), 
-                                |lh, rh| {
-                                    // godot_print!("lh = {:?} rh = {:?} lh dot = {:?} rh dot = {:?}", lh, rh, lh.dot(average_dir), rh.dot(average_dir));
-
-                                    lh.dot(average_dir).partial_cmp(&rh.dot(average_dir)).unwrap()
-                                }), 
-                            |lh, rh| {
-                                // godot_print!("lh = {:?} rh = {:?} lh dot = {:?} rh dot = {:?}", lh, rh, lh.dot(average_dir), rh.dot(average_dir));
-
-                                lh.dot(average_dir).partial_cmp(&rh.dot(average_dir)).unwrap()
-                            }
-                        );
-
-                        let dir = Point::new(dir.x as i32, dir.y as i32, dir.z as i32);
+                        let dir = get_direction_of_edge(*border_point, *next_point, center);
                         // godot_print!("average_dir = {:?} dir = {:?}", average_dir, dir);
 
                         //top
@@ -325,7 +358,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-bottom * TILE_SIZE));
                         }
 
-                        if draw_sides.contains(&dir) {
+                        if open_sides.contains(&dir) {
 
                             let j = offset - begin;
 
@@ -346,10 +379,52 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     }
                 }
             }
+
+            for entity in to_change {
+                world.add_tag(entity, ManuallyChange(ChangeType::Indirect)).unwrap();
+            }
+
+            for entity in to_changed {
+                world.remove_tag::<ManuallyChange>(entity).unwrap();
+            }
         }
 
     })
 } 
+
+/// Get the direction the average of two points are from the center. For calculating the orthogonal direction of edges.
+pub fn get_direction_of_edge(pt1: Vector3, pt2: Vector3, center: Vector3) -> Point {
+    let right_dir = Vector3::new(1.,0.,0.);
+    let forward_dir = Vector3::new(0.,0.,1.);
+    let back_dir = -forward_dir;
+    let left_dir = -right_dir;
+
+    let mut average = (pt1 + pt2) / 2.;
+    average.y = 0.;
+
+    let average_dir = (average - center).normalize();
+
+    let dir = std::cmp::max_by(forward_dir, 
+        std::cmp::max_by(left_dir, 
+            std::cmp::max_by(back_dir, 
+                right_dir, |lh, rh|{
+                    // godot_print!("lh = {:?} rh = {:?} lh dot = {:?} rh dot = {:?}", lh, rh, lh.dot(average_dir), rh.dot(average_dir));
+                    lh.dot(average_dir).partial_cmp(&rh.dot(average_dir)).unwrap()
+                }), 
+            |lh, rh| {
+                // godot_print!("lh = {:?} rh = {:?} lh dot = {:?} rh dot = {:?}", lh, rh, lh.dot(average_dir), rh.dot(average_dir));
+
+                lh.dot(average_dir).partial_cmp(&rh.dot(average_dir)).unwrap()
+            }), 
+        |lh, rh| {
+            // godot_print!("lh = {:?} rh = {:?} lh dot = {:?} rh dot = {:?}", lh, rh, lh.dot(average_dir), rh.dot(average_dir));
+
+            lh.dot(average_dir).partial_cmp(&rh.dot(average_dir)).unwrap()
+        }
+    );
+
+    Point::new(dir.x as i32, dir.y as i32, dir.z as i32)
+}
 
 /// Applies the const TILE_DIMENSIONS to each map coord to get its conversion in 3D space.
 pub fn map_coords_to_world(map_coord: Point) -> nalgebra::Vector3<f32> {
@@ -493,7 +568,7 @@ impl Map {
 
         for (entity, map_chunk) in to_add {
             world.add_component(entity, map_chunk).unwrap();
-            // world.add_tag(entity, ManuallyChange(true)).unwrap();
+            world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
         }
     }
 }
