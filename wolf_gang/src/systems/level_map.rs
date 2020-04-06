@@ -158,11 +158,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let mut draw_top: bool = true;
                     let chunk_top_y = map_data.octree.get_aabb().get_max().y;
                     
-                    let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point);
-
-                    let mut open_sides: Option<HashSet<Point>> = None;
-                    let mut previous_open: Option<HashSet<Point>> = None;
-                    let mut current_open: Option<HashSet<Point>> = None;
+                    let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
                     //iterate from this point to either the top or the top of the chunk
                     for y in point.y..chunk_top_y+1 {
@@ -172,7 +168,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         match map_data.octree.query_point(point_above) {
                             Some(_) => {
-                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above);
+                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
 
                                 if curr_sides.symmetric_difference(&point_sides).count() > 0 {
                                     draw_top = false;
@@ -209,7 +205,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     // let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top);
 
-                    let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top);
+                    let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top, &checked);
 
                     let mut border_points: Vec<Vector3> = Vec::with_capacity(12);
 
@@ -226,39 +222,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         if draw_top { 
 
-                            // for i in 0..face_points_len {
-
-                            //     let face_point = face_points[i];
-                            //     let next_i = (i+1) % face_points_len;
-                            //     let next_point = face_points[next_i];
-    
-                            //     let dir = get_direction_of_edge(face_point, next_point, center);
-    
-                            //     if open_sides.contains(&dir) {
-                            //         let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, dir.y as f32 * BEVEL_SIZE, dir.z as f32 * BEVEL_SIZE);
-                            //         face_points[i] = face_point - bevel;
-                            //         face_points[next_i] = next_point - bevel;
-                            //     }
-    
-                            //     if i > 0 {
-                            //         border_points.push(face_points[i]);
-    
-                            //         if i == face_points_len - 1 {
-                            //             border_points.push(face_points[next_i]);
-                            //         }
-                            //     }
-                            // }
-
                             mesh_data.verts.push(&top_left);
                             mesh_data.verts.push(&top_right);
                             mesh_data.verts.push(&bottom_left);
                             mesh_data.verts.push(&bottom_right);
-
-                            // let left_offset = (face_points[1].x - top_left.x) * TILE_SIZE;
-                            // let right_offset = (top_right.x - face_points[0].x) * TILE_SIZE;
-
-                            // let top_offset = (top_left.z - face_points[1].z) * TILE_SIZE;
-                            // let bottom_offset = (face_points[2].z - bottom_left.z) * TILE_SIZE;
 
                             mesh_data.uvs.push(&Vector2::new(0.,0.));
                             mesh_data.uvs.push(&Vector2::new(TILE_SIZE,0.));
@@ -282,7 +249,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                     } else { //if open_sides is not empty, draw a more complex face to account for the bevel
 
-                        let mut face_points: Vec<Vector3> = vec![
+                        let face_points: Vec<Vector3> = vec![
                             top_right + Vector3::new(-BEVEL_SIZE, 0., -BEVEL_SIZE), 
                             top_left + Vector3::new(BEVEL_SIZE, 0., -BEVEL_SIZE), 
                             bottom_left + Vector3::new(BEVEL_SIZE, 0., BEVEL_SIZE), 
@@ -301,27 +268,12 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             let dir = get_direction_of_edge(face_point, next_point, center);
 
                             if open_sides.contains(&dir) {
-                                let mut bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
-
-                                // face_points[i] = face_point + bevel;
-                                // face_points[next_i] = next_point + bevel;
+                                let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
 
                                 bevel_points.push(face_point + bevel);
                                 bevel_points.push(next_point + bevel);
                             }
-
-                            // if i > 0 {
-                                // new_face_points.push(face_points[i]);
-                                // // border_points.push(face_point - Vector3::new(0.,BEVEL_SIZE,0.));
-                                
-                                // // if i == face_points_len - 1 {
-                                //     new_face_points.push(face_points[next_i]);
-                                    // border_points.push(next_point - Vector3::new(0., BEVEL_SIZE, 0.));
-                                // }
-                            // }
                         }
-
-                        // let new_face_points_len = new_face_points.len();
 
                         let mut i = 0;
                         while i < bevel_points.len() {
@@ -332,7 +284,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             let dir = get_direction_of_edge(left, right, center);
 
                             if open_sides.contains(&dir) {
-                                let bevel = Vector3::new(dir.x as f32, 0., dir.z as f32) * BEVEL_SIZE;
 
                                 let side_dir = if dir.x > 0 {
                                     Point::new(0,0,1)
@@ -354,7 +305,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     left += Vector3::new(side_dir.x as f32, 0., side_dir.z as f32) * BEVEL_SIZE;
                                 }
 
-
                                 if draw_top {
                                     left.y -= BEVEL_SIZE / 2.;
                                     right.y -= BEVEL_SIZE / 2.;
@@ -363,17 +313,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 border_points.push(left);
                                 border_points.push(right);
                             } 
-                            
-                            // let next_i = (i+2) % face_points_len;
-                            // let next_left = new_face_points[next_i];
-                            // let next_right = new_face_points[next_i+1];
 
                             i += 2;
                         }
-
-                        // for i in 0..new_face_points_len {
-
-                        // }
 
                     }
 
@@ -387,11 +329,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         let point_below = bottom - Point::y();
                         
-                        // checked.insert(point_below);
-
                         match map_data.octree.query_point(point_below) {
                             Some(_) => {
-                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below);
+                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
 
                                 if curr_sides.symmetric_difference(&point_sides).count() > 0 {
                                     break;
@@ -507,14 +447,18 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
     })
 } 
 
-pub fn get_open_sides(neighbor_dirs: &[Point; 4], world: &legion::world::World, map_data: &MapChunkData, point: Point) -> HashSet<Point> {
+pub fn get_open_sides(neighbor_dirs: &[Point; 4], world: &legion::world::World, map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
     let mut open_sides: HashSet<Point> = HashSet::new();
-    let chunk_max = map_data.octree.get_aabb().get_max();
-    let chunk_min = map_data.octree.get_aabb().get_min();
+    // let chunk_max = map_data.octree.get_aabb().get_max();
+    // let chunk_min = map_data.octree.get_aabb().get_min();
     
     for dir in neighbor_dirs {
 
         let neighbor = point + *dir;
+
+        if checked.contains(&neighbor) {
+            continue;
+        }
 
         match map_data.octree.query_point(neighbor) {
             Some(_) => continue,
@@ -770,55 +714,6 @@ impl MapChunkData {
             (min.y as f32 / dimensions.y as f32).floor() as i32,
             (min.z as f32 / dimensions.z as f32).floor() as i32,
         )
-    }
-
-
-    /// Get the y coordinate where the bottom of the connected tiles sits.
-    fn get_bottom(&self, point: Point, world: &legion::world::World) -> i32 {
-        let chunk_bottom_y = self.octree.get_aabb().get_min().y;
-        let chunk_top_y = self.octree.get_aabb().get_max().y-1;
-        let mut pt = point;
-        
-        // If we're checking from a chunk that is higher up, bring us down to the current chunk
-        if pt.y > chunk_top_y {
-            pt.y = chunk_top_y;
-        }
-
-        let mut bottom: i32 = point.y;
-
-        for y in (chunk_bottom_y-1..pt.y+1).rev() {
-
-            pt.y = y;
-
-            match self.octree.query_point(pt) {
-                Some(_) => {
-                    bottom = pt.y;  
-                },
-                None if y < chunk_bottom_y => {
-
-                    let chunk_point_below = self.get_chunk_point()-Point::y();
-
-                    let map_data_below_query = <Read<MapChunkData>>::query()
-                        .filter(tag_value(&chunk_point_below));
-
-                    match map_data_below_query.iter(world).next() {
-                        Some(map_data) => {
-
-                            let res = map_data.get_bottom(point, world); 
-                            if bottom > res {
-                                bottom = res;
-                            }
-                            break
-
-                        },
-                        None => break
-                    };
-                },
-                None => break
-            }         
-        }
-
-        bottom
     }
 }
 
