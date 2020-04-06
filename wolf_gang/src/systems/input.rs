@@ -361,8 +361,12 @@ pub struct InputActionComponent {
 }
 
 impl InputActionComponent {
+    pub fn is_held(&self) -> bool {
+        self.strength > 0.0 && self.repeater > 0.0
+    }
+
     pub fn just_pressed(&self) -> bool {
-        self.repeater == 0.0
+        self.strength > 0.0 && self.repeater == 0.0
     }
     pub fn just_released(&self) -> bool {
         self.strength == 0.0

@@ -286,7 +286,9 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
         
             for (selection_box, coord_pos) in selection_box_query.iter(world) {
 
-                if input_component.just_pressed() || selection_box_moved_query.iter(world).next().is_some() {
+                let moved = selection_box_moved_query.iter(world).next().is_some();
+
+                if input_component.just_pressed() || (input_component.is_held() && moved) {
                     godot_print!("Pressed confirm at {:?}!", coord_pos.value);
 
                     to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));

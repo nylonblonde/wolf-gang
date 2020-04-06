@@ -3,6 +3,8 @@ use crate::custom_mesh;
 use crate::geometry::aabb;
 use crate::collections::octree::{Octree, PointData};
 
+use std::sync::{Arc, Mutex};
+
 use gdnative::*;
 
 use nalgebra;
@@ -37,7 +39,7 @@ pub const TILE_DIMENSIONS: TileDimensions = TileDimensions {x: 1.0, y: 0.25, z: 
 pub const TILE_PIXELS: f32 = 64.;
 pub const SHEET_PIXELS: f32 = 1024.;
 pub const TILE_SIZE: f32 = TILE_PIXELS/SHEET_PIXELS;
-pub const BEVEL_SIZE: f32 = 0.1;
+pub const BEVEL_SIZE: f32 = 0.2;
 
 pub fn create_add_material_system() -> Box<dyn Schedulable> {
     SystemBuilder::new("map_add_material_system")
@@ -53,6 +55,26 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
                     }
                 });
             }
+        })
+}
+
+#[derive(Clone, Debug, Default)]
+struct OpenSides {
+    sides_map: HashMap<Point, HashSet<Point>>
+}
+
+pub fn create_side_check_system() -> Box<dyn Schedulable> {
+    SystemBuilder::new("side_check_system")
+        .with_query(<(Read<MapChunkData>, Write<OpenSides>, Tagged<ManuallyChange>)>::query()
+        )
+        .build(move |commands, world, resources, query| {
+
+            query.par_for_each_mut(&mut *world, move |(map_data, open_sides, changed)|{
+                println!("checking {:?} {:?}", map_data.get_chunk_point(), changed.0);
+
+                
+            });
+
         })
 }
 
@@ -73,10 +95,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
         -Point::x(),
         Point::z(),
         -Point::z(),
-        Point::x()+Point::z(),
-        -Point::x()+Point::z(),
-        -Point::x()-Point::z(),
-        Point::x()+Point::z()
+        // Point::x()+Point::z(),
+        // -Point::x()+Point::z(),
+        // -Point::x()-Point::z(),
+        // Point::x()+Point::z()
     ];
 
     Box::new(move |world, _| {
@@ -84,14 +106,17 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
         unsafe {
 
             //for entities that need to have ManuallyChange added
-            let mut to_change: HashSet<Entity> = HashSet::new();
+            let to_change: Arc<Mutex<HashSet<Entity>>> = Arc::new(Mutex::new(HashSet::new()));
 
             //for entities that need to have ManuallyChange removed
-            let mut to_changed: HashSet<Entity> = HashSet::new();
+            let to_changed: Arc<Mutex<HashSet<Entity>>> = Arc::new(Mutex::new(HashSet::new()));
 
-            for (entity, (map_data, mut mesh_data, changed)) in write_mesh_query.iter_entities_unchecked(world) {
+            write_mesh_query.par_entities_for_each_unchecked(world, |(entity, (map_data, mut mesh_data, changed))|{
 
-                to_changed.insert(entity);
+                {
+                    let mut to_changed = to_changed.lock().unwrap();
+                    to_changed.insert(entity);
+                }
 
                 //only manually change neighbors if it is a direct change
                 if changed.0 == ChangeType::Direct {
@@ -103,6 +128,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             .filter(tag_value(&neighbor_chunk_pt));
 
                         for (entity, _) in neighbor_chunk_query.iter_entities_unchecked(world) {
+                            
+                            let mut to_change = to_change.lock().unwrap();
                             to_change.insert(entity);
                         }
                     }
@@ -130,16 +157,30 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let mut top = point;
                     let mut draw_top: bool = true;
                     let chunk_top_y = map_data.octree.get_aabb().get_max().y;
+                    
+                    let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point);
+
+                    let mut open_sides: Option<HashSet<Point>> = None;
+                    let mut previous_open: Option<HashSet<Point>> = None;
+                    let mut current_open: Option<HashSet<Point>> = None;
 
                     //iterate from this point to either the top or the top of the chunk
                     for y in point.y..chunk_top_y+1 {
                         top.y = y;
 
                         let point_above = top+Point::y();
-                        checked.insert(point_above);
 
                         match map_data.octree.query_point(point_above) {
-                            Some(_) => continue,
+                            Some(_) => {
+                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above);
+
+                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                                    draw_top = false;
+                                    break;
+                                }
+
+                                checked.insert(point_above);
+                            },
                             None if y == chunk_top_y => {
                                 
                                 let chunk_point_above = map_data.get_chunk_point()+Point::y();
@@ -166,116 +207,174 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                     }
 
-                    let mut open_sides: HashSet<Point> = HashSet::new();
+                    // let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top);
 
-                    for dir in &neighbor_dirs {
+                    let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top);
 
-                        let neighbor = top + dir;
-
-                        match map_data.octree.query_point(neighbor) {
-                            Some(_) => continue,
-                            None => {
-
-                                match map_data.octree.get_aabb().contains_point(neighbor) {
-                                    false => {
-                                        let chunk_point_dir = map_data.get_chunk_point() + dir;
-
-                                        let chunk_point_dir_query = <Read<MapChunkData>>::query()
-                                            .filter(tag_value(&chunk_point_dir));
-
-                                        match chunk_point_dir_query.iter(world).next() {
-                                            Some(map_data) => {
-                                                
-                                                match map_data.octree.query_point(neighbor) {
-                                                    Some(_) => continue,
-                                                    None => {
-                                                        open_sides.insert(*dir);
-                                                    }
-                                                }
-
-                                            },
-                                            None => { open_sides.insert(*dir); }
-                                        }
-                                    },
-                                    true => { open_sides.insert(*dir); }
-                                }
-                            }
-                        }
-                    }
-
-                    let mut border_points: Vec<Vector3> = Vec::new();
-                    let mut face_points: Vec<Vector3> = Vec::new();
+                    let mut border_points: Vec<Vector3> = Vec::with_capacity(12);
 
                     let world_point = map_coords_to_world(top);
-                    let center = (Vector3::new(world_point.x, 0., world_point.z) * 2. + Vector3::new(TILE_DIMENSIONS.x as f32, 0., TILE_DIMENSIONS.z as f32)) / 2.;
+                    let mut center = (Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z) * 2. + Vector3::new(TILE_DIMENSIONS.x as f32, world_point.y+TILE_DIMENSIONS.y, TILE_DIMENSIONS.z as f32)) / 2.;
 
                     let top_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
                     let top_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
                     let bottom_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
                     let bottom_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
 
-                    //needs to be added in clockwise or counterclockwise order
-                    face_points.push(top_right);
-                    face_points.push(top_left);
-                    face_points.push(bottom_left);
-                    face_points.push(bottom_right);
+                    // if there are no open sides, all we have to draw is a simple 2 triangle face
+                    if open_sides.is_empty() {
 
-                    let face_points_len = face_points.len();
+                        if draw_top { 
 
-                    for i in 0..face_points_len {
+                            // for i in 0..face_points_len {
 
-                        let face_point = face_points[i];
-                        let next_i = (i+1) % face_points_len;
-                        let next_point = face_points[next_i];
+                            //     let face_point = face_points[i];
+                            //     let next_i = (i+1) % face_points_len;
+                            //     let next_point = face_points[next_i];
+    
+                            //     let dir = get_direction_of_edge(face_point, next_point, center);
+    
+                            //     if open_sides.contains(&dir) {
+                            //         let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, dir.y as f32 * BEVEL_SIZE, dir.z as f32 * BEVEL_SIZE);
+                            //         face_points[i] = face_point - bevel;
+                            //         face_points[next_i] = next_point - bevel;
+                            //     }
+    
+                            //     if i > 0 {
+                            //         border_points.push(face_points[i]);
+    
+                            //         if i == face_points_len - 1 {
+                            //             border_points.push(face_points[next_i]);
+                            //         }
+                            //     }
+                            // }
 
-                        let dir = get_direction_of_edge(face_point, next_point, center);
+                            mesh_data.verts.push(&top_left);
+                            mesh_data.verts.push(&top_right);
+                            mesh_data.verts.push(&bottom_left);
+                            mesh_data.verts.push(&bottom_right);
 
-                        if open_sides.contains(&dir) {
-                            let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, dir.y as f32 * BEVEL_SIZE, dir.z as f32 * BEVEL_SIZE);
-                            face_points[i] = face_point - bevel;
-                            face_points[next_i] = next_point - bevel;
+                            // let left_offset = (face_points[1].x - top_left.x) * TILE_SIZE;
+                            // let right_offset = (top_right.x - face_points[0].x) * TILE_SIZE;
+
+                            // let top_offset = (top_left.z - face_points[1].z) * TILE_SIZE;
+                            // let bottom_offset = (face_points[2].z - bottom_left.z) * TILE_SIZE;
+
+                            mesh_data.uvs.push(&Vector2::new(0.,0.));
+                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE,0.));
+                            mesh_data.uvs.push(&Vector2::new(0.,TILE_SIZE));
+                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE ,TILE_SIZE));
+
+                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                            mesh_data.indices.push(offset+2);
+                            mesh_data.indices.push(offset+1);
+                            mesh_data.indices.push(offset);
+
+                            mesh_data.indices.push(offset+3);
+                            mesh_data.indices.push(offset+1);
+                            mesh_data.indices.push(offset+2);
+
+                            offset += 4;
                         }
+                    } else { //if open_sides is not empty, draw a more complex face to account for the bevel
 
-                        if i > 0 {
-                            border_points.push(face_points[i]);
+                        let mut face_points: Vec<Vector3> = vec![
+                            top_right + Vector3::new(-BEVEL_SIZE, 0., -BEVEL_SIZE), 
+                            top_left + Vector3::new(BEVEL_SIZE, 0., -BEVEL_SIZE), 
+                            bottom_left + Vector3::new(BEVEL_SIZE, 0., BEVEL_SIZE), 
+                            bottom_right + Vector3::new(-BEVEL_SIZE, 0., BEVEL_SIZE)
+                        ];
 
-                            if i == face_points_len - 1 {
-                                border_points.push(face_points[next_i]);
+                        let face_points_len = face_points.len();
+
+                        let mut bevel_points: Vec<Vector3> = Vec::with_capacity(12);
+
+                        for i in 0..face_points_len {
+                            let face_point = face_points[i];
+                            let next_i = (i+1) % face_points_len;
+                            let next_point = face_points[next_i];
+
+                            let dir = get_direction_of_edge(face_point, next_point, center);
+
+                            if open_sides.contains(&dir) {
+                                let mut bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
+
+                                // face_points[i] = face_point + bevel;
+                                // face_points[next_i] = next_point + bevel;
+
+                                bevel_points.push(face_point + bevel);
+                                bevel_points.push(next_point + bevel);
                             }
+
+                            // if i > 0 {
+                                // new_face_points.push(face_points[i]);
+                                // // border_points.push(face_point - Vector3::new(0.,BEVEL_SIZE,0.));
+                                
+                                // // if i == face_points_len - 1 {
+                                //     new_face_points.push(face_points[next_i]);
+                                    // border_points.push(next_point - Vector3::new(0., BEVEL_SIZE, 0.));
+                                // }
+                            // }
                         }
-                    }
 
-                    if draw_top { 
-                        mesh_data.verts.push(&face_points[1]);
-                        mesh_data.verts.push(&face_points[0]);
-                        mesh_data.verts.push(&face_points[2]);
-                        mesh_data.verts.push(&face_points[3]);
+                        // let new_face_points_len = new_face_points.len();
 
-                        let left_offset = (face_points[1].x - top_left.x) * TILE_SIZE;
-                        let right_offset = (top_right.x - face_points[0].x) * TILE_SIZE;
+                        let mut i = 0;
+                        while i < bevel_points.len() {
 
-                        let top_offset = (top_left.z - face_points[1].z) * TILE_SIZE;
-                        let bottom_offset = (face_points[2].z - bottom_left.z) * TILE_SIZE;
+                            let mut left = bevel_points[i];
+                            let mut right = bevel_points[i+1];
 
-                        mesh_data.uvs.push(&Vector2::new(left_offset,top_offset));
-                        mesh_data.uvs.push(&Vector2::new(TILE_SIZE - right_offset,top_offset));
-                        mesh_data.uvs.push(&Vector2::new(left_offset,TILE_SIZE - bottom_offset));
-                        mesh_data.uvs.push(&Vector2::new(TILE_SIZE - right_offset,TILE_SIZE - bottom_offset));
+                            let dir = get_direction_of_edge(left, right, center);
 
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                            if open_sides.contains(&dir) {
+                                let bevel = Vector3::new(dir.x as f32, 0., dir.z as f32) * BEVEL_SIZE;
 
-                        mesh_data.indices.push(offset+2);
-                        mesh_data.indices.push(offset+1);
-                        mesh_data.indices.push(offset);
+                                let side_dir = if dir.x > 0 {
+                                    Point::new(0,0,1)
+                                } else if dir.z > 0 {
+                                    Point::new(-1,0,0)
+                                } else if dir.x < 0 {
+                                    Point::new(0,0,-1)
+                                } else {
+                                    Point::new(1,0,0)
+                                };
 
-                        mesh_data.indices.push(offset+3);
-                        mesh_data.indices.push(offset+1);
-                        mesh_data.indices.push(offset+2);
+                                if !open_sides.contains(&side_dir) {
+                                    right += Vector3::new(side_dir.x as f32, 0., side_dir.z as f32) * BEVEL_SIZE;
+                                }
 
-                        offset += 4;
+                                let side_dir = -side_dir;
+
+                                if !open_sides.contains(&side_dir) {
+                                    left += Vector3::new(side_dir.x as f32, 0., side_dir.z as f32) * BEVEL_SIZE;
+                                }
+
+
+                                if draw_top {
+                                    left.y -= BEVEL_SIZE / 2.;
+                                    right.y -= BEVEL_SIZE / 2.;
+                                }
+
+                                border_points.push(left);
+                                border_points.push(right);
+                            } 
+                            
+                            // let next_i = (i+2) % face_points_len;
+                            // let next_left = new_face_points[next_i];
+                            // let next_right = new_face_points[next_i+1];
+
+                            i += 2;
+                        }
+
+                        // for i in 0..new_face_points_len {
+
+                        // }
+
                     }
 
                     let mut bottom = point;
@@ -288,10 +387,18 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         let point_below = bottom - Point::y();
                         
-                        checked.insert(point_below);
+                        // checked.insert(point_below);
 
                         match map_data.octree.query_point(point_below) {
-                            Some(_) => continue,
+                            Some(_) => {
+                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below);
+
+                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                                    break;
+                                }
+
+                                checked.insert(point_below);
+                            },
                             None if y == chunk_bottom_y => {
                                 let chunk_point_below = map_data.get_chunk_point() - Point::y();
                                 
@@ -317,83 +424,143 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         
                     }
 
-                    let bottom = map_coords_to_world(bottom).y;
-
-                    let top = world_point.y + TILE_DIMENSIONS.y;
-                    let height = top - bottom;
-
                     let border_points_len = border_points.len();
-                    let begin = offset;
-                    let indices_len = border_points_len as i32 * 2;
-                    let mut index_count = offset;
 
-                    //define the sides
-                    for i in 0..border_points_len {
-                        
-                        let border_point = border_points.get(i).unwrap();
+                    if border_points_len > 0 {
+                        let bottom = map_coords_to_world(bottom).y;
 
-                        //get the direction
-                        let next_i = (i+1) % border_points_len;
-                        let next_point = border_points.get(next_i).unwrap();
+                        let top = border_points[0].y;
+                        let height = top - bottom;
 
-                        let dir = get_direction_of_edge(*border_point, *next_point, center);
-                        // godot_print!("average_dir = {:?} dir = {:?}", average_dir, dir);
+                        let begin = offset;
+                        let indices_len = border_points_len as i32 * 2;
 
-                        //top
-                        mesh_data.verts.push(&border_point);
+                        center.y = 0.;
 
-                        //bottom
-                        mesh_data.verts.push(&(*border_point - Vector3::new(0., height, 0.)));
+                        //define the sides
+                        for i in 0..border_points_len {
 
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                            let border_point = border_points.get(i).unwrap();
 
-                        let uv_width = 1.; //num::Float::max(top_right.x - top_left.x, top_right.z - top_left.z);
+                            //get the direction
+                            let next_i = (i+1) % border_points_len;
 
-                        if i % 2 == 0 {
-                            mesh_data.uvs.push(&Vector2::new(0.,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
-                            mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
-                        } else {
-                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
-                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-bottom * TILE_SIZE));
+                            let next_point = border_points.get(next_i).unwrap();
+
+                            let dir = get_direction_of_edge(*border_point, *next_point, center);
+                            // godot_print!("average_dir = {:?} dir = {:?}", average_dir, dir);
+
+                            //top
+                            mesh_data.verts.push(&border_point);
+
+                            //bottom
+                            mesh_data.verts.push(&(*border_point - Vector3::new(0., height, 0.)));
+
+                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                            let uv_width = 1.; //num::Float::max(top_right.x - top_left.x, top_right.z - top_left.z);
+
+                            if i % 2 == 0 {
+                                mesh_data.uvs.push(&Vector2::new(0.,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                                mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
+                            } else {
+                                mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                                mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-bottom * TILE_SIZE));
+                            }
+
+                            if open_sides.contains(&dir) {
+
+                                let j = offset - begin;
+
+                                mesh_data.indices.push(j % indices_len + begin);
+                                mesh_data.indices.push((j+1) % indices_len + begin);
+                                mesh_data.indices.push((j+2) % indices_len + begin);
+
+                                mesh_data.indices.push((j+2) % indices_len + begin);
+                                mesh_data.indices.push((j+1) % indices_len + begin);
+                                mesh_data.indices.push((j+3) % indices_len + begin);
+
+                            } else {
+                                // godot_print!("{:?} is not drawing {:?}", point, dir);
+                            }
+
+                            offset += 2;
+
                         }
-
-                        if open_sides.contains(&dir) {
-
-                            let j = offset - begin;
-
-                            mesh_data.indices.push(j % indices_len + begin);
-                            mesh_data.indices.push((j+1) % indices_len + begin);
-                            mesh_data.indices.push((j+2) % indices_len + begin);
-
-                            mesh_data.indices.push((j+2) % indices_len + begin);
-                            mesh_data.indices.push((j+1) % indices_len + begin);
-                            mesh_data.indices.push((j+3) % indices_len + begin);
-
-                        } else {
-                            // godot_print!("{:?} is not drawing {:?}", point, dir);
-                        }
-
-                        offset += 2;
-
                     }
                 }
+            });
+
+            let to_change = to_change.lock().unwrap();
+            let to_changed = to_changed.lock().unwrap();
+
+            for entity in &*to_change {
+                world.add_tag(*entity, ManuallyChange(ChangeType::Indirect)).unwrap();
             }
 
-            for entity in to_change {
-                world.add_tag(entity, ManuallyChange(ChangeType::Indirect)).unwrap();
-            }
-
-            for entity in to_changed {
-                world.remove_tag::<ManuallyChange>(entity).unwrap();
+            for entity in &*to_changed {
+                world.remove_tag::<ManuallyChange>(*entity).unwrap();
             }
         }
 
     })
 } 
 
+pub fn get_open_sides(neighbor_dirs: &[Point; 4], world: &legion::world::World, map_data: &MapChunkData, point: Point) -> HashSet<Point> {
+    let mut open_sides: HashSet<Point> = HashSet::new();
+    let chunk_max = map_data.octree.get_aabb().get_max();
+    let chunk_min = map_data.octree.get_aabb().get_min();
+    
+    for dir in neighbor_dirs {
+
+        let neighbor = point + *dir;
+
+        match map_data.octree.query_point(neighbor) {
+            Some(_) => continue,
+            None => {
+
+                match map_data.octree.get_aabb().contains_point(neighbor) {
+                    false => {
+
+                        // // if the dir is pointing diagonally, and this point is not on the corner, skip this step
+                        // if dir.x.abs() + dir.z.abs() > 1 &&
+                        //     (*dir == Point::new(1,0,1) && !(point.x == chunk_max.x && point.z == chunk_max.z)) ||
+                        //     (*dir == Point::new(-1,0,1) && !(point.x == chunk_min.x && point.z == chunk_max.z)) ||
+                        //     (*dir == Point::new(-1,0,-1) && !(point.x == chunk_min.x && point.z == chunk_min.z)) ||
+                        //     (*dir == Point::new(1,0,-1) && !(point.x == chunk_max.x && point.z == chunk_min.z)) {
+                        //         continue;
+                        // }
+
+                        let chunk_point_dir = map_data.get_chunk_point() + dir;
+
+                        let chunk_point_dir_query = <Read<MapChunkData>>::query()
+                            .filter(tag_value(&chunk_point_dir));
+
+                        match chunk_point_dir_query.iter(world).next() {
+                            Some(map_data) => {
+                                
+                                match map_data.octree.query_point(neighbor) {
+                                    Some(_) => continue,
+                                    None => {
+                                        open_sides.insert(*dir);
+                                    }
+                                }
+
+                            },
+                            None => { open_sides.insert(*dir); }
+                        }
+                    },
+                    true => { open_sides.insert(*dir); }
+                }
+            }
+        }
+    }
+    open_sides
+}
+
 /// Get the direction the average of two points are from the center. For calculating the orthogonal direction of edges.
-pub fn get_direction_of_edge(pt1: Vector3, pt2: Vector3, center: Vector3) -> Point {
+fn get_direction_of_edge(pt1: Vector3, pt2: Vector3, center: Vector3) -> Point {
     let right_dir = Vector3::new(1.,0.,0.);
     let forward_dir = Vector3::new(0.,0.,1.);
     let back_dir = -forward_dir;
@@ -402,7 +569,14 @@ pub fn get_direction_of_edge(pt1: Vector3, pt2: Vector3, center: Vector3) -> Poi
     let mut average = (pt1 + pt2) / 2.;
     average.y = 0.;
 
-    let average_dir = (average - center).normalize();
+    let heading = average - center;
+
+    //because normalize returns NaN if the distance btwn points is zero
+    if heading.length() < std::f32::EPSILON {
+        return Point::zeros();
+    }
+
+    let average_dir = heading.normalize();
 
     let dir = std::cmp::max_by(forward_dir, 
         std::cmp::max_by(left_dir, 
@@ -509,6 +683,7 @@ impl Map {
                         },
                         #[cfg(not(test))]
                         custom_mesh::MeshData::new(),
+                        OpenSides::default(),
                     )
                 ])[0];
 

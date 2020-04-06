@@ -66,7 +66,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
             aabb,
             num_elements: 0,
             elements: [Option::<T>::None; 32],
-            children: Vec::new(),
+            children: Vec::with_capacity(8),
             paternity: Paternity::ChildFree
         }
     }
