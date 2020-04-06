@@ -1,0 +1,14 @@
+[general]
+
+singleton=false
+load_once=true
+symbol_prefix="godot_"
+reloadable=true
+
+[entry]
+
+OSX.64="res://target/debug/libwolf_gang.dylib"
+
+[dependencies]
+
+OSX.64=[  ]

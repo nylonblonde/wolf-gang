@@ -258,8 +258,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         let face_points_len = face_points.len();
 
+                        //cycle through the face points and get individual vectors for each side (no shared vertices)
                         let mut bevel_points: Vec<Vector3> = Vec::with_capacity(12);
-
                         for i in 0..face_points_len {
                             let face_point = face_points[i];
                             let next_i = (i+1) % face_points_len;
@@ -275,6 +275,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             }
                         }
 
+                        //cycle through the bevel points and make any adjustments needed to deal with adjacent tiles
+                        let mut border_points_tentative: Vec<Vector3> = Vec::with_capacity(8);
                         let mut i = 0;
                         while i < bevel_points.len() {
 
@@ -310,9 +312,44 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     right.y -= BEVEL_SIZE / 2.;
                                 }
 
-                                border_points.push(left);
-                                border_points.push(right);
+                                border_points_tentative.push(left);
+                                border_points_tentative.push(right);
                             } 
+
+                            i += 2;
+                        }
+
+                        //finalize the border points, adding corner verts for the beveled corners
+                        let border_points_tentative_len = border_points_tentative.len();
+                        let mut i = 0; 
+                        while i < border_points_tentative_len {
+
+                            let left = border_points_tentative[i];
+
+                            let right = border_points_tentative[i+1];
+
+                            border_points.push(left);
+                            border_points.push(right);
+
+                            let next_i = (i + 2) % border_points_tentative_len;
+
+                            let next_left = border_points_tentative[next_i];
+
+                            let distance = (next_left - right).length();
+
+                            //check the distance to make sure it's actually an adjacent corner, since the "next left" could loop around to be on the other side on corner tiles where not all sides are drawn
+                            if distance < 1. {
+
+                                let average = (right + next_left) / 2.;
+
+                                //only put in a corner point if the corners aren't touching. Need two to not get a flipped uv
+                                if (right - average).length() > std::f32::EPSILON {
+                                    border_points.push(right);
+                                    border_points.push(average);
+                                    border_points.push(average);
+                                    border_points.push(next_left);
+                                }
+                            }
 
                             i += 2;
                         }
@@ -402,27 +439,37 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             let uv_width = 1.; //num::Float::max(top_right.x - top_left.x, top_right.z - top_left.z);
 
                             if i % 2 == 0 {
-                                mesh_data.uvs.push(&Vector2::new(0.,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
-                                mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
-                            } else {
                                 mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
                                 mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-bottom * TILE_SIZE));
+                                
+                            } else {
+                                mesh_data.uvs.push(&Vector2::new(0.,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                                mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
                             }
 
-                            if open_sides.contains(&dir) {
+                            //if there are only 2 border points, only draw from the first index to avoid drawing both sides since the index will loop around
+                            if border_points_len > 2 || i < border_points_len-1 {
+                                //only add indices for points that aren't overlapping
+                                if (*next_point - *border_point).length() > std::f32::EPSILON {
 
-                                let j = offset - begin;
+                                    if open_sides.contains(&dir) {
 
-                                mesh_data.indices.push(j % indices_len + begin);
-                                mesh_data.indices.push((j+1) % indices_len + begin);
-                                mesh_data.indices.push((j+2) % indices_len + begin);
+                                        let j = offset - begin;
 
-                                mesh_data.indices.push((j+2) % indices_len + begin);
-                                mesh_data.indices.push((j+1) % indices_len + begin);
-                                mesh_data.indices.push((j+3) % indices_len + begin);
+                                        mesh_data.indices.push(j % indices_len + begin);
+                                        mesh_data.indices.push((j+1) % indices_len + begin);
+                                        mesh_data.indices.push((j+2) % indices_len + begin);
 
-                            } else {
-                                // godot_print!("{:?} is not drawing {:?}", point, dir);
+                                        mesh_data.indices.push((j+2) % indices_len + begin);
+                                        mesh_data.indices.push((j+1) % indices_len + begin);
+                                        mesh_data.indices.push((j+3) % indices_len + begin);
+
+                                    } else {
+                                        // godot_print!("{:?} is not drawing {:?}", point, dir);
+                                    }
+                                } else {
+                                    // godot_print!("Skipped some points because they were too close");
+                                }
                             }
 
                             offset += 2;
