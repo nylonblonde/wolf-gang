@@ -210,12 +210,13 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let mut border_points: Vec<Vector3> = Vec::with_capacity(12);
 
                     let world_point = map_coords_to_world(top);
-                    let mut center = (Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z) * 2. + Vector3::new(TILE_DIMENSIONS.x as f32, world_point.y+TILE_DIMENSIONS.y, TILE_DIMENSIONS.z as f32)) / 2.;
 
                     let top_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
                     let top_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
                     let bottom_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
                     let bottom_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
+
+                    let mut center = bottom_left + (top_right - bottom_left) / 2.;
 
                     // if there are no open sides, all we have to draw is a simple 2 triangle face
                     if open_sides.is_empty() {
@@ -249,30 +250,116 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                     } else { //if open_sides is not empty, draw a more complex face to account for the bevel
 
-                        let face_points: Vec<Vector3> = vec![
-                            top_right + Vector3::new(-BEVEL_SIZE, 0., -BEVEL_SIZE), 
-                            top_left + Vector3::new(BEVEL_SIZE, 0., -BEVEL_SIZE), 
-                            bottom_left + Vector3::new(BEVEL_SIZE, 0., BEVEL_SIZE), 
-                            bottom_right + Vector3::new(-BEVEL_SIZE, 0., BEVEL_SIZE)
+                        let mut corners: Vec<Vector3> = vec![
+                            top_right, 
+                            top_left, 
+                            bottom_left, 
+                            bottom_right
                         ];
 
-                        let face_points_len = face_points.len();
+                        let corners_len = corners.len();
+
+                        let mut face_points: Vec<Vector3> = Vec::with_capacity(8);
 
                         //cycle through the face points and get individual vectors for each side (no shared vertices)
-                        let mut bevel_points: Vec<Vector3> = Vec::with_capacity(12);
-                        for i in 0..face_points_len {
-                            let face_point = face_points[i];
-                            let next_i = (i+1) % face_points_len;
-                            let next_point = face_points[next_i];
+                        let mut bevel_points: Vec<Vector3> = Vec::with_capacity(8);
+                        
+                        let mut i = 0;
 
-                            let dir = get_direction_of_edge(face_point, next_point, center);
+                        while i < corners_len {
 
+                            let mut right = corners[i];
+                            let next_i = (i+1) % corners_len;
+                            let mut left = corners[next_i];
+
+                            let dir = get_direction_of_edge(right, left, center);
+
+                            let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
+
+                            
+                                
                             if open_sides.contains(&dir) {
-                                let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
+                                let mut scaled_right = right;
+                                let mut scaled_left = left;
+    
+                                scaled_right -= center;
+                                scaled_left -= center;
+    
+                                scaled_right *= 1.-BEVEL_SIZE * 2.;
+                                scaled_left *= 1.-BEVEL_SIZE * 2.;
+    
+                                scaled_right += center;
+                                scaled_left += center;
+    
+                                bevel_points.push(scaled_right);
+                                bevel_points.push(scaled_left);
+    
+                                let mut right_adj = Vector3::new(0.,0.,0.);
+                                let mut left_adj =  right_adj;
+    
+                                let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+    
+                                let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
+                                
+                                if !open_sides.contains(&right_dir) {
+                                    right_adj = Vector3::new(right_dir.x as f32, 0., right_dir.z as f32) * BEVEL_SIZE;
+                                }
+    
+                                let left_dir = -right_dir;
+    
+                                if !open_sides.contains(&left_dir) {
+                                    left_adj = Vector3::new(left_dir.x as f32, 0., left_dir.z as f32) * BEVEL_SIZE;
+                                }
+                                face_points.push(scaled_right + bevel / 2. + right_adj);
+                                face_points.push(scaled_left + bevel / 2. + left_adj);
+                                
+                            } else {
 
-                                bevel_points.push(face_point + bevel);
-                                bevel_points.push(next_point + bevel);
+                                let mut scaled_right = right;
+                                let mut scaled_left = left;
+
+                                let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+    
+                                let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
+
+                                let left_dir = -right_dir;
+
+                                let center = (right + left) / 2.;
+
+                                if open_sides.contains(&right_dir) && open_sides.contains(&left_dir) {
+                                    scaled_right -= center;
+                                    scaled_left -= center;
+        
+                                    scaled_right *= 1.-BEVEL_SIZE;
+                                    scaled_left *= 1.-BEVEL_SIZE;
+        
+                                    scaled_right += center;
+                                    scaled_left += center;
+                                } else if open_sides.contains(&right_dir) {
+                                    scaled_right -= left;
+                                    scaled_left -= left;
+
+                                    scaled_right *= 1.-BEVEL_SIZE;
+                                    scaled_left *= 1.-BEVEL_SIZE;
+
+                                    scaled_right += left;
+                                    scaled_left += left;
+                                } else if open_sides.contains(&left_dir) {
+                                    scaled_right -= right;
+                                    scaled_left -= right;
+
+                                    scaled_right *= 1.-BEVEL_SIZE;
+                                    scaled_left *= 1.-BEVEL_SIZE;
+
+                                    scaled_right += right;
+                                    scaled_left += right;
+                                }
+
+                                face_points.push(scaled_right);
+                                face_points.push(scaled_left);
                             }
+                            
+                            i += 1;
                         }
 
                         //cycle through the bevel points and make any adjustments needed to deal with adjacent tiles
@@ -284,39 +371,108 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             let mut right = bevel_points[i+1];
 
                             let dir = get_direction_of_edge(left, right, center);
+                            let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
+
+                            let mut right_adj: Option<Vector3> = None;
+                            let mut left_adj: Option<Vector3> = None;
+
+                            let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+
+                            let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
+                            
+                            if !open_sides.contains(&right_dir) {
+                                right_adj = Some(Vector3::new(right_dir.x as f32, 0., right_dir.z as f32) * BEVEL_SIZE);
+                            }
+
+                            let left_dir = -right_dir;
+
+                            if !open_sides.contains(&left_dir) {
+                                left_adj = Some(Vector3::new(left_dir.x as f32, 0., left_dir.z as f32) * BEVEL_SIZE);
+                            }
+
+                            // if let Some(right_adj) = right_adj {
+                            //     face_points.push(left + bevel + right_adj);
+                            // } else {
+                            //     face_points.push(left + bevel / 2.);
+                            // }
+
+                            // if let Some(left_adj) = left_adj {
+                            //     face_points.push(right + bevel + left_adj);
+                            // } else {
+                            //     face_points.push(right + bevel / 2.);
+                            // }
 
                             if open_sides.contains(&dir) {
 
-                                let side_dir = if dir.x > 0 {
-                                    Point::new(0,0,1)
-                                } else if dir.z > 0 {
-                                    Point::new(-1,0,0)
-                                } else if dir.x < 0 {
-                                    Point::new(0,0,-1)
-                                } else {
-                                    Point::new(1,0,0)
-                                };
-
-                                if !open_sides.contains(&side_dir) {
-                                    right += Vector3::new(side_dir.x as f32, 0., side_dir.z as f32) * BEVEL_SIZE;
-                                }
-
-                                let side_dir = -side_dir;
-
-                                if !open_sides.contains(&side_dir) {
-                                    left += Vector3::new(side_dir.x as f32, 0., side_dir.z as f32) * BEVEL_SIZE;
-                                }
+                                let mut y_adj = Vector3::new(0.,0.,0.);
 
                                 if draw_top {
-                                    left.y -= BEVEL_SIZE / 2.;
-                                    right.y -= BEVEL_SIZE / 2.;
+                                    y_adj.y = BEVEL_SIZE / 2.;
                                 }
 
-                                border_points_tentative.push(left);
-                                border_points_tentative.push(right);
-                            } 
+                                if let Some(left_adj) = left_adj {
+                                    right += left_adj;
+                                }
+
+                                if let Some(right_adj) = right_adj {
+                                    left += right_adj;
+                                }
+
+                                border_points_tentative.push(left + bevel - y_adj);
+                                border_points_tentative.push(right + bevel - y_adj);
+                            }
+
+                            // face_points[i] = face_points[i] + bevel / 2.;
+                            // face_points[i+1] = face_points[i] + bevel / 2.;
+                            
 
                             i += 2;
+                        }
+
+
+                        let face_points_len = face_points.len();
+                        
+                        if draw_top {
+
+                            mesh_data.verts.push(&center);
+                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE / 2., TILE_SIZE / 2.));
+                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                            offset += 1;
+
+                            for face_point in &face_points {
+                                
+                            }
+
+                            let mut i = 0;
+                            let mut j = 0;
+                            while i < face_points_len {
+                                
+                                let right = face_points[i];
+                                let next_i = (i + 1) % face_points_len;
+                                let left = face_points[next_i];
+
+                                if (left - right).length() > std::f32::EPSILON {
+
+                                    let mut u = (right.x - world_point.x).abs() * TILE_SIZE;
+                                    let mut v = (right.z - world_point.z).abs() * TILE_SIZE;
+
+                                    mesh_data.verts.push(&right);
+                                    mesh_data.uvs.push(&Vector2::new(u, v));
+                                    mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                                    if i < face_points_len - 1 {
+                                        mesh_data.indices.push(offset);
+                                        mesh_data.indices.push(offset + j);
+                                        mesh_data.indices.push(offset + (j + 1) % face_points_len as i32);
+                                    }
+
+                                    j += 1;
+
+                                }
+                                i += 1;
+                            }
+
+                            offset += j;
                         }
 
                         //finalize the border points, adding corner verts for the beveled corners
