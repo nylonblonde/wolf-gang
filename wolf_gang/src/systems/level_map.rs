@@ -11,6 +11,8 @@ use nalgebra;
 
 use legion::prelude::*;
 
+use num::Integer;
+
 use std::collections::HashMap;
 
 type AABB = aabb::AABB<i32>;
@@ -207,8 +209,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top, &checked);
 
-                    let mut border_points: Vec<Vector3> = Vec::with_capacity(12);
-
                     let world_point = map_coords_to_world(top);
 
                     let top_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
@@ -217,6 +217,51 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let bottom_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
 
                     let mut center = bottom_left + (top_right - bottom_left) / 2.;
+
+                    let mut bottom = point;
+                    let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;
+                    
+                    let mut draw_bottom: bool = true;
+
+                    for y in (chunk_bottom_y-1..point.y+1).rev() {
+                        bottom.y = y;
+
+                        let point_below = bottom - Point::y();
+                        
+                        match map_data.octree.query_point(point_below) {
+                            Some(_) => {
+                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
+
+                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                                    break;
+                                }
+
+                                checked.insert(point_below);
+                            },
+                            None if y == chunk_bottom_y => {
+                                let chunk_point_below = map_data.get_chunk_point() - Point::y();
+                                
+                                let chunk_point_below_query = <Read<MapChunkData>>::query()
+                                    .filter(tag_value(&chunk_point_below));
+
+                                match chunk_point_below_query.iter(world).next() {
+
+                                    Some(map_data) => {
+                                        match map_data.octree.query_point(point_below) {
+                                            Some(_) => {
+                                                draw_bottom = false;
+                                                break
+                                            },
+                                            None => break
+                                        }
+                                    },
+                                    None => break
+                                }
+                            },
+                            None => break
+                        }
+                        
+                    }
 
                     // if there are no open sides, all we have to draw is a simple 2 triangle face
                     if open_sides.is_empty() {
@@ -362,6 +407,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             i += 1;
                         }
 
+                        let mut border_points: Vec<Vector3> = Vec::with_capacity(24);
+
                         //cycle through the bevel points and make any adjustments needed to deal with adjacent tiles
                         let mut border_points_tentative: Vec<Vector3> = Vec::with_capacity(8);
                         let mut i = 0;
@@ -439,22 +486,18 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             mesh_data.normals.push(&Vector3::new(0.,1.,0.));
                             offset += 1;
 
-                            for face_point in &face_points {
-                                
-                            }
-
                             let mut i = 0;
                             let mut j = 0;
-                            while i < face_points_len {
+                            while i < face_points_len + 1 {
                                 
-                                let right = face_points[i];
+                                let right = face_points[i % face_points_len];
                                 let next_i = (i + 1) % face_points_len;
                                 let left = face_points[next_i];
 
                                 if (left - right).length() > std::f32::EPSILON {
 
-                                    let mut u = (right.x - world_point.x).abs() * TILE_SIZE;
-                                    let mut v = (right.z - world_point.z).abs() * TILE_SIZE;
+                                    let u = (right.x - world_point.x).abs() * TILE_SIZE;
+                                    let v = (right.z - world_point.z).abs() * TILE_SIZE;
 
                                     mesh_data.verts.push(&right);
                                     mesh_data.uvs.push(&Vector2::new(u, v));
@@ -510,54 +553,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             i += 2;
                         }
 
-                    }
-
-                    let mut bottom = point;
-                    let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;
-                    
-                    let mut draw_bottom: bool = true;
-
-                    for y in (chunk_bottom_y-1..point.y+1).rev() {
-                        bottom.y = y;
-
-                        let point_below = bottom - Point::y();
-                        
-                        match map_data.octree.query_point(point_below) {
-                            Some(_) => {
-                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
-
-                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
-                                    break;
-                                }
-
-                                checked.insert(point_below);
-                            },
-                            None if y == chunk_bottom_y => {
-                                let chunk_point_below = map_data.get_chunk_point() - Point::y();
-                                
-                                let chunk_point_below_query = <Read<MapChunkData>>::query()
-                                    .filter(tag_value(&chunk_point_below));
-
-                                match chunk_point_below_query.iter(world).next() {
-
-                                    Some(map_data) => {
-                                        match map_data.octree.query_point(point_below) {
-                                            Some(_) => {
-                                                draw_bottom = false;
-                                                break
-                                            },
-                                            None => break
-                                        }
-                                    },
-                                    None => break
-                                }
-                            },
-                            None => break
-                        }
-                        
-                    }
-
-                    let border_points_len = border_points.len();
+                        let border_points_len = border_points.len();
 
                     if border_points_len > 0 {
                         let bottom = map_coords_to_world(bottom).y;
@@ -595,12 +591,64 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             let uv_width = 1.; //num::Float::max(top_right.x - top_left.x, top_right.z - top_left.z);
 
                             if i % 2 == 0 {
-                                mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
-                                mesh_data.uvs.push(&Vector2::new(TILE_SIZE * uv_width,-1.-bottom * TILE_SIZE));
+
+                                // panic!("{:?}", (i as i32 - 1).mod_floor(&(border_points_len as i32)));
+
+                                let diff = *next_point - *border_point;
+
+                                let mut u = 1.;
+                                let mut next_u = 1.;
+
+                                godot_print!("dir for {:?} = {:?}", border_point, dir);
+
+                                if dir.z.abs() > 0 {
+
+                                    godot_print!("what the fucl");
+
+                                    u = world_point.x * TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
+
+                                    next_u = world_point.x * TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
+
+                                    if diff.x > 0. {
+
+                                        u = -u;
+                                        next_u = -next_u;
+
+                                    }
+
+                                } else if dir.x.abs() > 0 {
+                                    u = world_point.z * TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
+
+                                    next_u = world_point.z * TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
+
+                                    if diff.z > 0. {
+
+                                        u = -u;
+                                        next_u = -next_u;
+
+                                    }
+                                }
+                                mesh_data.uvs.push(&Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                                mesh_data.uvs.push(&Vector2::new(u,-1.-bottom * TILE_SIZE));
+
+                                mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                                mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE));
+                                
+
                                 
                             } else {
-                                mesh_data.uvs.push(&Vector2::new(0.,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
-                                mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
+
+
+                                
+
+                                // let diff = (*next_point - *border_point).length();
+
+                                // let u = (1. - diff * TILE_SIZE) % TILE_SIZE;
+
+                                // godot_print!("{:?}", u);
+
+                                // mesh_data.uvs.push(&Vector2::new(0.,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
+                                // mesh_data.uvs.push(&Vector2::new(0.,-1.-bottom * TILE_SIZE));
                             }
 
                             //if there are only 2 border points, only draw from the first index to avoid drawing both sides since the index will loop around
@@ -632,6 +680,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         }
                     }
+
+                    }
+
                 }
             });
 
