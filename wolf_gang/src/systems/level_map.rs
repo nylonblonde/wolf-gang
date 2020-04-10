@@ -100,7 +100,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
         Point::x()+Point::z(),
         -Point::x()+Point::z(),
         -Point::x()-Point::z(),
-        Point::x()+Point::z()
+        Point::x()-Point::z()
     ];
 
     Box::new(move |world, _| {
@@ -295,334 +295,431 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                     } else { //if open_sides is not empty, draw a more complex face to account for the bevel
 
-                        let mut corners: Vec<Vector3> = vec![
-                            top_right, 
-                            top_left, 
-                            bottom_left, 
-                            bottom_right
-                        ];
+                        // // for side in &open_sides {
+                        // //     godot_print!("{:?}", side);
+                        // // }
 
-                        let corners_len = corners.len();
+                        // let mut corners: Vec<Vector3> = vec![
+                        //     top_right, 
+                        //     top_left, 
+                        //     bottom_left, 
+                        //     bottom_right
+                        // ];
 
-                        let mut face_points: Vec<Vector3> = Vec::with_capacity(8);
-                        let mut curve_points: Vec<Vector3> = Vec::with_capacity(8);
+                        // let corners_len = corners.len();
 
-                        //cycle through the face points and get individual vectors for each side (no shared vertices)
-                        let mut bevel_points: Vec<Vector3> = Vec::with_capacity(8);
+                        // let mut face_points: Vec<Vector3> = Vec::with_capacity(8);
+                        // let mut curve_points: Vec<Vector3> = Vec::with_capacity(8);
+
+                        // let mut corner_curve_points: Vec<Vector3> = Vec::with_capacity(4);
+                        // let mut corner_face_indices: Vec<i32> = Vec::with_capacity(8);
+
+                        // //cycle through the face points and get individual vectors for each side (no shared vertices)
+                        // let mut bevel_points: Vec<Vector3> = Vec::with_capacity(8);
                         
-                        let mut i = 0;
+                        // let mut i = 0;
 
-                        while i < corners_len {
+                        // while i < corners_len {
 
-                            let mut right = corners[i];
-                            let next_i = (i+1) % corners_len;
-                            let mut left = corners[next_i];
+                        //     let mut right = corners[i];
+                        //     let next_i = (i+1) % corners_len;
+                        //     let mut left = corners[next_i];
 
-                            let dir = get_direction_of_edge(right, left, center);
+                        //     let dir = get_direction_of_edge(right, left, center);
 
-                            let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
-                                
-                            if open_sides.contains(&dir) {
-                                let mut scaled_right = right;
-                                let mut scaled_left = left;
-    
-                                scaled_right -= center;
-                                scaled_left -= center;
-    
-                                scaled_right *= 1.-BEVEL_SIZE * 2.;
-                                scaled_left *= 1.-BEVEL_SIZE * 2.;
-    
-                                scaled_right += center;
-                                scaled_left += center;
-    
-                                bevel_points.push(scaled_right);
-                                bevel_points.push(scaled_left);
-    
-                                let mut right_adj = Vector3::new(0.,0.,0.);
-                                let mut left_adj =  right_adj;
-    
-                                let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-    
-                                let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
-                                
-                                if !open_sides.contains(&right_dir) {
-                                    right_adj = Vector3::new(right_dir.x as f32, 0., right_dir.z as f32) * BEVEL_SIZE;
-                                }
-    
-                                let left_dir = -right_dir;
-    
-                                if !open_sides.contains(&left_dir) {
-                                    left_adj = Vector3::new(left_dir.x as f32, 0., left_dir.z as f32) * BEVEL_SIZE;
-                                }
-                                face_points.push(scaled_right + bevel / 2. + right_adj);
-                                face_points.push(scaled_left + bevel / 2. + left_adj);
-                                
-                            } else {
+                        //     // let next_right = corners[(i+2) % corners_len];
 
-                                let mut scaled_right = right;
-                                let mut scaled_left = left;
+                        //     // let next_dir = get_direction_of_edge(left, next_right, center);
 
-                                let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-    
-                                let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
-
-                                let left_dir = -right_dir;
-
-                                let center = (right + left) / 2.;
-
-                                if open_sides.contains(&right_dir) && open_sides.contains(&left_dir) {
-                                    scaled_right -= center;
-                                    scaled_left -= center;
-        
-                                    scaled_right *= 1.-BEVEL_SIZE;
-                                    scaled_left *= 1.-BEVEL_SIZE;
-        
-                                    scaled_right += center;
-                                    scaled_left += center;
-                                } else if open_sides.contains(&right_dir) {
-                                    scaled_right -= left;
-                                    scaled_left -= left;
-
-                                    scaled_right *= 1.-BEVEL_SIZE / 2.;
-                                    scaled_left *= 1.-BEVEL_SIZE / 2.;
-
-                                    scaled_right += left;
-                                    scaled_left += left;
-                                } else if open_sides.contains(&left_dir) {
-                                    scaled_right -= right;
-                                    scaled_left -= right;
-
-                                    scaled_right *= 1.-BEVEL_SIZE / 2.;
-                                    scaled_left *= 1.-BEVEL_SIZE / 2.;
-
-                                    scaled_right += right;
-                                    scaled_left += right;
-                                }
-
-                                face_points.push(scaled_right);
-                                face_points.push(scaled_left);
-                            }
+                        //     let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                        //     let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
                             
-                            i += 1;
-                        }
+                        //     let left_dir = -right_dir;
 
-                        let mut border_points: Vec<Vector3> = Vec::with_capacity(24);
+                        //     let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
 
-                        //cycle through the bevel points and make any adjustments needed to deal with adjacent tiles
-                        let mut border_points_tentative: Vec<Vector3> = Vec::with_capacity(8);
-                        let mut i = 0;
-                        while i < bevel_points.len() {
-
-                            let mut right = bevel_points[i];
-                            let mut left = bevel_points[i+1];
-
-                            let dir = get_direction_of_edge(left, right, center);
-                            let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
-
-                            let mut right_adj: Option<Vector3> = None;
-                            let mut left_adj: Option<Vector3> = None;
-
-                            let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-
-                            let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
-                            
-                            if !open_sides.contains(&right_dir) {
-                                right_adj = Some(Vector3::new(right_dir.x as f32, 0., right_dir.z as f32) * BEVEL_SIZE);
-                            }
-
-                            let left_dir = -right_dir;
-
-                            if !open_sides.contains(&left_dir) {
-                                left_adj = Some(Vector3::new(left_dir.x as f32, 0., left_dir.z as f32) * BEVEL_SIZE);
-                            }
-
-                            if open_sides.contains(&dir) {
-
-                                let mut y_adj = Vector3::new(0.,0.,0.);
-
-                                if draw_top {
-                                    y_adj.y = BEVEL_SIZE / 2.;
-                                }
-
-                                if let Some(left_adj) = left_adj {
-                                    left += left_adj;
-                                }
-
-                                if let Some(right_adj) = right_adj {
-                                    right += right_adj;
-                                }
-
-                                border_points_tentative.push(right + bevel - y_adj);
-                                border_points_tentative.push(left + bevel - y_adj);
-
-                                curve_points.push(right + bevel - y_adj);
-                                curve_points.push(left + bevel - y_adj);
-
-                            }
-
-                            i += 2;
-                        }
-
-                        if draw_top {
-
-                            let mut face_points_final: Vec<Vector3> = Vec::with_capacity(8);
-                            let face_points_len = face_points.len();
-
-                            mesh_data.verts.push(&center);
-                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE / 2., TILE_SIZE / 2.));
-                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                            offset += 1;
-
-                            let mut i = 0;
-                            while i < face_points_len {
+                        //     if open_sides.contains(&dir) {
+                        //         let mut scaled_right = right;
+                        //         let mut scaled_left = left;
+    
+                        //         scaled_right -= center;
+                        //         scaled_left -= center;
+    
+                        //         scaled_right *= 1.-BEVEL_SIZE * 2.;
+                        //         scaled_left *= 1.-BEVEL_SIZE * 2.;
+    
+                        //         scaled_right += center;
+                        //         scaled_left += center;
+    
+                        //         bevel_points.push(scaled_right);
+                        //         bevel_points.push(scaled_left);
+    
+                        //         let mut right_adj = Vector3::new(0.,0.,0.);
+                        //         let mut left_adj =  right_adj;
+    
+                        //         // let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+    
+                        //         // let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
                                 
-                                let right = face_points[i % face_points_len];
-                                let next_i = (i + 1) % face_points_len;
-                                let left = face_points[next_i];
+                        //         if !open_sides.contains(&right_dir) {
+                        //             right_adj = Vector3::new(right_dir.x as f32, 0., right_dir.z as f32) * BEVEL_SIZE;
+                        //         }
+    
+                        //         // let left_dir = -right_dir;
+    
+                        //         if !open_sides.contains(&left_dir) {
+                        //             left_adj = Vector3::new(left_dir.x as f32, 0., left_dir.z as f32) * BEVEL_SIZE;
+                        //         }
+                        //         face_points.push(scaled_right + bevel / 2. + right_adj);
+                        //         face_points.push(scaled_left + bevel / 2. + left_adj);
+                                
+                        //     } else {
 
-                                // let dir = get_direction_of_edge(right, left, center);
+                        //         let mut scaled_right = right;
+                        //         let mut scaled_left = left;
 
-                                if (left - right).length() > std::f32::EPSILON {
+                        //         // let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+    
+                        //         // let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
 
-                                    face_points_final.push(right);
+                        //         // let left_dir = -right_dir;
 
-                                }
-                                i += 1;
-                            }
+                        //         let right_diag = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                        //         let left_diag = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
 
-                            let begin = offset;
-                            let face_points_final_len = face_points_final.len();
+                        //         let right_diag = Point::new(right_diag.x.round() as i32, right_diag.y as i32, right_diag.z.round() as i32);
+                        //         let left_diag = Point::new(left_diag.x.round() as i32, left_diag.y as i32, left_diag.z.round() as i32);
 
-                            let mut curves_iter = curve_points.clone().into_iter();
+                        //         if draw_top {
+                        //             if !open_sides.contains(&right_dir) && open_sides.contains(&right_diag) {
+                        //                 corner_curve_points.push(right - Vector3::new(0.,BEVEL_SIZE / 2., 0.));
+                        //             }
+                        //         }
 
-                            let mut face_indices: Vec<i32> = Vec::with_capacity(16);
+                        //         // godot_print!("point {:?} dir {:?} right_diag {:?} left_diag {:?} contains right = `{:?}` contains left = `{:?}` ", point, dir, right_diag, left_diag, open_sides.contains(&right_diag), open_sides.contains(&left_diag));
 
-                            let mut i = 0;
-                            // let mut j = 0;
-                            while i < face_points_final_len {
+                        //         let center = (right + left) / 2.;
 
-                                let right = face_points_final[i % face_points_final_len];
-                                let next_i = (i + 1) % face_points_final_len;
-                                let left = face_points_final[next_i];
+                        //         if (open_sides.contains(&right_dir) && open_sides.contains(&left_dir)) || (open_sides.contains(&right_diag) && open_sides.contains(&left_diag)) {
+                        //             scaled_right -= center;
+                        //             scaled_left -= center;
+        
+                        //             scaled_right *= 1.-BEVEL_SIZE;
+                        //             scaled_left *= 1.-BEVEL_SIZE;
+        
+                        //             scaled_right += center;
+                        //             scaled_left += center;
+                        //         } else if open_sides.contains(&right_dir) || open_sides.contains(&right_diag){
+                        //             scaled_right -= left;
+                        //             scaled_left -= left;
 
-                                let dir = get_direction_of_edge(right, left, center);
+                        //             scaled_right *= 1.-BEVEL_SIZE / 2.;
+                        //             scaled_left *= 1.-BEVEL_SIZE / 2.;
 
-                                let u = (right.x - world_point.x).abs() * TILE_SIZE;
-                                let v = (right.z - world_point.z).abs() * TILE_SIZE;
+                        //             scaled_right += left;
+                        //             scaled_left += left;
+                        //         } else if open_sides.contains(&left_dir) || open_sides.contains(&left_diag) {
+                        //             scaled_right -= right;
+                        //             scaled_left -= right;
 
-                                mesh_data.verts.push(&right);
-                                mesh_data.uvs.push(&Vector2::new(u, v));
-                                mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        //             scaled_right *= 1.-BEVEL_SIZE / 2.;
+                        //             scaled_left *= 1.-BEVEL_SIZE / 2.;
 
-                                if i <  face_points_final_len - 1 {
-                                    mesh_data.indices.push(begin);
-                                    mesh_data.indices.push(begin + i as i32);
-                                    mesh_data.indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
-                                }
+                        //             scaled_right += right;
+                        //             scaled_left += right;
+                        //         }
 
+                        //         face_points.push(scaled_right);
+                        //         face_points.push(scaled_left);
+                        //     }
+                            
+                        //     i += 1;
+                        // }
 
-                                if open_sides.contains(&dir) {
-                                    // godot_print!("index = {:?} face_pt = {:?} curve = {:?}", begin + i as i32, right, curves_iter.clone().next().unwrap());
+                        // let mut border_points: Vec<Vector3> = Vec::with_capacity(24);
+
+                        // //cycle through the bevel points and make any adjustments needed to deal with adjacent tiles
+                        // let mut border_points_tentative: Vec<Vector3> = Vec::with_capacity(8);
+                        // let mut i = 0;
+                        // while i < bevel_points.len() {
+
+                        //     let mut right = bevel_points[i];
+                        //     let mut left = bevel_points[i+1];
+
+                        //     let dir = get_direction_of_edge(left, right, center);
+                        //     let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
+
+                        //     let mut right_adj: Option<Vector3> = None;
+                        //     let mut left_adj: Option<Vector3> = None;
+
+                        //     let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+
+                        //     let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
+                            
+                        //     if !open_sides.contains(&right_dir) {
+                        //         right_adj = Some(Vector3::new(right_dir.x as f32, 0., right_dir.z as f32) * BEVEL_SIZE);
+                        //     }
+
+                        //     let left_dir = -right_dir;
+
+                        //     if !open_sides.contains(&left_dir) {
+                        //         left_adj = Some(Vector3::new(left_dir.x as f32, 0., left_dir.z as f32) * BEVEL_SIZE);
+                        //     }
+
+                        //     let mut y_adj = Vector3::new(0.,0.,0.);
+
+                        //     let right_diag = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                        //     let right_diag = Point::new(right_diag.x.round() as i32, right_diag.y as i32, right_diag.z.round() as i32);
+
+                        //     if open_sides.contains(&dir) {
+
+                        //         if draw_top {
+                        //             y_adj.y = BEVEL_SIZE / 2.;
+                        //         }
+
+                        //         if let Some(left_adj) = left_adj {
+                        //             left += left_adj;
+                        //         }
+
+                        //         if let Some(right_adj) = right_adj {
+                        //             right += right_adj;
+                        //         }
+
+                        //         border_points_tentative.push(right + bevel - y_adj);
+                        //         border_points_tentative.push(left + bevel - y_adj);
+
+                        //         curve_points.push(right + bevel - y_adj);
+                        //         curve_points.push(left + bevel - y_adj);
+
+                        //     }
+
+                        //     i += 2;
+                        // }
+
+                        // if draw_top {
+
+                        //     let mut face_points_final: Vec<Vector3> = Vec::with_capacity(8);
+                        //     let face_points_len = face_points.len();
+
+                        //     mesh_data.verts.push(&center);
+                        //     mesh_data.uvs.push(&Vector2::new(TILE_SIZE / 2., TILE_SIZE / 2.));
+                        //     mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        //     offset += 1;
+
+                        //     let mut i = 0;
+                        //     while i < face_points_len {
+                                
+                        //         let right = face_points[i % face_points_len];
+                        //         let next_i = (i + 1) % face_points_len;
+                        //         let left = face_points[next_i];
+
+                        //         // let dir = get_direction_of_edge(right, left, center);
+
+                        //         if (left - right).length() > std::f32::EPSILON {
+
+                        //             face_points_final.push(right);
+
+                        //         }
+                        //         i += 1;
+                        //     }
+
+                        //     let begin = offset;
+                        //     let face_points_final_len = face_points_final.len();
+
+                        //     let mut curves_iter = curve_points.clone().into_iter();
+                        //     let mut corner_curves_iter = corner_curve_points.clone().into_iter();
+
+                        //     let mut face_indices: Vec<i32> = Vec::with_capacity(16);
+
+                        //     godot_print!("curve and face lens {:?} {:?}", curve_points.len(), face_points_final_len);
+
+                        //     let mut i = 0;
+                        //     let mut j = 0;
+                        //     while i < face_points_final_len {
+
+                        //         let right = face_points_final[i % face_points_final_len];
+                        //         let next_i = (i + 1) % face_points_final_len;
+                        //         let left = face_points_final[next_i];
+
+                        //         let dir = get_direction_of_edge(right, left, center);
+
+                        //         let u = (right.x - world_point.x).abs() * TILE_SIZE;
+                        //         let v = (right.z - world_point.z).abs() * TILE_SIZE;
+
+                        //         mesh_data.verts.push(&right);
+                        //         mesh_data.uvs.push(&Vector2::new(u, v));
+                        //         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                        //         if i < face_points_final_len - 1 {
+                        //             mesh_data.indices.push(begin);
+                        //             mesh_data.indices.push(begin + i as i32);
+                        //             mesh_data.indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
+                        //         }
+
+                        //         let right_diag = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                        //         let right_diag = Point::new(right_diag.x.round() as i32, right_diag.y as i32, right_diag.z.round() as i32);
+
+                        //         if open_sides.contains(&dir) {
+                        //             // godot_print!("index = {:?} face_pt = {:?} curve = {:?}", begin + i as i32, right, curves_iter.clone().next().unwrap());
                                     
-                                    match curves_iter.next() {
-                                        Some(_) => {
 
-                                            face_indices.push(begin + i as i32);
+                        //             if let Some(_) = curves_iter.next() {
+                                        
+                        //                 face_indices.push(begin + i as i32);
 
-                                            //if the next direction isn't open, we have to add the left index as well so the whole side gets defined
-                                            let next_right = face_points_final[(i + 2) % face_points_final_len];
-                                            let next_dir = get_direction_of_edge(left, next_right, center);
+                        //                 // if let None = curves_iter.clone().next() {
+                        //                 //     face_indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
+                        //                 // }
 
-                                            if !open_sides.contains(&next_dir) {
-                                                face_indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
-                                            }
+                        //                 //if the next direction isn't open, we have to add the left index as well so the whole side gets defined
+                                        
+                        //                 let left_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                        //                 let left_dir = Point::new(left_dir.x as i32, left_dir.y as i32, left_dir.z as i32);
 
-                                        },
-                                        None => {}
-                                    }
+                        //                 // let next_dir = get_direction_of_edge(next_right, next_left, center);
 
-                                }
+                        //                 if j % 2 == 0 {
+                        //                     if !open_sides.contains(&left_dir) {
+                        //                         godot_print!("this happens at j {:?}", j);
+                        //                         face_indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
+                        //                     }
+                        //                 }
+                                        
+                        //                 //j helps us determine whether we're on the right pt or left pt of the side.
+                        //                 j += 1;
 
-                                offset += 1;
-                                i += 1;
-                            }
+                        //             }
 
-                            let curve_points_len = curve_points.len();
-                            let mut i = 0;
-                            let begin = offset;
+                        //         } else if open_sides.contains(&right_diag) {
 
-                            // godot_print!("{:?} {:?}", curve_points_len, face_indices.len());
+                        //             // godot_print!("{:?}", corner_curve_points.len());
 
-                            while i < curve_points_len {
+                        //             //no need to check if open sides contains right_dir since corner_curve_points only gets pushed to in that case anyway
+                        //             if let Some(r) = corner_curves_iter.next() {
+                        //                 let next_right = face_points_final[(i + 2) % face_points_final_len];
 
-                                let right = curve_points[i];
-                                let right_face = face_indices[i];
-                                let left_face = face_indices[(i + 1) % face_indices.len()];
+                        //                 corner_face_indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
+                        //                 corner_face_indices.push(begin + (i as i32 + 2) % face_points_final_len as i32);
 
-                                let u = (right.x - world_point.x).abs() * TILE_SIZE;
-                                let v = (right.z - world_point.z).abs() * TILE_SIZE;
+                        //                 godot_print!("corner_curve pt {:?} {:?} {:?}", r, left, next_right);
 
-                                mesh_data.verts.push(&right);
-                                mesh_data.uvs.push(&Vector2::new(u,v));
-                                mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                        //             }
 
-                                mesh_data.indices.push(left_face);
-                                // godot_print!("{:?}", left_face);
-                                mesh_data.indices.push(right_face);
-                                // godot_print!("{:?}", right_face);
-                                mesh_data.indices.push(begin + i as i32);
-                                // godot_print!("{:?}", begin + i as i32);
-                            
-                                mesh_data.indices.push(begin + (i as i32 + 1) % curve_points_len as i32);
-                                // godot_print!("{:?}", begin + (i as i32 + 1) % curve_points_len as i32);
-                                mesh_data.indices.push(left_face);
-                                // godot_print!("{:?}", left_face);
-                                mesh_data.indices.push(begin + i as i32);
-                                // godot_print!("{:?}", begin + i as i32);
+                        //         }
 
-                                i += 1;
-                            }
+                        //         offset += 1;
+                        //         i += 1;
+                        //     }
 
-                            offset += i as i32;
+                        //     let curve_points_len = curve_points.len();
+                        //     let mut i = 0;
+                        //     let begin = offset;
 
-                        }
+                        //     godot_print!("lengths {:?} {:?}", curve_points_len, face_indices.len());
 
+                        //     while i < curve_points_len {
+
+                        //         let right = curve_points[i];
+                        //         let left = curve_points[(i + 1) & curve_points_len];
+                        //         let right_face = face_indices[i];
+                        //         let left_face = face_indices[(i + 1) % face_indices.len()];
+
+                        //         godot_print!("{:?} {:?}", right_face, left_face);
+                                
+                        //         let u = (right.x - world_point.x).abs() * TILE_SIZE;
+                        //         let v = (right.z - world_point.z).abs() * TILE_SIZE;
+
+                        //         mesh_data.verts.push(&right);
+                        //         mesh_data.uvs.push(&Vector2::new(u,v));
+                        //         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                                
+                        //         if (left - right).length() >=  1. {
+                        //         // if i < curve_points_len - 1 {
+                        //             mesh_data.indices.push(left_face);
+                        //             // godot_print!("{:?}", left_face);
+                        //             mesh_data.indices.push(right_face);
+                        //             // godot_print!("{:?}", right_face);
+                        //             mesh_data.indices.push(begin + i as i32);
+                        //             // godot_print!("{:?}", begin + i as i32);
+                                
+                        //             mesh_data.indices.push(begin + (i as i32 + 1) % curve_points_len as i32);
+                        //             // godot_print!("{:?}", begin + (i as i32 + 1) % curve_points_len as i32);
+                        //             mesh_data.indices.push(left_face);
+                        //             // godot_print!("{:?}", left_face);
+                        //             mesh_data.indices.push(begin + i as i32);
+                        //             // godot_print!("{:?}", begin + i as i32);
+                        //         }
+
+                        //         i += 2;
+                        //     }
+
+                        //     offset += i as i32;
+
+                        // }
+
+                        // // godot_print!("{:?} {:?}", corner_curve_points.len(), corner_face_indices.len());
+
+                        // // let corner_curve_points_len = corner_curve_points.len();
+                        // // let mut corner_face_indices_iter = corner_face_indices.into_iter();
                         
+                        // // for corner_curve_point in corner_curve_points {
 
-                        //finalize the border points, adding corner verts for the beveled corners
-                        let border_points_tentative_len = border_points_tentative.len();
-                        let mut i = 0; 
-                        while i < border_points_tentative_len {
+                        // //     // godot_print!("drawing corner point {:?}", corner_curve_point);
 
-                            let left = border_points_tentative[i];
+                        // //     mesh_data.verts.push(&corner_curve_point);
 
-                            let right = border_points_tentative[i+1];
+                        // //     let u = (corner_curve_point.x - world_point.x).abs() * TILE_SIZE;
+                        // //     let v = (corner_curve_point.z - world_point.z).abs() * TILE_SIZE;
 
-                            border_points.push(left);
-                            border_points.push(right);
+                        // //     mesh_data.uvs.push(&Vector2::new(u,v));
+                        // //     mesh_data.normals.push(&Vector3::new(0.,1.,0.));
 
-                            let next_i = (i + 2) % border_points_tentative_len;
+                        // //     let right_face = corner_face_indices_iter.next().unwrap();
+                        // //     let left_face = corner_face_indices_iter.next().unwrap();
 
-                            let next_left = border_points_tentative[next_i];
+                        // //     mesh_data.indices.push(left_face);
+                        // //     mesh_data.indices.push(right_face);
+                        // //     mesh_data.indices.push(offset);
 
-                            let distance = (next_left - right).length();
+                        // //     offset += 1;
 
-                            //check the distance to make sure it's actually an adjacent corner, since the "next left" could loop around to be on the other side on corner tiles where not all sides are drawn
-                            if distance < 1. {
+                        // // }
 
-                                let average = (right + next_left) / 2.;
+                        // //finalize the border points, adding corner verts for the beveled corners
+                        // let border_points_tentative_len = border_points_tentative.len();
+                        // let mut i = 0; 
+                        // while i < border_points_tentative_len {
 
-                                //only put in a corner point if the corners aren't touching. Need two to not get a flipped uv
-                                if (right - average).length() > std::f32::EPSILON {
-                                    border_points.push(right);
-                                    border_points.push(average);
-                                    border_points.push(average);
-                                    border_points.push(next_left);
-                                }
-                            }
+                        //     let left = border_points_tentative[i];
 
-                            i += 2;
-                        }
+                        //     let right = border_points_tentative[i+1];
+
+                        //     border_points.push(left);
+                        //     border_points.push(right);
+
+                        //     let next_i = (i + 2) % border_points_tentative_len;
+
+                        //     let next_left = border_points_tentative[next_i];
+
+                        //     let distance = (next_left - right).length();
+
+                        //     //check the distance to make sure it's actually an adjacent corner, since the "next left" could loop around to be on the other side on corner tiles where not all sides are drawn
+                        //     if distance < 1. {
+
+                        //         let average = (right + next_left) / 2.;
+
+                        //         //only put in a corner point if the corners aren't touching. Need two to not get a flipped uv
+                        //         if (right - average).length() > std::f32::EPSILON {
+                        //             border_points.push(right);
+                        //             border_points.push(average);
+                        //             border_points.push(average);
+                        //             border_points.push(next_left);
+                        //         }
+                        //     }
+
+                        //     i += 2;
+                        // }
 
                         let border_points_len = border_points.len();
 
@@ -755,8 +852,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
 pub fn get_open_sides(neighbor_dirs: &[Point; 8], world: &legion::world::World, map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
     let mut open_sides: HashSet<Point> = HashSet::new();
-    // let chunk_max = map_data.octree.get_aabb().get_max();
-    // let chunk_min = map_data.octree.get_aabb().get_min();
+    let chunk_max = map_data.octree.get_aabb().get_max();
+    let chunk_min = map_data.octree.get_aabb().get_min();
     
     for dir in neighbor_dirs {
 
@@ -773,14 +870,14 @@ pub fn get_open_sides(neighbor_dirs: &[Point; 8], world: &legion::world::World, 
                 match map_data.octree.get_aabb().contains_point(neighbor) {
                     false => {
 
-                        // // if the dir is pointing diagonally, and this point is not on the corner, skip this step
-                        // if dir.x.abs() + dir.z.abs() > 1 &&
-                        //     (*dir == Point::new(1,0,1) && !(point.x == chunk_max.x && point.z == chunk_max.z)) ||
-                        //     (*dir == Point::new(-1,0,1) && !(point.x == chunk_min.x && point.z == chunk_max.z)) ||
-                        //     (*dir == Point::new(-1,0,-1) && !(point.x == chunk_min.x && point.z == chunk_min.z)) ||
-                        //     (*dir == Point::new(1,0,-1) && !(point.x == chunk_max.x && point.z == chunk_min.z)) {
-                        //         continue;
-                        // }
+                        // if the dir is pointing diagonally, and this point is not on the corner, skip this step
+                        if dir.x.abs() + dir.z.abs() > 1 &&
+                            (*dir == Point::new(1,0,1) && !(point.x == chunk_max.x && point.z == chunk_max.z)) ||
+                            (*dir == Point::new(-1,0,1) && !(point.x == chunk_min.x && point.z == chunk_max.z)) ||
+                            (*dir == Point::new(-1,0,-1) && !(point.x == chunk_min.x && point.z == chunk_min.z)) ||
+                            (*dir == Point::new(1,0,-1) && !(point.x == chunk_max.x && point.z == chunk_min.z)) {
+                                continue;
+                        }
 
                         let chunk_point_dir = map_data.get_chunk_point() + dir;
 
