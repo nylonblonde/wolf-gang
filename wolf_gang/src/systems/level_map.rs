@@ -97,10 +97,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
         -Point::x(),
         Point::z(),
         -Point::z(),
-        // Point::x()+Point::z(),
-        // -Point::x()+Point::z(),
-        // -Point::x()-Point::z(),
-        // Point::x()+Point::z()
+        Point::x()+Point::z(),
+        -Point::x()+Point::z(),
+        -Point::x()-Point::z(),
+        Point::x()+Point::z()
     ];
 
     Box::new(move |world, _| {
@@ -520,37 +520,22 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     mesh_data.indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
                                 }
 
-                                offset += 1;
 
                                 if open_sides.contains(&dir) {
-                                    godot_print!("index = {:?} face_pt = {:?} curve = {:?}", begin + i as i32, right, curves_iter.clone().next().unwrap());
+                                    // godot_print!("index = {:?} face_pt = {:?} curve = {:?}", begin + i as i32, right, curves_iter.clone().next().unwrap());
                                     
                                     match curves_iter.next() {
                                         Some(_) => {
 
-                                            // let u = (r.x - world_point.x).abs() * TILE_SIZE;
-                                            // let v = (r.z - world_point.z).abs() * TILE_SIZE;
+                                            face_indices.push(begin + i as i32);
 
-                                            // mesh_data.verts.push(&r);
-                                            // mesh_data.uvs.push(&Vector2::new(u,v));
-                                            // mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                                            //if the next direction isn't open, we have to add the left index as well so the whole side gets defined
+                                            let next_right = face_points_final[(i + 2) % face_points_final_len];
+                                            let next_dir = get_direction_of_edge(left, next_right, center);
 
-
-                                            //to prevent duplicate entries check if contains
-
-                                            let index = begin + i as i32;
-                                            if !face_indices.contains(&index) {
-                                                face_indices.push(index);
+                                            if !open_sides.contains(&next_dir) {
+                                                face_indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
                                             }
-
-                                            let index = begin + (i as i32 + 1) % face_points_len as i32;
-                                            if !face_indices.contains(&index) {
-                                                face_indices.push(index);
-                                            }
-                                            // curves_indices.push(begin + (i as i32 + j + 2) % face_points_final_len as i32);
-
-                                            // j += 1;
-                                            // offset += 1;
 
                                         },
                                         None => {}
@@ -558,6 +543,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                                 }
 
+                                offset += 1;
                                 i += 1;
                             }
 
@@ -565,7 +551,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             let mut i = 0;
                             let begin = offset;
 
-                            godot_print!("{:?} {:?}", curve_points_len, face_indices.len());
+                            // godot_print!("{:?} {:?}", curve_points_len, face_indices.len());
 
                             while i < curve_points_len {
 
@@ -581,18 +567,18 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 mesh_data.normals.push(&Vector3::new(0.,1.,0.));
 
                                 mesh_data.indices.push(left_face);
-                                godot_print!("{:?}", left_face);
+                                // godot_print!("{:?}", left_face);
                                 mesh_data.indices.push(right_face);
-                                godot_print!("{:?}", right_face);
+                                // godot_print!("{:?}", right_face);
                                 mesh_data.indices.push(begin + i as i32);
-                                godot_print!("{:?}", begin + i as i32);
+                                // godot_print!("{:?}", begin + i as i32);
                             
                                 mesh_data.indices.push(begin + (i as i32 + 1) % curve_points_len as i32);
-                                godot_print!("{:?}", begin + (i as i32 + 1) % curve_points_len as i32);
+                                // godot_print!("{:?}", begin + (i as i32 + 1) % curve_points_len as i32);
                                 mesh_data.indices.push(left_face);
-                                godot_print!("{:?}", left_face);
+                                // godot_print!("{:?}", left_face);
                                 mesh_data.indices.push(begin + i as i32);
-                                godot_print!("{:?}", begin + i as i32);
+                                // godot_print!("{:?}", begin + i as i32);
 
                                 i += 1;
                             }
@@ -767,7 +753,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
     })
 } 
 
-pub fn get_open_sides(neighbor_dirs: &[Point; 4], world: &legion::world::World, map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
+pub fn get_open_sides(neighbor_dirs: &[Point; 8], world: &legion::world::World, map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
     let mut open_sides: HashSet<Point> = HashSet::new();
     // let chunk_max = map_data.octree.get_aabb().get_max();
     // let chunk_min = map_data.octree.get_aabb().get_min();
