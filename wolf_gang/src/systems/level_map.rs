@@ -268,15 +268,15 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         if draw_top { 
 
-                            mesh_data.verts.push(&top_left);
                             mesh_data.verts.push(&top_right);
+                            mesh_data.verts.push(&top_left);
                             mesh_data.verts.push(&bottom_left);
                             mesh_data.verts.push(&bottom_right);
 
-                            mesh_data.uvs.push(&Vector2::new(0.,0.));
-                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE,0.));
+                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE,TILE_SIZE));
                             mesh_data.uvs.push(&Vector2::new(0.,TILE_SIZE));
-                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE ,TILE_SIZE));
+                            mesh_data.uvs.push(&Vector2::new(0., 0.));
+                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE, 0.));
 
                             mesh_data.normals.push(&Vector3::new(0.,1.,0.));
                             mesh_data.normals.push(&Vector3::new(0.,1.,0.));
@@ -284,11 +284,11 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             mesh_data.normals.push(&Vector3::new(0.,1.,0.));
 
                             mesh_data.indices.push(offset+2);
-                            mesh_data.indices.push(offset+1);
                             mesh_data.indices.push(offset);
+                            mesh_data.indices.push(offset+1);
 
                             mesh_data.indices.push(offset+3);
-                            mesh_data.indices.push(offset+1);
+                            mesh_data.indices.push(offset);
                             mesh_data.indices.push(offset+2);
 
                             offset += 4;
@@ -305,6 +305,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         let corners_len = corners.len();
 
                         let mut face_points: Vec<Vector3> = Vec::with_capacity(8);
+                        let mut curve_points: Vec<Vector3> = Vec::with_capacity(8);
 
                         //cycle through the face points and get individual vectors for each side (no shared vertices)
                         let mut bevel_points: Vec<Vector3> = Vec::with_capacity(8);
@@ -320,8 +321,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             let dir = get_direction_of_edge(right, left, center);
 
                             let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
-
-                            
                                 
                             if open_sides.contains(&dir) {
                                 let mut scaled_right = right;
@@ -384,8 +383,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     scaled_right -= left;
                                     scaled_left -= left;
 
-                                    scaled_right *= 1.-BEVEL_SIZE;
-                                    scaled_left *= 1.-BEVEL_SIZE;
+                                    scaled_right *= 1.-BEVEL_SIZE / 2.;
+                                    scaled_left *= 1.-BEVEL_SIZE / 2.;
 
                                     scaled_right += left;
                                     scaled_left += left;
@@ -393,8 +392,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     scaled_right -= right;
                                     scaled_left -= right;
 
-                                    scaled_right *= 1.-BEVEL_SIZE;
-                                    scaled_left *= 1.-BEVEL_SIZE;
+                                    scaled_right *= 1.-BEVEL_SIZE / 2.;
+                                    scaled_left *= 1.-BEVEL_SIZE / 2.;
 
                                     scaled_right += right;
                                     scaled_left += right;
@@ -414,8 +413,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         let mut i = 0;
                         while i < bevel_points.len() {
 
-                            let mut left = bevel_points[i];
-                            let mut right = bevel_points[i+1];
+                            let mut right = bevel_points[i];
+                            let mut left = bevel_points[i+1];
 
                             let dir = get_direction_of_edge(left, right, center);
                             let bevel = Vector3::new(dir.x as f32 * BEVEL_SIZE, 0., dir.z as f32 * BEVEL_SIZE);
@@ -446,15 +445,19 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 }
 
                                 if let Some(left_adj) = left_adj {
-                                    right += left_adj;
+                                    left += left_adj;
                                 }
 
                                 if let Some(right_adj) = right_adj {
-                                    left += right_adj;
+                                    right += right_adj;
                                 }
 
-                                border_points_tentative.push(left + bevel - y_adj);
                                 border_points_tentative.push(right + bevel - y_adj);
+                                border_points_tentative.push(left + bevel - y_adj);
+
+                                curve_points.push(right + bevel - y_adj);
+                                curve_points.push(left + bevel - y_adj);
+
                             }
 
                             i += 2;
@@ -477,6 +480,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 let next_i = (i + 1) % face_points_len;
                                 let left = face_points[next_i];
 
+                                // let dir = get_direction_of_edge(right, left, center);
+
                                 if (left - right).length() > std::f32::EPSILON {
 
                                     face_points_final.push(right);
@@ -485,16 +490,22 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 i += 1;
                             }
 
-                            godot_print!("{:?}", face_points_final.len());
-
                             let begin = offset;
                             let face_points_final_len = face_points_final.len();
+
+                            let mut curves_iter = curve_points.clone().into_iter();
+
+                            let mut face_indices: Vec<i32> = Vec::with_capacity(16);
+
                             let mut i = 0;
+                            // let mut j = 0;
                             while i < face_points_final_len {
 
                                 let right = face_points_final[i % face_points_final_len];
                                 let next_i = (i + 1) % face_points_final_len;
                                 let left = face_points_final[next_i];
+
+                                let dir = get_direction_of_edge(right, left, center);
 
                                 let u = (right.x - world_point.x).abs() * TILE_SIZE;
                                 let v = (right.z - world_point.z).abs() * TILE_SIZE;
@@ -510,10 +521,87 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 }
 
                                 offset += 1;
+
+                                if open_sides.contains(&dir) {
+                                    godot_print!("index = {:?} face_pt = {:?} curve = {:?}", begin + i as i32, right, curves_iter.clone().next().unwrap());
+                                    
+                                    match curves_iter.next() {
+                                        Some(_) => {
+
+                                            // let u = (r.x - world_point.x).abs() * TILE_SIZE;
+                                            // let v = (r.z - world_point.z).abs() * TILE_SIZE;
+
+                                            // mesh_data.verts.push(&r);
+                                            // mesh_data.uvs.push(&Vector2::new(u,v));
+                                            // mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+
+                                            //to prevent duplicate entries check if contains
+
+                                            let index = begin + i as i32;
+                                            if !face_indices.contains(&index) {
+                                                face_indices.push(index);
+                                            }
+
+                                            let index = begin + (i as i32 + 1) % face_points_len as i32;
+                                            if !face_indices.contains(&index) {
+                                                face_indices.push(index);
+                                            }
+                                            // curves_indices.push(begin + (i as i32 + j + 2) % face_points_final_len as i32);
+
+                                            // j += 1;
+                                            // offset += 1;
+
+                                        },
+                                        None => {}
+                                    }
+
+                                }
+
                                 i += 1;
                             }
 
+                            let curve_points_len = curve_points.len();
+                            let mut i = 0;
+                            let begin = offset;
+
+                            godot_print!("{:?} {:?}", curve_points_len, face_indices.len());
+
+                            while i < curve_points_len {
+
+                                let right = curve_points[i];
+                                let right_face = face_indices[i];
+                                let left_face = face_indices[(i + 1) % face_indices.len()];
+
+                                let u = (right.x - world_point.x).abs() * TILE_SIZE;
+                                let v = (right.z - world_point.z).abs() * TILE_SIZE;
+
+                                mesh_data.verts.push(&right);
+                                mesh_data.uvs.push(&Vector2::new(u,v));
+                                mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                                mesh_data.indices.push(left_face);
+                                godot_print!("{:?}", left_face);
+                                mesh_data.indices.push(right_face);
+                                godot_print!("{:?}", right_face);
+                                mesh_data.indices.push(begin + i as i32);
+                                godot_print!("{:?}", begin + i as i32);
+                            
+                                mesh_data.indices.push(begin + (i as i32 + 1) % curve_points_len as i32);
+                                godot_print!("{:?}", begin + (i as i32 + 1) % curve_points_len as i32);
+                                mesh_data.indices.push(left_face);
+                                godot_print!("{:?}", left_face);
+                                mesh_data.indices.push(begin + i as i32);
+                                godot_print!("{:?}", begin + i as i32);
+
+                                i += 1;
+                            }
+
+                            offset += i as i32;
+
                         }
+
+                        
 
                         //finalize the border points, adding corner verts for the beveled corners
                         let border_points_tentative_len = border_points_tentative.len();
