@@ -173,7 +173,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
 
                                 if curr_sides.symmetric_difference(&point_sides).count() > 0 {
-                                    draw_top = false;
+                                    //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
+                                    if point_sides.difference(&curr_sides).count() > 0 {
+                                        draw_top = false;
+                                    }
                                     break;
                                 }
 
@@ -231,8 +234,13 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         match map_data.octree.query_point(point_below) {
                             Some(_) => {
                                 let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
-
+                                
                                 if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+
+                                    //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
+                                    if point_sides.difference(&curr_sides).count() > 0 {
+                                        bottom.y -= 1;
+                                    }
                                     break;
                                 }
 
@@ -300,11 +308,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                     } else { //if open_sides is not empty, draw a more complex face to account for the bevel
 
-
-                        // // for side in &open_sides {
-                        // //     godot_print!("{:?}", side);
-                        // // }
-
                         let mut corners: Vec<Vector3> = vec![
                             top_right, 
                             top_left, 
@@ -319,11 +322,11 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         let mut i = 0;
                         while i < corners_len {
 
-                            let mut right = corners[i];
-                            let mut left = corners[(i + 1) % corners_len];
+                            let right = corners[i];
+                            let left = corners[(i + 1) % corners_len];
 
                             let dir = get_direction_of_edge(right, left, center);
-                            let mut bevel = Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * BEVEL_SIZE / 2.;
+                            let bevel = Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * BEVEL_SIZE / 2.;
 
                             let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
                             let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
@@ -332,8 +335,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                             let mut scale_origin = center;
                             let mut scale_size = 1.-BEVEL_SIZE * 2.;
-                            let mut corner_scale = scale_size * 1.25;
+                            let corner_scale = scale_size * 1.2;
 
+                            // Define top face points based on which sides are exposed or not.
                             if open_sides.contains(&dir) {
 
                                 // godot_print!("prev_dir = {:?} dir = {:?} next_dir = {:?}", right_dir, dir, left_dir);
@@ -382,8 +386,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                                 let left_diag = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
                                 let left_diag = Point::new(left_diag.x.round() as i32, left_diag.y.round() as i32, left_diag.z.round() as i32);
-
-                                // godot_print!("left {:?} dir {:?} right {:?}", left_diag, dir, right_diag);
 
                                 let mut adj: Option<Vector3> = None;
 
@@ -505,10 +507,17 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             
                             let left_dir = -right_dir;
 
+                            let right_diag= nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                            let right_diag = Point::new(right_diag.x.round() as i32, right_diag.y.round() as i32, right_diag.z.round() as i32);    
+
+                            let left_diag= nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                            let left_diag = Point::new(left_diag.x.round() as i32, left_diag.y.round() as i32, left_diag.z.round() as i32);
+
                             let mut scaled_right = scale_from_origin(right, center, 1./(1.-BEVEL_SIZE));
                             let mut scaled_left = scale_from_origin(left, center, 1./(1.-BEVEL_SIZE));
 
-                            if !open_sides.contains(&dir) && open_sides.contains(&right_dir) {
+                            //change the origin of our scale for when certain sides are exposed or not
+                            if !open_sides.contains(&dir) && (open_sides.contains(&right_dir) || open_sides.contains(&right_diag)){
 
                                 let middle = if right_dir.x.abs() > right_dir.z.abs() {
                                     Vector3::new(right_dir.x as f32, right_dir.y as f32, right_dir.z as f32) * TILE_DIMENSIONS.x / 2.
@@ -557,6 +566,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 }
                             }
 
+                            //draw the curves
                             if draw_top {
 
                                 scaled_right.y -= BEVEL_SIZE / 2.;
@@ -572,8 +582,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 offset += 1;
 
                                 let face_right_index = face_point_indices[right_index];
-                                let face_left_index = face_point_indices[left_index];
-                                if open_sides.contains(&dir) {
+                                let face_left_index = face_point_indices[left_index]; 
+
+                                if open_sides.contains(&dir) || (!open_sides.contains(&right_dir) && open_sides.contains(&right_diag)) || (!open_sides.contains(&left_dir) && open_sides.contains(&left_diag)){
                                     mesh_data.indices.push(face_left_index);
                                     mesh_data.indices.push(face_right_index);
                                     mesh_data.indices.push(begin + left_index as i32);
@@ -591,6 +602,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             i += 1;
                         }
 
+                        //define the vertices for the walls
                         let border_points_len = border_points.len();
 
                         if border_points_len > 0 {
@@ -615,7 +627,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 let next_point = border_points.get(next_i).unwrap();
 
                                 let dir = get_direction_of_edge(*border_point, *next_point, center);
-                                // godot_print!("average_dir = {:?} dir = {:?}", average_dir, dir);
 
                                 //top
                                 mesh_data.verts.push(&border_point);
@@ -626,11 +637,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 mesh_data.normals.push(&Vector3::new(0.,1.,0.));
                                 mesh_data.normals.push(&Vector3::new(0.,1.,0.));
 
-                                let uv_width = 1.; //num::Float::max(top_right.x - top_left.x, top_right.z - top_left.z);
-
                                 if i % 2 == 0 {
-
-                                    // panic!("{:?}", (i as i32 - 1).mod_floor(&(border_points_len as i32)));
 
                                     let diff = *next_point - *border_point;
 
