@@ -103,6 +103,19 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
         Point::x()-Point::z()
     ];
 
+    let all_dirs = [
+        Point::x(),
+        -Point::x(),
+        Point::z(),
+        -Point::z(),
+        Point::x()+Point::z(),
+        -Point::x()+Point::z(),
+        -Point::x()-Point::z(),
+        Point::x()-Point::z(),
+        Point::y(),
+        -Point::y()
+    ];
+
     Box::new(move |world, _| {
 
         unsafe {
@@ -122,7 +135,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                 //only manually change neighbors if it is a direct change
                 if changed.0 == ChangeType::Direct {
-                    for dir in &neighbor_dirs {
+                    for dir in &all_dirs {
                         
                         let neighbor_chunk_pt = map_data.get_chunk_point() + dir;
 
@@ -193,8 +206,15 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     Some(map_data) => {
                                         match map_data.octree.query_point(point_above) {
                                             Some(_) => { 
-                                                draw_top = false; 
-                                                break
+                                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
+
+                                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                                                    //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
+                                                    if point_sides.difference(&curr_sides).count() > 0 {
+                                                        draw_top = false;
+                                                    }
+                                                    break;
+                                                }
                                             },
                                             None => break
                                         }
@@ -257,8 +277,16 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     Some(map_data) => {
                                         match map_data.octree.query_point(point_below) {
                                             Some(_) => {
-                                                draw_bottom = false;
-                                                break
+                                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
+                                
+                                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+
+                                                    //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
+                                                    if point_sides.difference(&curr_sides).count() > 0 {
+                                                        bottom.y -= 1;
+                                                    }
+                                                    break;
+                                                }
                                             },
                                             None => break
                                         }
@@ -358,7 +386,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 } else if !open_sides.contains(&left_dir) {
                                     scale_origin = left;
                                     scale_size = 1.-BEVEL_SIZE;
-                                    corner = Some(scale_from_origin(left, center, corner_scale));
                                     adj = Some(-bevel);
 
                                 } else {
@@ -461,7 +488,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         let begin = offset;
                         while i < face_points_final_len {
 
-                            let right = face_points_final[i];
+                            let right = face_points_final[i % face_points_final_len];
                             let left = face_points_final[(i + 1) % face_points_final_len];
 
                             let dir = get_direction_of_edge(right, left, center);
@@ -472,9 +499,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             if draw_top {
                                 mesh_data.verts.push(&right);
                                 mesh_data.uvs.push(&Vector2::new(u, v));
-                                mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                                mesh_data.normals.push(&Vector3::new(0., 1., 0.));
 
                                 face_point_indices.push(begin + i as i32);
+
                                 offset += 1;
 
                                 if i > 0 && i < face_points_final_len - 1 {
@@ -577,7 +605,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                                 mesh_data.verts.push(&scaled_right);
                                 mesh_data.uvs.push(&Vector2::new(u, v));
-                                mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+
+                                let normal_origin = center - Vector3::new(0., BEVEL_SIZE / 4., 0.);
+                                mesh_data.normals.push(&(scaled_right - center).normalize());
 
                                 offset += 1;
 
@@ -632,10 +662,17 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 mesh_data.verts.push(&border_point);
 
                                 //bottom
-                                mesh_data.verts.push(&(*border_point - Vector3::new(0., height, 0.)));
 
-                                mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                                mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                                let bottom_point = *border_point - Vector3::new(0., height, 0.);
+                                mesh_data.verts.push(&(bottom_point));
+
+                                let mut normal_origin_bp = center;
+                                normal_origin_bp.y = border_point.y;
+                                let mut normal_origin_bot = center;
+                                normal_origin_bot.y = bottom_point.y;
+
+                                mesh_data.normals.push(&(*border_point - normal_origin_bp).normalize());
+                                mesh_data.normals.push(&(bottom_point - normal_origin_bot).normalize());
 
                                 if i % 2 == 0 {
 
