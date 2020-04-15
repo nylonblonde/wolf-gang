@@ -187,7 +187,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                                 if curr_sides.symmetric_difference(&point_sides).count() > 0 {
                                     //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
-                                    if point_sides.difference(&curr_sides).count() > 0 {
+                                    if curr_sides.difference(&point_sides).count() == 0 {
                                         draw_top = false;
                                     }
                                     break;
@@ -206,15 +206,17 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     Some(map_data) => {
                                         match map_data.octree.query_point(point_above) {
                                             Some(_) => { 
+                                                
                                                 let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
 
                                                 if curr_sides.symmetric_difference(&point_sides).count() > 0 {
                                                     //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
-                                                    if point_sides.difference(&curr_sides).count() > 0 {
+                                                    if curr_sides.difference(&point_sides).count() == 0 {
                                                         draw_top = false;
                                                     }
-                                                    break;
                                                 }
+                                                break;
+
                                             },
                                             None => break
                                         }
