@@ -206,7 +206,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     Some(map_data) => {
                                         match map_data.octree.query_point(point_above) {
                                             Some(_) => { 
-                                                
+
                                                 let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
 
                                                 if curr_sides.symmetric_difference(&point_sides).count() > 0 {
@@ -214,6 +214,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                                     if curr_sides.difference(&point_sides).count() == 0 {
                                                         draw_top = false;
                                                     }
+                                                } else {
+                                                    draw_top = false;
                                                 }
                                                 break;
 
@@ -287,6 +289,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                                     if point_sides.difference(&curr_sides).count() > 0 {
                                                         bottom.y -= 1;
                                                     }
+                                                    break;
+                                                }else {
                                                     break;
                                                 }
                                             },
@@ -608,8 +612,11 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 mesh_data.verts.push(&scaled_right);
                                 mesh_data.uvs.push(&Vector2::new(u, v));
 
-                                let normal_origin = center - Vector3::new(0., BEVEL_SIZE / 4., 0.);
-                                mesh_data.normals.push(&(scaled_right - center).normalize());
+                                let mut normal = (scaled_right + scaled_left) / 2.;
+                                normal.y = center.y;
+                                normal = (normal - center).normalize();
+
+                                mesh_data.normals.push(&(normal).normalize());
 
                                 offset += 1;
 
@@ -668,17 +675,31 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 let bottom_point = *border_point - Vector3::new(0., height, 0.);
                                 mesh_data.verts.push(&(bottom_point));
 
-                                let mut normal_origin_bp = center;
-                                normal_origin_bp.y = border_point.y;
-                                let mut normal_origin_bot = center;
-                                normal_origin_bot.y = bottom_point.y;
-
-                                mesh_data.normals.push(&(*border_point - normal_origin_bp).normalize());
-                                mesh_data.normals.push(&(bottom_point - normal_origin_bot).normalize());
+                                let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                                let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
+                                
+                                let left_dir = -right_dir;
 
                                 if i % 2 == 0 {
 
                                     let diff = *next_point - *border_point;
+
+                                    let mut normal_origin = (*next_point + *border_point) / 2.;
+                                    normal_origin.y = center.y;
+                                    normal_origin = (normal_origin - center).normalize();
+
+                                    godot_print!("normal {:?}", normal_origin);
+
+                                    let mut normal_origin_bp = normal_origin;
+                                    normal_origin_bp.y = border_point.y;
+                                    let mut normal_origin_bot = normal_origin;
+                                    normal_origin_bot.y = bottom_point.y;
+    
+                                    mesh_data.normals.push(&(normal_origin).normalize());
+                                    mesh_data.normals.push(&(normal_origin).normalize());
+
+                                    mesh_data.normals.push(&(normal_origin).normalize());
+                                    mesh_data.normals.push(&(normal_origin).normalize());
 
                                     let mut u = 1.;
                                     let mut next_u = 1.;
