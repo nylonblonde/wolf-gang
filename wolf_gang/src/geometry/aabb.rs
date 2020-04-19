@@ -9,7 +9,7 @@ pub struct AABB<F: Scalar> {
     pub dimensions: Vector3<F>,
 }
 
-impl<F: Signed + Scalar + Num + NumCast + Ord> AABB<F> {
+impl<F: Signed + Scalar + Num + NumCast + Ord + Copy + Clone> AABB<F> {
     pub fn new(center: Vector3<F>, dimensions: Vector3<F>) -> Self {
         Self {
             center,

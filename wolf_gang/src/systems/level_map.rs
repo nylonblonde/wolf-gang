@@ -688,8 +688,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     normal_origin.y = center.y;
                                     normal_origin = (normal_origin - center).normalize();
 
-                                    godot_print!("normal {:?}", normal_origin);
-
                                     let mut normal_origin_bp = normal_origin;
                                     normal_origin_bp.y = border_point.y;
                                     let mut normal_origin_bot = normal_origin;

@@ -34,7 +34,7 @@ impl<'a, N: Scalar, T: PointData<N>> Iterator for OctreeIter<N, T> {
     }
 }
 
-impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N> + Debug> IntoIterator for Octree<N, T> {
+impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone, T: PointData<N> + Debug> IntoIterator for Octree<N, T> {
     type Item = T;
     type IntoIter = OctreeIter<N, T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -57,7 +57,7 @@ pub struct Octree <N: Scalar, T: PointData<N>>{
 }
 
 #[allow(dead_code)]
-impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign, T: PointData<N> + Debug> Octree<N, T> {
+impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone, T: PointData<N> + Debug> Octree<N, T> {
 
     pub fn new(aabb: AABB<N>) -> Octree<N, T> {
         println!("Creating new Octree with a min of {:?} and a max of {:?}", aabb.get_min(), aabb.get_max());

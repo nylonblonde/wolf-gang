@@ -12,7 +12,7 @@ mod geometry;
 mod systems;
 mod node;
 
-use systems::{camera, input, level_map, custom_mesh, selection_box, smoothing, transform};
+use systems::{camera, input, level_map, custom_mesh, selection_box, smoothing, transform, udp};
 
 #[cfg(test)]
 mod tests;
@@ -72,6 +72,10 @@ impl WolfGang {
         resources.insert(Time{
             delta: 0.
         });
+
+        resources.insert(udp::ClientSocket::new("127.0.0.1:12345"));
+
+        resources.insert(udp::ServerSocket::new("127.0.0.1:12346"));
 
         resources.insert(level_map::Map::default());    
 
