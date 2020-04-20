@@ -182,17 +182,20 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
+
+                    //TODO: the overhang is not displaying properly across chunks
+
                     //iterate from this point to either the top or the top of the chunk
                     for y in point.y..chunk_top_y+1 {
                         top.y = y;
 
                         let point_above = top+Point::y();
 
-                        //if the point is below where the cut for the lip would be and we are at the cut, break and do not draw top
-                        if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
-                            draw_top = false;
-                            break;
-                        }
+                        // //if the point is below where the cut for the lip would be and we are at the cut, break and do not draw top
+                        // if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
+                        //     draw_top = false;
+                        //     break;
+                        // }
 
                         match map_data.octree.query_point(point_above) {
                             Some(_) => {
@@ -204,6 +207,12 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                         draw_top = false;
                                     }
                                     break;
+                                } else {
+                                    //if the point is below where the cut for the lip would be and we are at the cut, break and do not draw top
+                                    if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
+                                        draw_top = false;
+                                        break;
+                                    } 
                                 }
 
                                 checked.insert(point_above);
@@ -268,9 +277,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         let point_below = bottom - Point::y();
 
-                        if true_top - 1. > map_coords_to_world(point_below).y  {
-                            break;
-                        } 
+                        //This needs overrides all logic for adjusting bottom for side differences -- rethink
+                        // if true_top - 1. > map_coords_to_world(point_below).y  {
+                        //     break;
+                        // } 
                         
                         match map_data.octree.query_point(point_below) {
                             Some(_) => {
@@ -283,6 +293,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                         bottom.y -= 1;
                                     }
                                     break;
+                                } else {
+                                    if true_top - 1. > map_coords_to_world(point_below).y  {
+                                        break;
+                                    }
                                 }
 
                                 checked.insert(point_below);
@@ -753,12 +767,12 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
                                     mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE));
 
-                                    if map_coords_to_world(point).y + std::f32::EPSILON > true_top - 1. {
-                                        mesh_data.uv2s.push(&Vector2::new(TILE_SIZE, -TILE_SIZE));
-                                        mesh_data.uv2s.push(&Vector2::new(TILE_SIZE, -TILE_SIZE + TILE_SIZE));
+                                    if map_coords_to_world(point).y + std::f32::EPSILON >= true_top - 1. {
+                                        mesh_data.uv2s.push(&Vector2::new(0., 0.));
+                                        mesh_data.uv2s.push(&Vector2::new(0., 1.));
 
-                                        mesh_data.uv2s.push(&Vector2::new(TILE_SIZE + TILE_SIZE, -TILE_SIZE));
-                                        mesh_data.uv2s.push(&Vector2::new(TILE_SIZE + TILE_SIZE, -TILE_SIZE + TILE_SIZE));
+                                        mesh_data.uv2s.push(&Vector2::new(1., 0.));
+                                        mesh_data.uv2s.push(&Vector2::new(1., 1.));
 
                                     } else {
                                         mesh_data.uv2s.push(&Vector2::default());
@@ -832,25 +846,31 @@ fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData)
         true_top.y = chunk_min.y;
     }
 
-    while true_top.y < chunk_max.y + 1{
+    while true_top.y < chunk_max.y+1 {
         
-        if true_top.y == chunk_max.y {
+        let point_above = true_top + Point::y();
 
-            let chunk_pt_above = map_data.get_chunk_point() + Point::y();
+        match map_data.octree.query_point(point_above) {
+            Some(_) => {},
+            None if point_above.y > chunk_max.y => {
 
-            let query = <Read<MapChunkData>>::query().filter(tag_value(&chunk_pt_above));
+                let chunk_pt_above = map_data.get_chunk_point()+Point::y();
 
-            if let Some(map_data) = query.iter(& *world).next() {
-                true_top = get_true_top(pt, world, &map_data);
+                match <Read<MapChunkData>>::query().filter(tag_value(&chunk_pt_above)).iter(world).next() {
+                    Some(map_data) => {
 
-                break;
+                        let res = get_true_top(pt, world, &map_data);
+                        // if res.y > true_top.y {
+                            true_top = res;
+                            break;
+                        // }
 
-            }
-        } else {
-            if let None = map_data.octree.query_point(true_top) {
-                true_top.y -= 1;
-                break;
-            }
+                    },
+                    None => break
+                }
+
+            },
+            None => break
         }
 
         true_top.y += 1;
