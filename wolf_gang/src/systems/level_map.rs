@@ -154,6 +154,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                 mesh_data.verts = Vector3Array::new();
                 mesh_data.normals = Vector3Array::new();
                 mesh_data.uvs = Vector2Array::new();
+                mesh_data.uv2s = Vector2Array::new();
                 mesh_data.indices = Int32Array::new();
 
                 let mut checked: HashSet::<Point> = HashSet::new();
@@ -169,9 +170,15 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     checked.insert(point);
 
+                    let chunk_top_y = map_data.octree.get_aabb().get_max().y;
+
+                    let true_top = get_true_top(point, world, &map_data);
+                    let true_top = map_coords_to_world(true_top).y + TILE_DIMENSIONS.y;
+
+                    godot_print!("true top = {:?}", true_top);
+
                     let mut top = point;
                     let mut draw_top: bool = true;
-                    let chunk_top_y = map_data.octree.get_aabb().get_max().y;
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
@@ -180,6 +187,12 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         top.y = y;
 
                         let point_above = top+Point::y();
+
+                        //if the point is below where the cut for the lip would be and we are at the cut, break and do not draw top
+                        if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
+                            draw_top = false;
+                            break;
+                        }
 
                         match map_data.octree.query_point(point_above) {
                             Some(_) => {
@@ -254,6 +267,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         bottom.y = y;
 
                         let point_below = bottom - Point::y();
+
+                        if true_top - 1. > map_coords_to_world(point_below).y  {
+                            break;
+                        } 
                         
                         match map_data.octree.query_point(point_below) {
                             Some(_) => {
@@ -304,12 +321,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                         
                     }
-
-                    godot_print!("sides of {:?}", point);
-                    for side in &open_sides {
-                        godot_print!("{:?}", side);
-                    }
-
+                    
                     // if there are no open sides, all we have to draw is a simple 2 triangle face
                     if open_sides.is_empty() {
 
@@ -324,6 +336,11 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             mesh_data.uvs.push(&Vector2::new(0.,TILE_SIZE));
                             mesh_data.uvs.push(&Vector2::new(0., 0.));
                             mesh_data.uvs.push(&Vector2::new(TILE_SIZE, 0.));
+
+                            mesh_data.uv2s.push(&Vector2::default());
+                            mesh_data.uv2s.push(&Vector2::default());
+                            mesh_data.uv2s.push(&Vector2::default());
+                            mesh_data.uv2s.push(&Vector2::default());
 
                             mesh_data.normals.push(&Vector3::new(0.,1.,0.));
                             mesh_data.normals.push(&Vector3::new(0.,1.,0.));
@@ -486,6 +503,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         mesh_data.verts.push(&center);
                         mesh_data.uvs.push(&Vector2::new(TILE_SIZE / 2., TILE_SIZE / 2.));
+                        mesh_data.uv2s.push(&Vector2::default());
                         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
                         offset += 1;
 
@@ -505,6 +523,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             if draw_top {
                                 mesh_data.verts.push(&right);
                                 mesh_data.uvs.push(&Vector2::new(u, v));
+                                mesh_data.uv2s.push(&Vector2::default());
                                 mesh_data.normals.push(&Vector3::new(0., 1., 0.));
 
                                 face_point_indices.push(begin + i as i32);
@@ -611,6 +630,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                                 mesh_data.verts.push(&scaled_right);
                                 mesh_data.uvs.push(&Vector2::new(u, v));
+                                mesh_data.uv2s.push(&Vector2::default());
 
                                 let mut normal = (scaled_right + scaled_left) / 2.;
                                 normal.y = center.y;
@@ -733,6 +753,21 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
                                     mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE));
 
+                                    if map_coords_to_world(point).y + std::f32::EPSILON > true_top - 1. {
+                                        mesh_data.uv2s.push(&Vector2::new(TILE_SIZE, -TILE_SIZE));
+                                        mesh_data.uv2s.push(&Vector2::new(TILE_SIZE, -TILE_SIZE + TILE_SIZE));
+
+                                        mesh_data.uv2s.push(&Vector2::new(TILE_SIZE + TILE_SIZE, -TILE_SIZE));
+                                        mesh_data.uv2s.push(&Vector2::new(TILE_SIZE + TILE_SIZE, -TILE_SIZE + TILE_SIZE));
+
+                                    } else {
+                                        mesh_data.uv2s.push(&Vector2::default());
+                                        mesh_data.uv2s.push(&Vector2::default());
+                                        
+                                        mesh_data.uv2s.push(&Vector2::default());
+                                        mesh_data.uv2s.push(&Vector2::default());
+                                    }
+
                                 } 
 
                                 //if there are only 2 border points, only draw from the first index to avoid drawing both sides since the index will loop around
@@ -770,6 +805,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                 }
             });
 
+
             let to_change = to_change.lock().unwrap();
             let to_changed = to_changed.lock().unwrap();
 
@@ -784,6 +820,44 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
     })
 } 
+
+/// Get the true top of this vertical column of tiles regardless of chunk subdivisions
+fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData) -> Point {
+    let mut true_top = pt;
+
+    let chunk_max = map_data.octree.get_aabb().get_max();
+    let chunk_min = map_data.octree.get_aabb().get_min();
+
+    if true_top.y < chunk_min.y {
+        true_top.y = chunk_min.y;
+    }
+
+    while true_top.y < chunk_max.y + 1{
+        
+        if true_top.y == chunk_max.y {
+
+            let chunk_pt_above = map_data.get_chunk_point() + Point::y();
+
+            let query = <Read<MapChunkData>>::query().filter(tag_value(&chunk_pt_above));
+
+            if let Some(map_data) = query.iter(& *world).next() {
+                true_top = get_true_top(pt, world, &map_data);
+
+                break;
+
+            }
+        } else {
+            if let None = map_data.octree.query_point(true_top) {
+                true_top.y -= 1;
+                break;
+            }
+        }
+
+        true_top.y += 1;
+    }
+
+    true_top
+}
 
 pub fn scale_from_origin(pt: Vector3, origin: Vector3, scale_amount: f32) -> Vector3 {
     let mut pt = pt;

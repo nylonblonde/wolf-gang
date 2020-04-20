@@ -19,6 +19,7 @@ use crate::node::NodeName;
 pub struct MeshData {
     pub verts: Vector3Array,
     pub uvs: Vector2Array,
+    pub uv2s: Vector2Array,
     pub normals: Vector3Array,
     pub indices: Int32Array,
 }
@@ -46,6 +47,7 @@ impl MeshData {
         MeshData {
             verts: Vector3Array::new(),
             uvs: Vector2Array::new(),
+            uv2s: Vector2Array::new(),
             normals: Vector3Array::new(),
             indices: Int32Array::new()
         }
@@ -84,6 +86,7 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
 
                 let verts = &mesh_data.verts;
                 let uvs = &mesh_data.uvs;
+                let uv2s = &mesh_data.uv2s;
                 let normals = &mesh_data.normals;
                 let indices = &mesh_data.indices;
         
@@ -112,11 +115,16 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
                     immediate_geometry.clear();
                     immediate_geometry.begin(Mesh::PRIMITIVE_TRIANGLES, None);
                     
+                    let uv2s_len = uv2s.len();
+
                     for i in 0..indices.len() {
                         let index = indices.get(i);
 
                         immediate_geometry.set_normal(normals.get(index));
                         immediate_geometry.set_uv(uvs.get(index));
+                        if index < uv2s_len {
+                            immediate_geometry.set_uv2(uv2s.get(index));
+                        }
                         immediate_geometry.add_vertex(verts.get(index));
                     }
 
