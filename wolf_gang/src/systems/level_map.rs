@@ -11,8 +11,6 @@ use nalgebra;
 
 use legion::prelude::*;
 
-use num::Integer;
-
 use std::collections::HashMap;
 
 type AABB = aabb::AABB<i32>;
@@ -57,26 +55,6 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
                     }
                 });
             }
-        })
-}
-
-#[derive(Clone, Debug, Default)]
-struct OpenSides {
-    sides_map: HashMap<Point, HashSet<Point>>
-}
-
-pub fn create_side_check_system() -> Box<dyn Schedulable> {
-    SystemBuilder::new("side_check_system")
-        .with_query(<(Read<MapChunkData>, Write<OpenSides>, Tagged<ManuallyChange>)>::query()
-        )
-        .build(move |commands, world, resources, query| {
-
-            query.par_for_each_mut(&mut *world, move |(map_data, open_sides, changed)|{
-                println!("checking {:?} {:?}", map_data.get_chunk_point(), changed.0);
-
-                
-            });
-
         })
 }
 
@@ -513,8 +491,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             let right = face_points_final[i % face_points_final_len];
                             let left = face_points_final[(i + 1) % face_points_final_len];
 
-                            let dir = get_direction_of_edge(right, left, center);
-
                             let u = (right.x - world_point.x).abs() * TILE_SIZE;
                             let v = (right.z - world_point.z).abs() * TILE_SIZE;
 
@@ -692,12 +668,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                                 let bottom_point = *border_point - Vector3::new(0., height, 0.);
                                 mesh_data.verts.push(&(bottom_point));
-
-                                let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-                                let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
                                 
-                                let left_dir = -right_dir;
-
                                 if i % 2 == 0 {
 
                                     let diff = *next_point - *border_point;
@@ -788,10 +759,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                         if next_u < 0. {
                                             next_u = (1. - next_u) % 1.;
                                         }
-
-                                        // if next_u == u {
-                                            godot_print!("u = {:?}, next_u = {:?}", u , next_u);
-                                        // }
 
                                         let top_v = TILE_SIZE * (true_top - top);
                                         let bottom_v = TILE_SIZE * (true_top - bottom);
@@ -1100,7 +1067,6 @@ impl Map {
                         },
                         #[cfg(not(test))]
                         custom_mesh::MeshData::new(),
-                        OpenSides::default(),
                     )
                 ])[0];
 
