@@ -218,6 +218,32 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         }
     }
 
+    /// Removes all elements which fit inside range, silently avoiding positions that do not fit inside the octree
+    pub fn remove_range(&mut self, range: AABB<N>) {
+
+        for element in self.elements.iter_mut() {
+            if let Some(el) = element {
+                let pt = el.get_point();
+
+                if range.contains_point(pt) {
+
+                    println!("Removal should have happened here");
+
+                    *element = None;
+                }
+            }
+        }
+
+        if let Paternity::ProudParent = self.paternity {
+
+            for child in &mut self.children {
+                child.remove_range(range);
+            }
+
+        }
+
+    }
+
     pub fn insert(&mut self, element: T) -> Result<(), InsertionError<N>>{  
 
         let pt = element.get_point();

@@ -192,12 +192,24 @@ impl InputConfig {
             }
         );
 
-        input_config.actions.insert(String::from("confirm"), 
+        input_config.actions.insert(String::from("insertion"), 
             {
                 let mut event = HashMap::new();
                 event.insert(InputType::Key, [
                         None,
                         Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_R})
+                    ]
+                );
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("removal"), 
+            {
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, [
+                        None,
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_F})
                     ]
                 );
                 event

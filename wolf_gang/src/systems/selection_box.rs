@@ -261,7 +261,7 @@ pub fn create_coord_to_pos_system() -> Box<dyn Schedulable> {
         })
 }
 
-pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+pub fn create_tile_tool_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
     let selection_box_moved_query = <Read<SelectionBox>>::query().filter(changed::<level_map::CoordPos>());
 
@@ -275,33 +275,40 @@ pub fn create_tile_insertion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
 
         let selection_box_query = <(Read<SelectionBox>, Read<level_map::CoordPos>)>::query();
 
-        let confirm = input::Action(("confirm").to_string());
+        let insertion = input::Action(("insertion").to_string());
+        let removal = input::Action(("removal").to_string());
 
-        let input_query = <Read<input::InputActionComponent>>::query()
-            .filter(tag_value(&confirm));
+        let input_query = <(Read<input::InputActionComponent>, Tagged<input::Action>)>::query()
+            .filter(tag_value(&insertion) | tag_value(&removal));
 
         let mut to_insert: Option<AABB> = None;
+        let mut to_remove: Option<AABB> = None;
 
-        for input_component in input_query.iter(world) {
+        for (input_component, action) in input_query.iter(world) {
         
             for (selection_box, coord_pos) in selection_box_query.iter(world) {
 
                 let moved = selection_box_moved_query.iter(world).next().is_some();
 
                 if input_component.just_pressed() || (input_component.is_held() && moved) {
-                    godot_print!("Pressed confirm at {:?}!", coord_pos.value);
+                    if action == &insertion {
+                        godot_print!("Pressed insertion at {:?}!", coord_pos.value);
 
-                    to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
+                        to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
+                    } else if action == &removal {
+                        to_remove = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
+                    }
                     
                 }
             }
         }
 
-        match to_insert {
-            Some(r) => {
-                map.insert(world, level_map::TileData::new(Point::zeros()), r);
-            },
-            _ => {}
+        if let Some(r) = to_insert {
+            map.insert(world, level_map::TileData::new(Point::zeros()), r);
+        }
+
+        if let Some(r) = to_remove {
+            map.remove(world, r);
         }
 
     })

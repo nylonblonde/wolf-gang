@@ -142,7 +142,7 @@ impl WolfGang {
             .add_thread_local_fn(selection_box::create_orthogonal_dir_thread_local_fn())
             .add_thread_local_fn(selection_box::create_movement_thread_local_fn())
             .add_thread_local_fn(selection_box::create_expansion_thread_local_fn())
-            .add_thread_local_fn(selection_box::create_tile_insertion_thread_local_fn())
+            .add_thread_local_fn(selection_box::create_tile_tool_thread_local_fn())
             .add_thread_local_fn(level_map::create_drawing_thread_local_fn())
             .add_thread_local_fn(camera::create_focal_point_thread_local_fn())
             .add_thread_local_fn(camera::create_camera_angle_thread_local_fn())

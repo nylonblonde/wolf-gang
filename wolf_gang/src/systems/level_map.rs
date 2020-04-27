@@ -1009,6 +1009,49 @@ impl Default for Map {
 
 impl Map {
 
+    pub fn remove(&self, world: &mut legion::world::World, aabb: AABB) {
+        let min = aabb.get_min();
+        let max = aabb.get_max();
+
+        let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
+        let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
+        let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
+
+        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
+        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
+        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
+
+        let mut entities: Vec<Entity> = Vec::new();
+
+        let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
+
+        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) - min_chunk;
+
+        let volume = dimensions.x * dimensions.y * dimensions.z;
+
+        let mut to_update: Vec<Entity> = Vec::new();
+
+        for i in 0..volume {
+            let x = x_min_chunk + i % dimensions.x;
+            let y = y_min_chunk + (i / dimensions.x) % dimensions.y;
+            let z = z_min_chunk + i / (dimensions.x * dimensions.y);
+
+            let pt = Point::new(x,y,z);
+
+            let map_chunk_exists_query = <Write<MapChunkData>>::query()
+                .filter(tag_value(&pt));
+
+            if let Some((entity, mut map_data)) = map_chunk_exists_query.iter_entities_mut(world).next() {
+                map_data.octree.remove_range(aabb);
+                to_update.push(entity);
+            }
+        }
+
+        for entity in to_update {
+            world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
+        }
+    }
+
     pub fn insert(&self, world: &mut legion::world::World, tile_data: TileData, aabb: AABB) {
 
         let min = aabb.get_min();

@@ -141,6 +141,27 @@ fn query_point() {
     assert!(octree.query_point(Point::new(0,3,0)).is_none());
 }
 
+#[test]
+
+fn remove_element() {
+    let aabb = AABB::new(
+        Point::new(0,0,0), Point::new(7,7,7)
+    );
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb
+    );
+
+    fill_octree(aabb, &mut octree, &mut 0);
+
+    let range = AABB::from_extents(Point::new(0,0,0), Point::new(0,0,0));
+    
+    assert!(octree.query_point(Point::new(0,0,0)).is_some());
+    octree.remove_range(range);
+    assert!(octree.query_point(Point::new(0,0,0)).is_none());
+
+}
+
 fn fill_octree(aabb: AABB, octree: &mut Octree<i32, TileData>, count: &mut usize) {
     let min = aabb.get_min();
     let max = aabb.get_max();
