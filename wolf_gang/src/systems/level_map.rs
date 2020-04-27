@@ -175,27 +175,16 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let true_top = get_true_top(point, world, &map_data);
                     let true_top = map_coords_to_world(true_top).y + TILE_DIMENSIONS.y;
 
-                    godot_print!("true top = {:?}", true_top);
-
                     let mut top = point;
                     let mut draw_top: bool = true;
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
-
-
-                    //TODO: the overhang is not displaying properly across chunks
 
                     //iterate from this point to either the top or the top of the chunk
                     for y in point.y..chunk_top_y+1 {
                         top.y = y;
 
                         let point_above = top+Point::y();
-
-                        // //if the point is below where the cut for the lip would be and we are at the cut, break and do not draw top
-                        // if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
-                        //     draw_top = false;
-                        //     break;
-                        // }
 
                         match map_data.octree.query_point(point_above) {
                             Some(_) => {
@@ -276,11 +265,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         bottom.y = y;
 
                         let point_below = bottom - Point::y();
-
-                        //This needs overrides all logic for adjusting bottom for side differences -- rethink
-                        // if true_top - 1. > map_coords_to_world(point_below).y  {
-                        //     break;
-                        // } 
                         
                         match map_data.octree.query_point(point_below) {
                             Some(_) => {
@@ -373,7 +357,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                     } else { //if open_sides is not empty, draw a more complex face to account for the bevel
 
-                        let mut corners: Vec<Vector3> = vec![
+                        let corners = [
                             top_right, 
                             top_left, 
                             bottom_left, 
@@ -768,11 +752,55 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE));
 
                                     if map_coords_to_world(point).y + std::f32::EPSILON >= true_top - 1. {
-                                        mesh_data.uv2s.push(&Vector2::new(0., 0.));
-                                        mesh_data.uv2s.push(&Vector2::new(0., 1.));
 
-                                        mesh_data.uv2s.push(&Vector2::new(1., 0.));
-                                        mesh_data.uv2s.push(&Vector2::new(1., 1.));
+                                        // godot_print!("{:?}", u-next_u);
+
+                                        if dir.z.abs() > 0 {
+
+                                            u = TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
+    
+                                            next_u = TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
+    
+                                            if diff.x > 0. {
+    
+                                                u = -u;
+                                                next_u = -next_u;
+    
+                                            }
+    
+                                        } else if dir.x.abs() > 0 {
+                                            u = TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
+    
+                                            next_u = TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
+    
+                                            if diff.z > 0. {
+    
+                                                u = -u;
+                                                next_u = -next_u;
+    
+                                            }
+                                        }
+
+                                        if u < 0. {
+                                            u = (1. - u) % 1.;
+                                        }
+
+                                        if next_u < 0. {
+                                            next_u = (1. - next_u) % 1.;
+                                        }
+
+                                        // if next_u == u {
+                                            godot_print!("u = {:?}, next_u = {:?}", u , next_u);
+                                        // }
+
+                                        let top_v = TILE_SIZE * (true_top - top);
+                                        let bottom_v = TILE_SIZE * (true_top - bottom);
+
+                                        mesh_data.uv2s.push(&Vector2::new(u, top_v));
+                                        mesh_data.uv2s.push(&Vector2::new(u, bottom_v));
+
+                                        mesh_data.uv2s.push(&Vector2::new(next_u, top_v));
+                                        mesh_data.uv2s.push(&Vector2::new(next_u, bottom_v));
 
                                     } else {
                                         mesh_data.uv2s.push(&Vector2::default());
@@ -859,11 +887,8 @@ fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData)
                 match <Read<MapChunkData>>::query().filter(tag_value(&chunk_pt_above)).iter(world).next() {
                     Some(map_data) => {
 
-                        let res = get_true_top(pt, world, &map_data);
-                        // if res.y > true_top.y {
-                            true_top = res;
-                            break;
-                        // }
+                        true_top = get_true_top(pt, world, &map_data);
+                        break;
 
                     },
                     None => break
