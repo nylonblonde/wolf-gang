@@ -150,7 +150,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     let chunk_top_y = map_data.octree.get_aabb().get_max().y;
 
-                    let true_top = get_true_top(point, world, &map_data);
+                    let true_top = get_true_top(point, world, &map_data, &checked);
                     let true_top = map_coords_to_world(true_top).y + TILE_DIMENSIONS.y;
 
                     let mut top = point;
@@ -831,7 +831,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 } 
 
 /// Get the true top of this vertical column of tiles regardless of chunk subdivisions
-fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData) -> Point {
+fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData, checked: &HashSet<Point>) -> Point {
     let mut true_top = pt;
 
     let chunk_max = map_data.octree.get_aabb().get_max();
@@ -842,8 +842,12 @@ fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData)
     }
 
     while true_top.y < chunk_max.y+1 {
-        
+
         let point_above = true_top + Point::y();
+
+        if checked.contains(&point_above) {
+            break;
+        }
 
         match map_data.octree.query_point(point_above) {
             Some(_) => {},
@@ -854,7 +858,7 @@ fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData)
                 match <Read<MapChunkData>>::query().filter(tag_value(&chunk_pt_above)).iter(world).next() {
                     Some(map_data) => {
 
-                        true_top = get_true_top(pt, world, &map_data);
+                        true_top = get_true_top(pt, world, &map_data, checked);
                         break;
 
                     },
