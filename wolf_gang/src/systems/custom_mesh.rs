@@ -1,4 +1,5 @@
 
+use std::collections::HashMap;
 use gdnative::{
     GeometryInstance,
     godot_print, 
@@ -82,6 +83,9 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
             .filter(changed::<MeshData>())
         )
         .build_thread_local(move |_, world, _, query|{
+
+            let mut entities: HashMap<Entity, ImmediateGeometry> = HashMap::new();
+
             for (entity, (mesh_data, mesh_name)) in query.iter_entities(&mut *world) {
 
                 let verts = &mesh_data.verts;
@@ -89,9 +93,7 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
                 let uv2s = &mesh_data.uv2s;
                 let normals = &mesh_data.normals;
                 let indices = &mesh_data.indices;
-        
-                // let mut arr = VariantArray::new();
-        
+                
                 let immediate_geometry: Option<ImmediateGeometry> = unsafe { 
                     match node::find_node(mesh_name.0.clone()) {
                         Some(r) => {
@@ -111,6 +113,8 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
 
                 let mut immediate_geometry = immediate_geometry.unwrap();
         
+                entities.insert(entity, immediate_geometry);
+
                 unsafe {
                     immediate_geometry.clear();
                     immediate_geometry.begin(Mesh::PRIMITIVE_TRIANGLES, None);
@@ -130,29 +134,11 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
 
                     immediate_geometry.end();
                 }
+                
+                godot_print!("Draw only once")
+            }
 
-                // //resize to the expected size for meshes
-                // arr.resize(Mesh::ARRAY_MAX as i32);
-        
-                //create an ArrayMesh which we will feed the VariantArray with surface_from_arrays
-                // let mut array_mesh = ArrayMesh::new();
-        
-                // arr.set(Mesh::ARRAY_VERTEX as i32, &Variant::from_vector3_array(verts));
-                // arr.set(Mesh::ARRAY_TEX_UV as i32, &Variant::from_vector2_array(uvs));
-                // arr.set(Mesh::ARRAY_NORMAL as i32, &Variant::from_vector3_array(normals));
-                // arr.set(Mesh::ARRAY_INDEX as i32, &Variant::from_int32_array(indices));
-
-                // array_mesh.add_surface_from_arrays(
-                //     Mesh::PRIMITIVE_TRIANGLES, 
-                //     arr, 
-                //     VariantArray::new(), 
-                //     Mesh::ARRAY_COMPRESS_DEFAULT
-                // );
-        
-                // unsafe { 
-                //     mesh_instance.set_mesh(Some(array_mesh.to_mesh()));
-                // }
-
+            for (entity, immediate_geometry) in entities {
                 match world.get_component::<Material>(entity) {
                     Some(r) => {
                         unsafe {
@@ -179,9 +165,8 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
                         godot_print!("No material found");
                     }
                 };
-                
-                godot_print!("Draw only once")
             }
+
         })
     
 }
