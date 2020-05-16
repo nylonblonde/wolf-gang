@@ -155,6 +155,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     let mut top = point;
                     let mut draw_top: bool = true;
+                    let mut top_repeating_texture: bool = false;
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
@@ -163,6 +164,12 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         top.y = y;
 
                         let point_above = top+Point::y();
+
+                        if point_above.y as f32 * TILE_DIMENSIONS.y >= 2. && (point_above.y as f32 * TILE_DIMENSIONS.y) % 3. - 2. == 0. {
+
+                            draw_top = false;
+                            break;
+                        }
 
                         match map_data.octree.query_point(point_above) {
                             Some(_) => {
@@ -175,6 +182,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     }
                                     break;
                                 } else {
+
+                                    
                                     //if the point is below where the cut for the lip would be and we are at the cut, break and do not draw top
                                     if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
                                         draw_top = false;
@@ -221,8 +230,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         }
                     }
 
-                    // let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top);
-
                     let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top, &checked);
 
                     let world_point = map_coords_to_world(top);
@@ -242,6 +249,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     for y in (chunk_bottom_y-1..point.y+1).rev() {
                         bottom.y = y;
 
+                        if bottom.y as f32 * TILE_DIMENSIONS.y >= 2. && bottom.y as f32 * TILE_DIMENSIONS.y % 3. - 2. == 0. {
+                            break;
+                        }
+
                         let point_below = bottom - Point::y();
                         
                         match map_data.octree.query_point(point_below) {
@@ -256,6 +267,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     }
                                     break;
                                 } else {
+                                    
                                     if true_top - 1. > map_coords_to_world(point_below).y  {
                                         break;
                                     }
@@ -669,6 +681,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 let bottom_point = *border_point - Vector3::new(0., height, 0.);
                                 mesh_data.verts.push(&(bottom_point));
                                 
+                                //define the uvs for the walls on every other iteration 
                                 if i % 2 == 0 {
 
                                     let diff = *next_point - *border_point;
@@ -691,40 +704,44 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     let mut u = 1.;
                                     let mut next_u = 1.;
 
-                                    if dir.z.abs() > 0 {
+                                    if top_repeating_texture {
 
-                                        u = world_point.x * TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
+                                    } else {
+                                        if dir.z.abs() > 0 {
 
-                                        next_u = world_point.x * TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
+                                            u = world_point.x * TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
 
-                                        if diff.x > 0. {
+                                            next_u = world_point.x * TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
 
-                                            u = -u;
-                                            next_u = -next_u;
+                                            if diff.x > 0. {
 
-                                        }
+                                                u = -u;
+                                                next_u = -next_u;
 
-                                    } else if dir.x.abs() > 0 {
-                                        u = world_point.z * TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
+                                            }
 
-                                        next_u = world_point.z * TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
+                                        } else if dir.x.abs() > 0 {
+                                            u = world_point.z * TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
 
-                                        if diff.z > 0. {
+                                            next_u = world_point.z * TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
 
-                                            u = -u;
-                                            next_u = -next_u;
+                                            if diff.z > 0. {
 
+                                                u = -u;
+                                                next_u = -next_u;
+
+                                            }
                                         }
                                     }
+
                                     mesh_data.uvs.push(&Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
                                     mesh_data.uvs.push(&Vector2::new(u,-1.-bottom * TILE_SIZE));
 
                                     mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
                                     mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE));
 
+                                    //define the uvs for the grass overhang textures
                                     if map_coords_to_world(point).y + std::f32::EPSILON >= true_top - 1. {
-
-                                        // godot_print!("{:?}", u-next_u);
 
                                         if dir.z.abs() > 0 {
 
