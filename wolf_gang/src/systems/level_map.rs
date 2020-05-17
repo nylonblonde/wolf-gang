@@ -151,7 +151,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let chunk_top_y = map_data.octree.get_aabb().get_max().y;
 
                     let true_top = get_true_top(point, world, &map_data, &checked);
-                    let true_top = map_coords_to_world(true_top).y + TILE_DIMENSIONS.y;
+                    let true_top = map_coords_to_world(true_top).y;
+
+                    godot_print!("true_top = {}", true_top);
 
                     let mut top = point;
                     let mut draw_top: bool = true;
@@ -159,20 +161,27 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
+                    let start_repeat_height = 2.;
+                    let repeat_amount = 3.;
+
                     //iterate from this point to either the top or the top of the chunk
                     for y in point.y..chunk_top_y+1 {
                         top.y = y;
 
                         let point_above = top+Point::y();
 
-                        if point_above.y as f32 * TILE_DIMENSIONS.y >= 2. && (point_above.y as f32 * TILE_DIMENSIONS.y) % 3. - 2. == 0. {
-
-                            draw_top = false;
-                            break;
-                        }
+                        let point_y_in_world = point_above.y as f32 * TILE_DIMENSIONS.y;
+                        
+                        let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
 
                         match map_data.octree.query_point(point_above) {
                             Some(_) => {
+
+                                if subdivide_for_repeat {
+                                    draw_top = false;
+                                    break;
+                                }
+
                                 let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
 
                                 if curr_sides.symmetric_difference(&point_sides).count() > 0 {
@@ -182,7 +191,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     }
                                     break;
                                 } else {
-
                                     
                                     //if the point is below where the cut for the lip would be and we are at the cut, break and do not draw top
                                     if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
@@ -212,7 +220,11 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                                     if curr_sides.difference(&point_sides).count() == 0 {
                                                         draw_top = false;
                                                     }
+
                                                 } else {
+                                                    // if subdivide_for_repeat {
+                                                    //     break; // this is just here for visualizing the subdivisions, break early so that draw_top is true
+                                                    // }
                                                     draw_top = false;
                                                 }
                                                 break;
@@ -249,7 +261,11 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     for y in (chunk_bottom_y-1..point.y+1).rev() {
                         bottom.y = y;
 
-                        if bottom.y as f32 * TILE_DIMENSIONS.y >= 2. && bottom.y as f32 * TILE_DIMENSIONS.y % 3. - 2. == 0. {
+                        let point_y_in_world = bottom.y as f32 * TILE_DIMENSIONS.y;
+                        
+                        let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
+
+                        if subdivide_for_repeat {
                             break;
                         }
 
@@ -267,10 +283,10 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     }
                                     break;
                                 } else {
-                                    
+
                                     if true_top - 1. > map_coords_to_world(point_below).y  {
                                         break;
-                                    }
+                                    } 
                                 }
 
                                 checked.insert(point_below);
@@ -848,45 +864,38 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 } 
 
 /// Get the true top of this vertical column of tiles regardless of chunk subdivisions
-fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData, checked: &HashSet<Point>) -> Point {
+fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData, _checked: &HashSet<Point>) -> Point {
     let mut true_top = pt;
 
     let chunk_max = map_data.octree.get_aabb().get_max();
     let chunk_min = map_data.octree.get_aabb().get_min();
 
-    if true_top.y < chunk_min.y {
+    if true_top.y < chunk_min.y + 1 {
         true_top.y = chunk_min.y;
     }
 
-    while true_top.y < chunk_max.y+1 {
+    while true_top.y <= chunk_max.y+1 {
 
-        let point_above = true_top + Point::y();
+        match map_data.octree.query_point(true_top) {
+            Some(_) => {
 
-        if checked.contains(&point_above) {
-            break;
-        }
-
-        match map_data.octree.query_point(point_above) {
-            Some(_) => {},
-            None if point_above.y > chunk_max.y => {
-
+            },
+            None if true_top.y > chunk_max.y => {
                 let chunk_pt_above = map_data.get_chunk_point()+Point::y();
 
                 match <Read<MapChunkData>>::query().filter(tag_value(&chunk_pt_above)).iter(world).next() {
                     Some(map_data) => {
-
-                        true_top = get_true_top(pt, world, &map_data, checked);
-                        break;
-
+                        true_top = get_true_top(true_top, world, &map_data, _checked);
+                        return true_top;
                     },
                     None => break
                 }
-
             },
             None => break
         }
 
         true_top.y += 1;
+
     }
 
     true_top
