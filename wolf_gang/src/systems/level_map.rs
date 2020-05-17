@@ -153,8 +153,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let true_top = get_true_top(point, world, &map_data, &checked);
                     let true_top = map_coords_to_world(true_top).y;
 
-                    godot_print!("true_top = {}", true_top);
-
                     let mut top = point;
                     let mut draw_top: bool = true;
                     let mut top_repeating_texture: bool = false;
@@ -164,16 +162,13 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let start_repeat_height = 2.;
                     let repeat_amount = 3.;
 
-                    //iterate from this point to either the top or the top of the chunk
-                    for y in point.y..chunk_top_y+1 {
-                        top.y = y;
-
-                        let point_above = top+Point::y();
+                    for y in point.y+1..chunk_top_y+2 {
+                        let point_above = Point::new(point.x, y, point.z);
 
                         let point_y_in_world = point_above.y as f32 * TILE_DIMENSIONS.y;
                         
-                        let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
-
+                        let subdivide_for_repeat = point_y_in_world == start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
+                        
                         match map_data.octree.query_point(point_above) {
                             Some(_) => {
 
@@ -191,56 +186,113 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     }
                                     break;
                                 } else {
-                                    
-                                    //if the point is below where the cut for the lip would be and we are at the cut, break and do not draw top
                                     if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
                                         draw_top = false;
                                         break;
-                                    } 
+                                    }
                                 }
 
                                 checked.insert(point_above);
+                                top = point_above;
                             },
-                            None if y == chunk_top_y => {
-                                
+                            None if y > chunk_top_y => {
+
                                 let chunk_point_above = map_data.get_chunk_point()+Point::y();
 
                                 let chunk_point_above_query = <Read<MapChunkData>>::query()
                                     .filter(tag_value(&chunk_point_above));
 
-                                match chunk_point_above_query.iter(world).next() {
-                                    Some(map_data) => {
-                                        match map_data.octree.query_point(point_above) {
-                                            Some(_) => { 
+                                if let Some(map_data) = chunk_point_above_query.iter(world).next() {
+                                    if let Some(_) = map_data.octree.query_point(point_above) {
 
-                                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
+                                        let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
 
-                                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
-                                                    //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
-                                                    if curr_sides.difference(&point_sides).count() == 0 {
-                                                        draw_top = false;
-                                                    }
+                                        if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                                            //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
+                                            if curr_sides.difference(&point_sides).count() == 0 {
+                                                draw_top = false;
+                                            }
 
-                                                } else {
-                                                    // if subdivide_for_repeat {
-                                                    //     break; // this is just here for visualizing the subdivisions, break early so that draw_top is true
-                                                    // }
-                                                    draw_top = false;
-                                                }
-                                                break;
-
-                                            },
-                                            None => break
+                                        } else {
+                                            draw_top = false;
                                         }
-
-                                    },
-                                    None => break
+                                    }
                                 }
 
-                            },
-                            None => break
+                            }
+                            None => {
+                                break;
+                            }
                         }
                     }
+
+                    let mut bottom = point;
+                    let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;
+                    
+                    let mut draw_bottom: bool = true;
+
+                    for y in (chunk_bottom_y-1..point.y).rev() {
+
+                        let point_below = Point::new(point.x, y, point.z);
+
+                        let point_y_in_world = bottom.y as f32 * TILE_DIMENSIONS.y;
+
+                        let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
+
+                        if subdivide_for_repeat {
+                            break;
+                        }
+
+                        match map_data.octree.query_point(point_below) {
+                            Some(_) => {
+
+                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
+                                
+                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+
+                                    //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
+                                    if point_sides.difference(&curr_sides).count() > 0 {
+                                        bottom = point_below;
+                                    }
+                                    break;
+                                } else {
+                                    if map_coords_to_world(point).y >= true_top - 1. && true_top - 1. > map_coords_to_world(point_below).y {
+                                        break;
+                                    } 
+                                }
+
+                                checked.insert(point_below);
+                                bottom = point_below;
+                            },
+                            None if y < chunk_bottom_y => {
+
+                                let chunk_point_below = map_data.get_chunk_point() - Point::y();
+
+                                let chunk_point_below_query = <Read<MapChunkData>>::query().filter(tag_value(&chunk_point_below));
+
+                                if let Some(map_data) = chunk_point_below_query.iter(world).next() {
+                                    let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
+                                    
+                                    if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+
+                                        //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
+                                        if point_sides.difference(&curr_sides).count() > 0 {
+                                            bottom = point_below;
+                                        }
+                                        break;
+                                    }
+                                }
+                            },
+                            None => break
+                            
+                        }
+
+                    }
+
+                    godot_print!("Point {:?}'s top is {:?}", point.y, top.y);
+                    godot_print!("Point {:?}'s bottom is {:?}", point.y, bottom.y);
+
+                    // draw_top = true;
 
                     let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top, &checked);
 
@@ -252,79 +304,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let bottom_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
 
                     let mut center = bottom_left + (top_right - bottom_left) / 2.;
-
-                    let mut bottom = point;
-                    let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;
-                    
-                    let mut draw_bottom: bool = true;
-
-                    for y in (chunk_bottom_y-1..point.y+1).rev() {
-                        bottom.y = y;
-
-                        let point_y_in_world = bottom.y as f32 * TILE_DIMENSIONS.y;
-                        
-                        let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
-
-                        if subdivide_for_repeat {
-                            break;
-                        }
-
-                        let point_below = bottom - Point::y();
-                        
-                        match map_data.octree.query_point(point_below) {
-                            Some(_) => {
-                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
-                                
-                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
-
-                                    //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
-                                    if point_sides.difference(&curr_sides).count() > 0 {
-                                        bottom.y -= 1;
-                                    }
-                                    break;
-                                } else {
-
-                                    if true_top - 1. > map_coords_to_world(point_below).y  {
-                                        break;
-                                    } 
-                                }
-
-                                checked.insert(point_below);
-                            },
-                            None if y == chunk_bottom_y => {
-                                let chunk_point_below = map_data.get_chunk_point() - Point::y();
-                                
-                                let chunk_point_below_query = <Read<MapChunkData>>::query()
-                                    .filter(tag_value(&chunk_point_below));
-
-                                match chunk_point_below_query.iter(world).next() {
-
-                                    Some(map_data) => {
-                                        match map_data.octree.query_point(point_below) {
-                                            Some(_) => {
-                                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
-                                
-                                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
-
-                                                    //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
-                                                    if point_sides.difference(&curr_sides).count() > 0 {
-                                                        bottom.y -= 1;
-                                                    }
-                                                    break;
-                                                }else {
-                                                    break;
-                                                }
-                                            },
-                                            None => break
-                                        }
-                                    },
-                                    None => break
-                                }
-                            },
-                            None => break
-                        }
-                        
-                    }
                     
                     // if there are no open sides, all we have to draw is a simple 2 triangle face
                     if open_sides.is_empty() {
@@ -720,41 +699,39 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     let mut u = 1.;
                                     let mut next_u = 1.;
 
-                                    if top_repeating_texture {
+                                    if dir.z.abs() > 0 {
 
-                                    } else {
-                                        if dir.z.abs() > 0 {
+                                        u = world_point.x * TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
 
-                                            u = world_point.x * TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
+                                        next_u = world_point.x * TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
 
-                                            next_u = world_point.x * TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
+                                        if diff.x > 0. {
 
-                                            if diff.x > 0. {
+                                            u = -u;
+                                            next_u = -next_u;
 
-                                                u = -u;
-                                                next_u = -next_u;
+                                        }
 
-                                            }
+                                    } else if dir.x.abs() > 0 {
+                                        u = world_point.z * TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
 
-                                        } else if dir.x.abs() > 0 {
-                                            u = world_point.z * TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
+                                        next_u = world_point.z * TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
 
-                                            next_u = world_point.z * TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
+                                        if diff.z > 0. {
 
-                                            if diff.z > 0. {
+                                            u = -u;
+                                            next_u = -next_u;
 
-                                                u = -u;
-                                                next_u = -next_u;
-
-                                            }
                                         }
                                     }
+                                    
+                                    let vert_offset = 0.; //height * TILE_SIZE;
 
-                                    mesh_data.uvs.push(&Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
-                                    mesh_data.uvs.push(&Vector2::new(u,-1.-bottom * TILE_SIZE));
+                                    mesh_data.uvs.push(&Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE - vert_offset));
+                                    mesh_data.uvs.push(&Vector2::new(u,-1.-bottom * TILE_SIZE - vert_offset));
 
-                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE));
-                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE));
+                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE - vert_offset));
+                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE - vert_offset));
 
                                     //define the uvs for the grass overhang textures
                                     if map_coords_to_world(point).y + std::f32::EPSILON >= true_top - 1. {
