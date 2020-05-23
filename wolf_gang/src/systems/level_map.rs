@@ -164,18 +164,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     for y in point.y+1..chunk_top_y+2 {
                         let point_above = Point::new(point.x, y, point.z);
-
-                        let point_y_in_world = point_above.y as f32 * TILE_DIMENSIONS.y;
-                        
-                        let subdivide_for_repeat = point_y_in_world == start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
                         
                         match map_data.octree.query_point(point_above) {
                             Some(_) => {
-
-                                if subdivide_for_repeat {
-                                    draw_top = false;
-                                    break;
-                                }
 
                                 let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
 
@@ -186,6 +177,15 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     }
                                     break;
                                 } else {
+
+                                    let point_y_in_world = point_above.y as f32 * TILE_DIMENSIONS.y;
+                                    let subdivide_for_repeat = point_y_in_world == start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
+
+                                    if subdivide_for_repeat {
+                                        draw_top = false;
+                                        break;
+                                    }
+
                                     if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
                                         draw_top = false;
                                         break;
@@ -233,15 +233,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     for y in (chunk_bottom_y-1..point.y).rev() {
 
-                        let point_below = Point::new(point.x, y, point.z);
-
-                        let point_y_in_world = bottom.y as f32 * TILE_DIMENSIONS.y;
-
-                        let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
-
-                        if subdivide_for_repeat {
-                            break;
-                        }
+                        let point_below = Point::new(point.x, y, point.z);      
 
                         match map_data.octree.query_point(point_below) {
                             Some(_) => {
@@ -256,6 +248,14 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     }
                                     break;
                                 } else {
+
+                                    let point_y_in_world = bottom.y as f32 * TILE_DIMENSIONS.y;
+                                    let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
+
+                                    if subdivide_for_repeat {
+                                        break;
+                                    }
+
                                     if map_coords_to_world(point).y >= true_top - 1. && true_top - 1. > map_coords_to_world(point_below).y {
                                         break;
                                     } 
