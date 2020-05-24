@@ -159,8 +159,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
-                    let start_repeat_height = 3.;
-                    let repeat_amount = 4.;
+                    let start_repeat_height = 2.;
+                    let repeat_amount = 3.;
 
                     for y in point.y+1..chunk_top_y+2 {
                         let point_above = Point::new(point.x, y, point.z);
@@ -292,7 +292,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     godot_print!("Point {:?}'s top is {:?}", point.y, top.y);
                     godot_print!("Point {:?}'s bottom is {:?}", point.y, bottom.y);
 
-                    draw_top = true;
+                    // draw_top = true;
 
                     let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top, &checked);
 
@@ -725,9 +725,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                         }
                                     }
                                     
-                                    let vert_offset = if top > start_repeat_height { 
+                                    let vert_offset = if bottom >= start_repeat_height { 
 
-                                        ((((top - start_repeat_height) / repeat_amount).floor() * repeat_amount)) * TILE_SIZE
+                                        ((((bottom - start_repeat_height) / repeat_amount).floor() * repeat_amount)) * TILE_SIZE
                                     } else {
                                         0. 
                                     }; //height * TILE_SIZE;
