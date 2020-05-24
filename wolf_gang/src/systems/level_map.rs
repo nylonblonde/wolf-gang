@@ -40,6 +40,10 @@ pub const TILE_PIXELS: f32 = 64.;
 pub const SHEET_PIXELS: f32 = 1024.;
 pub const TILE_SIZE: f32 = TILE_PIXELS/SHEET_PIXELS;
 pub const BEVEL_SIZE: f32 = 0.2;
+pub const START_REPEAT_ABOVE_HEIGHT: f32 = 7.;
+pub const START_REPEAT_BELOW_HEIGHT: f32 = 0.;
+pub const REPEAT_AMOUNT_ABOVE: f32 = 4.;
+pub const REPEAT_AMOUNT_BELOW: f32 = 4.;
 
 pub fn create_add_material_system() -> Box<dyn Schedulable> {
     SystemBuilder::new("map_add_material_system")
@@ -159,9 +163,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
-                    let start_repeat_height = 2.;
-                    let repeat_amount = 3.;
-
                     for y in point.y+1..chunk_top_y+2 {
                         let point_above = Point::new(point.x, y, point.z);
                         
@@ -179,10 +180,11 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 } else {
 
                                     let point_y_in_world = point_above.y as f32 * TILE_DIMENSIONS.y;
-                                    let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
+                                    let subdivide_for_repeat = is_a_subdivision(point_y_in_world);
 
                                     if subdivide_for_repeat {
                                         draw_top = false;
+                                        // draw_top = true; //comment out when not debugging
                                         break                                                                                                                                           ;
                                     }
 
@@ -250,7 +252,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 } else {
 
                                     let point_y_in_world = bottom.y as f32 * TILE_DIMENSIONS.y;
-                                    let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
+                                    let subdivide_for_repeat = is_a_subdivision(point_y_in_world);
 
                                     if subdivide_for_repeat {
                                         break;
@@ -725,11 +727,12 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                         }
                                     }
                                     
-                                    let vert_offset = if bottom >= start_repeat_height { 
-
-                                        ((((bottom - start_repeat_height) / repeat_amount).floor() * repeat_amount)) * TILE_SIZE
+                                    let vert_offset = if bottom < START_REPEAT_BELOW_HEIGHT  {
+                                        (bottom / REPEAT_AMOUNT_BELOW).floor() * REPEAT_AMOUNT_BELOW * TILE_SIZE
+                                    } else if bottom - START_REPEAT_ABOVE_HEIGHT >= START_REPEAT_BELOW_HEIGHT {
+                                        ((((bottom - START_REPEAT_ABOVE_HEIGHT) / REPEAT_AMOUNT_ABOVE).floor() * REPEAT_AMOUNT_ABOVE) - REPEAT_AMOUNT_BELOW) * TILE_SIZE
                                     } else {
-                                        0. 
+                                        - REPEAT_AMOUNT_BELOW * TILE_SIZE
                                     }; //height * TILE_SIZE;
 
                                     mesh_data.uvs.push(&Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE + vert_offset)); //bottom of face
@@ -953,6 +956,11 @@ pub fn get_open_sides(neighbor_dirs: &[Point; 8], world: &legion::world::World, 
         }
     }
     open_sides
+}
+
+fn is_a_subdivision(point_y: f32) -> bool {
+    (point_y >= START_REPEAT_ABOVE_HEIGHT && (point_y % REPEAT_AMOUNT_ABOVE - START_REPEAT_ABOVE_HEIGHT) % REPEAT_AMOUNT_ABOVE == 0.) 
+        || (point_y <= START_REPEAT_BELOW_HEIGHT && point_y % REPEAT_AMOUNT_BELOW == 0.)
 }
 
 /// Get the direction the average of two points are from the center. For calculating the orthogonal direction of edges.
