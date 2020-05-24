@@ -159,8 +159,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
-                    let start_repeat_height = 2.;
-                    let repeat_amount = 3.;
+                    let start_repeat_height = 3.;
+                    let repeat_amount = 4.;
 
                     for y in point.y+1..chunk_top_y+2 {
                         let point_above = Point::new(point.x, y, point.z);
@@ -179,11 +179,11 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 } else {
 
                                     let point_y_in_world = point_above.y as f32 * TILE_DIMENSIONS.y;
-                                    let subdivide_for_repeat = point_y_in_world == start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
+                                    let subdivide_for_repeat = point_y_in_world >= start_repeat_height && point_y_in_world % repeat_amount - start_repeat_height == 0.;
 
                                     if subdivide_for_repeat {
                                         draw_top = false;
-                                        break;
+                                        break                                                                                                                                           ;
                                     }
 
                                     if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
@@ -292,7 +292,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     godot_print!("Point {:?}'s top is {:?}", point.y, top.y);
                     godot_print!("Point {:?}'s bottom is {:?}", point.y, bottom.y);
 
-                    // draw_top = true;
+                    draw_top = true;
 
                     let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top, &checked);
 
@@ -725,13 +725,18 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                         }
                                     }
                                     
-                                    let vert_offset = 0.; //height * TILE_SIZE;
+                                    let vert_offset = if top > start_repeat_height { 
 
-                                    mesh_data.uvs.push(&Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE - vert_offset));
-                                    mesh_data.uvs.push(&Vector2::new(u,-1.-bottom * TILE_SIZE - vert_offset));
+                                        ((((top - start_repeat_height) / repeat_amount).floor() * repeat_amount)) * TILE_SIZE
+                                    } else {
+                                        0. 
+                                    }; //height * TILE_SIZE;
 
-                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE - vert_offset));
-                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE - vert_offset));
+                                    mesh_data.uvs.push(&Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE + vert_offset)); //bottom of face
+                                    mesh_data.uvs.push(&Vector2::new(u,-1.-bottom * TILE_SIZE + vert_offset)); //top of face
+
+                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE + vert_offset)); //bottom of face
+                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE + vert_offset)); //top of face
 
                                     //define the uvs for the grass overhang textures
                                     if map_coords_to_world(point).y + std::f32::EPSILON >= true_top - 1. {
