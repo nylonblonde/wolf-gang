@@ -1,9 +1,10 @@
+use serde::{Serialize, Deserialize};
 use nalgebra::{Vector3, Scalar};
 use num::{
     Num, NumCast,Signed
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub struct AABB<F: Scalar> {
     pub center: Vector3<F>,
     pub dimensions: Vector3<F>,

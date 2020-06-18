@@ -44,7 +44,6 @@ fn odd_subdivision() {
 }
 
 #[test]
-
 fn tiny_test() {
 
     let aabb = AABB::from_extents(
@@ -142,7 +141,6 @@ fn query_point() {
 }
 
 #[test]
-
 fn remove_element() {
     let aabb = AABB::new(
         Point::new(0,0,0), Point::new(7,7,7)
@@ -161,6 +159,38 @@ fn remove_element() {
     assert!(octree.query_point(Point::new(0,0,0)).is_none());
 
 }
+
+#[test]
+fn serialize_deserialize() {
+
+    let mut octree = Octree::<i32, TileData>::new(AABB::from_extents(Point::new(-5,-5,-5), Point::new(5,5,5)));
+
+    octree.insert(TileData::new(Point::new(1,0,0))).unwrap();
+    octree.insert(TileData::new(Point::new(0,1,0))).unwrap();
+    octree.insert(TileData::new(Point::new(0,0,1))).unwrap();
+    octree.insert(TileData::new(Point::new(-1,0,0))).unwrap();
+    octree.insert(TileData::new(Point::new(0,-1,0))).unwrap();
+    octree.insert(TileData::new(Point::new(0,0,-1))).unwrap();
+
+    let octree_clone = octree.clone();
+
+    let pretty = ron::ser::PrettyConfig::default();
+    let ser_ron = match ron::ser::to_string_pretty(&octree, pretty) {
+        Ok(r) => {
+            println!("{:?}", r);
+            r
+        },
+        Err(err) => {
+            panic!("{:?}", err);
+        }
+    };
+
+    let round_trip: Octree<i32, TileData> = ron::de::from_str(&ser_ron).unwrap();
+
+    assert_eq!(octree_clone, round_trip);
+
+}
+
 
 fn fill_octree(aabb: AABB, octree: &mut Octree<i32, TileData>, count: &mut usize) {
     let min = aabb.get_min();

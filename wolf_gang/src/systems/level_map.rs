@@ -1,3 +1,5 @@
+use serde::{Serialize, Deserialize};
+
 use std::collections::HashSet;
 use crate::custom_mesh; 
 use crate::geometry::aabb;
@@ -1219,7 +1221,7 @@ impl MapChunkData {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct TileData {
     point: Point
 }

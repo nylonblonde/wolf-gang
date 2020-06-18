@@ -1,4 +1,5 @@
 use core::fmt::Debug;
+use serde::{Serialize, Deserialize};
 use std::ops::{AddAssign, SubAssign, DivAssign};
 
 use std::error;
@@ -12,7 +13,7 @@ pub trait PointData<N: Scalar> : Copy {
     fn get_point(&self) -> Vector3<N>;
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone)]
 #[allow(dead_code)]
 enum Paternity {
     ProudParent,
@@ -34,7 +35,7 @@ impl<'a, N: Scalar, T: PointData<N>> Iterator for OctreeIter<N, T> {
     }
 }
 
-impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone, T: PointData<N> + Debug> IntoIterator for Octree<N, T> {
+impl<'de, N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone + Serialize + Deserialize<'de>, T: PointData<N> + Debug> IntoIterator for Octree<N, T> {
     type Item = T;
     type IntoIter = OctreeIter<N, T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -46,7 +47,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[allow(dead_code)]
 pub struct Octree <N: Scalar, T: PointData<N>>{
     aabb: AABB<N>,
