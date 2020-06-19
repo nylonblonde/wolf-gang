@@ -5,12 +5,11 @@ use gdnative::*;
 
 use legion::prelude::*;
 
-use std::collections::HashMap;
-
 mod collections;
 mod geometry;
 mod systems;
 mod node;
+mod history;
 
 use systems::{camera, input, level_map, custom_mesh, selection_box, smoothing, transform, udp};
 
@@ -57,7 +56,7 @@ impl WolfGang {
     // Instead they are"attached" to the parent object, called the "owner".
     // The owner is passed to every single exposed method.
     #[export]
-    fn _ready(&mut self, mut owner: Node) {
+    fn _ready(&mut self, _owner: Node) {
 
         godot_print!("hello, world.");
 
@@ -78,6 +77,8 @@ impl WolfGang {
         resources.insert(udp::ServerSocket::new("127.0.0.1:12346"));
 
         resources.insert(level_map::Map::default());    
+
+        resources.insert(history::CurrentHistoricalStep(0));
 
         let mut world = self.world.as_mut().unwrap();
         input::initialize_input_config(world, input::CONFIG_PATH);
@@ -130,7 +131,7 @@ impl WolfGang {
             .add_system(smoothing::create_system())
             .add_system(camera::create_movement_system())
             .add_system(camera::create_rotation_system())
-            .add_system(level_map::create_add_material_system())
+            .add_system(level_map::mesh::create_add_material_system())
             .add_system(selection_box::create_system())
             .add_system(selection_box::create_coord_to_pos_system())
             .add_system(custom_mesh::create_tag_system())
@@ -143,10 +144,11 @@ impl WolfGang {
             .add_thread_local_fn(selection_box::create_movement_thread_local_fn())
             .add_thread_local_fn(selection_box::create_expansion_thread_local_fn())
             .add_thread_local_fn(selection_box::create_tile_tool_thread_local_fn())
-            .add_thread_local_fn(level_map::create_drawing_thread_local_fn())
+            .add_thread_local_fn(level_map::mesh::create_drawing_thread_local_fn())
             .add_thread_local_fn(camera::create_focal_point_thread_local_fn())
             .add_thread_local_fn(camera::create_camera_angle_thread_local_fn())
             .add_thread_local_fn(camera::create_follow_selection_box_thread_local_fn())
+            .add_thread_local_fn(level_map::history::create_undo_redo_input_system())
             // .add_thread_local_fn(test_system)
             .add_thread_local(transform::position::create_system_local())
             .add_thread_local(transform::rotation::create_system_local())

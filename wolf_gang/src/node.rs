@@ -15,7 +15,7 @@ static mut NODE_CACHE: Option<NodeCache> = None;
 /// been created and adds the node to it.
 pub unsafe fn add_node(node: &mut Node) -> Option<NodeName> {
 
-    let mut owner = crate::OWNER_NODE.as_mut().unwrap();
+    let owner = crate::OWNER_NODE.as_mut().unwrap();
 
     //Disable all processing since we're not using it anyway. Maybe it makes it faster? Who knows
     node.set_physics_process(false);

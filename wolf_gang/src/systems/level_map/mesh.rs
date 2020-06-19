@@ -1,9 +1,9 @@
-use serde::{Serialize, Deserialize};
+/// Handles the creation and defining of mesh nodes in Godot
 
 use std::collections::HashSet;
 use crate::custom_mesh; 
 use crate::geometry::aabb;
-use crate::collections::octree::{Octree, PointData};
+use crate::collections::octree::PointData;
 
 use std::sync::{Arc, Mutex};
 
@@ -13,31 +13,12 @@ use nalgebra;
 
 use legion::prelude::*;
 
-use std::collections::HashMap;
-
 type AABB = aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
 
-pub struct TileDimensions {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32
-}
+use super::*;
 
-pub struct CoordPos {
-    pub value: Point
-}
-
-impl Default for CoordPos {
-    fn default() -> CoordPos {
-        CoordPos {
-            value: Point::new(0,0,0)
-        }
-    }
-}
-
-pub const TILE_DIMENSIONS: TileDimensions = TileDimensions {x: 1.0, y: 0.25, z: 1.0};
 pub const TILE_PIXELS: f32 = 64.;
 pub const SHEET_PIXELS: f32 = 1024.;
 pub const TILE_SIZE: f32 = TILE_PIXELS/SHEET_PIXELS;
@@ -64,14 +45,6 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
         })
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ChangeType {
-    Direct,
-    Indirect
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-struct ManuallyChange(ChangeType);
 
 pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
     let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>, Tagged<ManuallyChange>)>::query();
@@ -161,7 +134,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     let mut top = point;
                     let mut draw_top: bool = true;
-                    let mut top_repeating_texture: bool = false;
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
@@ -233,7 +205,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     let mut bottom = point;
                     let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;
                     
-                    let mut draw_bottom: bool = true;
+                    // let mut draw_bottom: bool = true;
 
                     for y in (chunk_bottom_y-1..point.y).rev() {
 
@@ -293,8 +265,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                     }
 
-                    godot_print!("Point {:?}'s top is {:?}", point.y, top.y);
-                    godot_print!("Point {:?}'s bottom is {:?}", point.y, bottom.y);
+                    // godot_print!("Point {:?}'s top is {:?}", point.y, top.y);
+                    // godot_print!("Point {:?}'s bottom is {:?}", point.y, bottom.y);
 
                     // draw_top = true;
 
@@ -379,37 +351,35 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             if open_sides.contains(&dir) {
 
                                 // godot_print!("prev_dir = {:?} dir = {:?} next_dir = {:?}", right_dir, dir, left_dir);
-                                let mut adj: Option<Vector3> = None;
+                                
+                                let mut adj: Vector3 = bevel;
                                 let mut corner: Option<Vector3> = None;
 
                                 if !open_sides.contains(&right_dir) && !open_sides.contains(&left_dir) {
                                     scale_size = 1.;
                                     scale_origin = (left + right) / 2.;
-                                    adj = Some(-bevel);
+                                    adj = -bevel;
 
                                 } else if !open_sides.contains(&right_dir) {
                                     scale_origin = right;
                                     scale_size = 1.-BEVEL_SIZE;
                                     corner = Some(scale_from_origin(left, center, corner_scale));
-                                    adj = Some(-bevel);
+                                    adj = -bevel;
 
                                 } else if !open_sides.contains(&left_dir) {
                                     scale_origin = left;
                                     scale_size = 1.-BEVEL_SIZE;
-                                    adj = Some(-bevel);
+                                    adj = -bevel;
 
                                 } else {
-                                    adj = Some(bevel);
                                     corner = Some(scale_from_origin(left, scale_origin, corner_scale));
                                 }
 
                                 let mut scaled_right = scale_from_origin(right, scale_origin, scale_size);
                                 let mut scaled_left = scale_from_origin(left, scale_origin, scale_size);
 
-                                if let Some(adj) = adj {
-                                    scaled_right += adj;
-                                    scaled_left += adj;
-                                }
+                                scaled_right += adj;
+                                scaled_left += adj;
 
                                 face_points.append(&mut vec![scaled_right, scaled_left]);
                                 if let Some(corner) = corner {
@@ -500,7 +470,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         while i < face_points_final_len {
 
                             let right = face_points_final[i % face_points_final_len];
-                            let left = face_points_final[(i + 1) % face_points_final_len];
 
                             let u = (right.x - world_point.x).abs() * TILE_SIZE;
                             let v = (right.z - world_point.z).abs() * TILE_SIZE;
@@ -1004,241 +973,4 @@ fn get_direction_of_edge(pt1: Vector3, pt2: Vector3, center: Vector3) -> Point {
     );
 
     Point::new(dir.x as i32, dir.y as i32, dir.z as i32)
-}
-
-/// Applies the const TILE_DIMENSIONS to each map coord to get its conversion in 3D space.
-pub fn map_coords_to_world(map_coord: Point) -> nalgebra::Vector3<f32> {
-    nalgebra::Vector3::<f32>::new(
-        map_coord.x as f32 * TILE_DIMENSIONS.x, 
-        map_coord.y as f32 * TILE_DIMENSIONS.y,
-        map_coord.z as f32 * TILE_DIMENSIONS.z
-    )
-}
-
-pub struct Map {
-    chunk_dimensions: Point,
-    // map_chunk_pool: HashMap<Point, MapChunkData>
-}
-
-impl Default for Map {
-    fn default() -> Self {
-        Map { 
-            // map_chunk_pool: HashMap::new(),
-            chunk_dimensions: Point::new(10,10,10)
-        }
-    }
-}
-
-impl Map {
-
-    pub fn remove(&self, world: &mut legion::world::World, aabb: AABB) {
-        let min = aabb.get_min();
-        let max = aabb.get_max();
-
-        let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
-        let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
-        let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
-
-        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
-        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
-        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
-
-        let mut entities: Vec<Entity> = Vec::new();
-
-        let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
-
-        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) - min_chunk;
-
-        let volume = dimensions.x * dimensions.y * dimensions.z;
-
-        let mut to_update: Vec<Entity> = Vec::new();
-
-        for i in 0..volume {
-            let x = x_min_chunk + i % dimensions.x;
-            let y = y_min_chunk + (i / dimensions.x) % dimensions.y;
-            let z = z_min_chunk + i / (dimensions.x * dimensions.y);
-
-            let pt = Point::new(x,y,z);
-
-            let map_chunk_exists_query = <Write<MapChunkData>>::query()
-                .filter(tag_value(&pt));
-
-            if let Some((entity, mut map_data)) = map_chunk_exists_query.iter_entities_mut(world).next() {
-                map_data.octree.remove_range(aabb);
-                to_update.push(entity);
-            }
-        }
-
-        for entity in to_update {
-            world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
-        }
-    }
-
-    pub fn insert(&self, world: &mut legion::world::World, tile_data: TileData, aabb: AABB) {
-
-        let min = aabb.get_min();
-        let max = aabb.get_max();
-
-        let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
-        let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
-        let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
-
-        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
-        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
-        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
-
-        let mut entities: Vec<Entity> = Vec::new();
-
-        let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
-
-        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) - min_chunk;
-
-        let volume = dimensions.x * dimensions.y * dimensions.z;
-
-        for i in 0..volume {
-            let x = x_min_chunk + i % dimensions.x;
-            let y = y_min_chunk + (i / dimensions.x) % dimensions.y;
-            let z = z_min_chunk + i / (dimensions.x * dimensions.y);
-
-            let pt = Point::new(x,y,z);
-
-            let map_chunk_exists_query = <Read<MapChunkData>>::query()
-                .filter(tag_value(&pt));
-
-            let mut exists = false;
-            match map_chunk_exists_query.iter_entities(world).next() {
-                Some((entity, _)) => {
-                    println!("Map chunk exists already");
-                    entities.push(entity);
-                    exists = true;
-                },
-                _ => {}
-            }
-
-            if !exists {
-                println!("Creating a new map chunk at {:?}", pt);
-
-                let entity = world.insert((pt,),vec![
-                    (
-                        MapChunkData{
-                            octree: Octree::new(AABB::new(
-                                Point::new(
-                                    pt.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
-                                    pt.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
-                                    pt.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
-                                ),
-                                self.chunk_dimensions
-                            ))
-                        },
-                        #[cfg(not(test))]
-                        custom_mesh::MeshData::new(),
-                    )
-                ])[0];
-
-                entities.push(entity);
-            }
-
-        }
-
-        let mut to_add: HashMap<Entity, MapChunkData> = HashMap::new();
-
-        for entity in entities {
-            let map_chunk = world.get_component_mut::<MapChunkData>(entity);
-
-            match map_chunk {
-                Some(mut map_chunk) => {
-                    let chunk_aabb = map_chunk.octree.get_aabb();
-                    let chunk_min = chunk_aabb.get_min();
-                    let chunk_max = chunk_aabb.get_max();
-
-                    let min_x = std::cmp::max(chunk_min.x, min.x);
-                    let min_y = std::cmp::max(chunk_min.y, min.y);
-                    let min_z = std::cmp::max(chunk_min.z, min.z);
-
-                    let max_x = std::cmp::min(chunk_max.x, max.x) + 1;
-                    let max_y = std::cmp::min(chunk_max.y, max.y) + 1;
-                    let max_z = std::cmp::min(chunk_max.z, max.z) + 1;
-
-                    let min = Point::new(min_x, min_y, min_z);
-                    let dimensions = Point::new(max_x, max_y, max_z) - min;
-                    let volume = dimensions.x * dimensions.y * dimensions.z;
-
-                    for i in 0..volume {
-                        let x = min_x + i % dimensions.x;
-                        let y = min_y + (i / dimensions.x) % dimensions.y;
-                        let z = min_z + i / (dimensions.x * dimensions.y);
-                    
-                        let pt = Point::new(x,y,z);
-
-                        match map_chunk.octree.insert(TileData{
-                            point: pt,
-                            ..tile_data
-                        }) {
-                            Ok(_) => {
-                            // println!("Inserted {:?}", pt);
-                            },
-                            Err(err) => {
-                                println!("{:?}", err);
-                            }
-                        }
-                    }
-
-                    to_add.insert(entity, map_chunk.clone());
-                },
-                None => {}
-            }
-        }
-
-        for (entity, map_chunk) in to_add {
-            world.add_component(entity, map_chunk).unwrap();
-            world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct MapChunkData {
-    octree: Octree<i32, TileData>,
-}
-
-impl MapChunkData {
-    pub fn new(aabb: AABB) -> Self {
-        MapChunkData {
-            octree: Octree::new(aabb)
-        }
-    }
-
-    pub fn get_chunk_point(&self) -> Point {
-        let aabb = self.octree.get_aabb();
-        let min = aabb.get_min();
-        let dimensions = aabb.dimensions;
-
-        Point::new(
-            (min.x as f32 / dimensions.x as f32).floor() as i32,
-            (min.y as f32 / dimensions.y as f32).floor() as i32,
-            (min.z as f32 / dimensions.z as f32).floor() as i32,
-        )
-    }
-}
-
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct TileData {
-    point: Point
-}
-
-impl Copy for TileData {}
-
-impl TileData {
-    pub fn new(point: Point) -> Self {
-        TileData {
-            point
-        }
-    }
-}
-
-impl crate::collections::octree::PointData<i32> for TileData {
-
-    fn get_point(&self) -> Point {
-        self.point
-    }
 }

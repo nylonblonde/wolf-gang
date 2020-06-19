@@ -8,11 +8,10 @@ use gdnative::{
     Vector3Array
 };
 use legion::prelude::*;
-use nalgebra::{Rotation2, Rotation3};
+use nalgebra::Rotation3;
 use num::Float;
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
 
 use crate::geometry::aabb;
 use crate::custom_mesh;
@@ -268,6 +267,7 @@ pub fn create_tile_tool_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
     Box::new(move |world: &mut World, resources: &mut Resources|{
 
         let map = resources.get_mut::<level_map::Map>();
+        let mut current_step = resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
 
         if map.is_none() { godot_print!("Couldn't get map resource!"); return }
 
@@ -304,11 +304,11 @@ pub fn create_tile_tool_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
         }
 
         if let Some(r) = to_insert {
-            map.insert(world, level_map::TileData::new(Point::zeros()), r);
+            map.insert(world, &mut *current_step, level_map::TileData::new(Point::zeros()), r);
         }
 
         if let Some(r) = to_remove {
-            map.remove(world, r);
+            map.remove(world, &mut *current_step, r);
         }
 
     })

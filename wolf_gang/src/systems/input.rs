@@ -216,6 +216,30 @@ impl InputConfig {
             }
         );
 
+        input_config.actions.insert(String::from("undo"), 
+            {
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, [
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_CONTROL}),
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_Z})
+                    ]
+                );
+                event
+            }
+        );
+
+        input_config.actions.insert(String::from("redo"), 
+            {
+                let mut event = HashMap::new();
+                event.insert(InputType::Key, [
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_CONTROL}),
+                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_Y})
+                    ]
+                );
+                event
+            }
+        );
+
         input_config.save(CONFIG_PATH);
 
         input_config
