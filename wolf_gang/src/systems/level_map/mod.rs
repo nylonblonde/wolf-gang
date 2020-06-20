@@ -34,7 +34,7 @@ pub struct TileDimensions {
     pub z: f32
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct CoordPos {
     pub value: Point
 }
@@ -93,7 +93,7 @@ impl Map {
 
         let volume = dimensions.x * dimensions.y * dimensions.z;
 
-        let mut to_update: Vec<Entity> = Vec::new();
+        let mut to_update: HashMap<Entity, MapChunkData> = HashMap::new();
 
         for i in 0..volume {
             let x = x_min_chunk + i % dimensions.x;
@@ -105,27 +105,19 @@ impl Map {
             let map_chunk_exists_query = <Write<MapChunkData>>::query()
                 .filter(tag_value(&pt));
 
-            if let Some((entity, mut map_data)) = map_chunk_exists_query.iter_entities_mut(world).next() {
-                map_data.octree.remove_range(aabb);
-                to_update.push(entity);
+            if let Some((entity, map_data)) = map_chunk_exists_query.iter_entities_mut(world).next() {
+
+                to_update.insert(entity, map_data.clone());
             }
         }
 
-        for entity in to_update {
+        for (entity, mut map_data) in to_update {
+
+            historical_account(world, *current_step, entity, map_data.clone(), CoordPos { value: aabb.center });
+            map_data.octree.remove_range(aabb);
+
+            world.add_component(entity, map_data).unwrap();
             world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
-
-            let mut map_chunk: Option<MapChunkData> = None;
-
-            match world.get_component_mut::<MapChunkData>(entity) {
-                Some(mut r) => {
-                    map_chunk = Some(r.clone());
-                },
-                None => {}
-            }
-
-            if let Some(map_chunk) = map_chunk {
-                historical_account(world, *current_step, entity, map_chunk, CoordPos { value: aabb.center });
-            }
         }
 
         current_step.0 += 1;
@@ -147,7 +139,7 @@ impl Map {
         let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
         let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
 
-        let mut entities: Vec<Entity> = Vec::new();
+        let mut entities: HashMap<Entity, MapChunkData> = HashMap::new();
 
         let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
 
@@ -167,9 +159,9 @@ impl Map {
 
             let mut exists = false;
             match map_chunk_exists_query.iter_entities(world).next() {
-                Some((entity, _)) => {
+                Some((entity, map_chunk)) => {
                     println!("Map chunk exists already");
-                    entities.push(entity);
+                    entities.insert(entity, (*map_chunk).clone());
                     exists = true;
                 },
                 _ => {}
@@ -178,85 +170,84 @@ impl Map {
             if !exists {
                 println!("Creating a new map chunk at {:?}", pt);
 
+                let map_chunk = MapChunkData{
+                    octree: Octree::new(AABB::new(
+                        Point::new(
+                            pt.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
+                            pt.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
+                            pt.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
+                        ),
+                        self.chunk_dimensions
+                    ))
+                };
+
                 let entity = world.insert((pt,),vec![
                     (
-                        MapChunkData{
-                            octree: Octree::new(AABB::new(
-                                Point::new(
-                                    pt.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
-                                    pt.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
-                                    pt.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
-                                ),
-                                self.chunk_dimensions
-                            ))
-                        },
+                        map_chunk.clone(),
                         history::MapChunkHistory::new(),
                         #[cfg(not(test))]
                         MeshData::new(),
                     )
                 ])[0];
 
-                entities.push(entity);
+                entities.insert(entity, map_chunk);
             }
 
         }
 
         let mut to_add: HashMap<Entity, MapChunkData> = HashMap::new();
 
-        for entity in entities {
-            let map_chunk = world.get_component_mut::<MapChunkData>(entity);
+        for (entity, mut map_data) in entities {
 
-            match map_chunk {
-                Some(mut map_chunk) => {
-                    let chunk_aabb = map_chunk.octree.get_aabb();
-                    let chunk_min = chunk_aabb.get_min();
-                    let chunk_max = chunk_aabb.get_max();
+            //save the map chunk as it exists for undoing
+            historical_account(world, *current_step, entity, map_data.clone(), CoordPos { value: aabb.center });
 
-                    let min_x = std::cmp::max(chunk_min.x, min.x);
-                    let min_y = std::cmp::max(chunk_min.y, min.y);
-                    let min_z = std::cmp::max(chunk_min.z, min.z);
+            let chunk_aabb = map_data.octree.get_aabb();
+            let chunk_min = chunk_aabb.get_min();
+            let chunk_max = chunk_aabb.get_max();
 
-                    let max_x = std::cmp::min(chunk_max.x, max.x) + 1;
-                    let max_y = std::cmp::min(chunk_max.y, max.y) + 1;
-                    let max_z = std::cmp::min(chunk_max.z, max.z) + 1;
+            let min_x = std::cmp::max(chunk_min.x, min.x);
+            let min_y = std::cmp::max(chunk_min.y, min.y);
+            let min_z = std::cmp::max(chunk_min.z, min.z);
 
-                    let min = Point::new(min_x, min_y, min_z);
-                    let dimensions = Point::new(max_x, max_y, max_z) - min;
-                    let volume = dimensions.x * dimensions.y * dimensions.z;
+            let max_x = std::cmp::min(chunk_max.x, max.x) + 1;
+            let max_y = std::cmp::min(chunk_max.y, max.y) + 1;
+            let max_z = std::cmp::min(chunk_max.z, max.z) + 1;
 
-                    for i in 0..volume {
-                        let x = min_x + i % dimensions.x;
-                        let y = min_y + (i / dimensions.x) % dimensions.y;
-                        let z = min_z + i / (dimensions.x * dimensions.y);
-                    
-                        let pt = Point::new(x,y,z);
+            let min = Point::new(min_x, min_y, min_z);
+            let dimensions = Point::new(max_x, max_y, max_z) - min;
+            let volume = dimensions.x * dimensions.y * dimensions.z;
 
-                        match map_chunk.octree.insert(TileData{
-                            point: pt,
-                            ..tile_data
-                        }) {
-                            Ok(_) => {
-                            // println!("Inserted {:?}", pt);
-                            },
-                            Err(err) => {
-                                println!("{:?}", err);
-                            }
-                        }
+            for i in 0..volume {
+                let x = min_x + i % dimensions.x;
+                let y = min_y + (i / dimensions.x) % dimensions.y;
+                let z = min_z + i / (dimensions.x * dimensions.y);
+            
+                let pt = Point::new(x,y,z);
+
+                match map_data.octree.insert(TileData{
+                    point: pt,
+                    ..tile_data
+                }) {
+                    Ok(_) => {
+                    // println!("Inserted {:?}", pt);
+                    },
+                    Err(err) => {
+                        println!("{:?}", err);
                     }
-
-                    to_add.insert(entity, map_chunk.clone());
-                },
-                None => {}
+                }
             }
+
+            to_add.insert(entity, map_data.clone());
+                
         }
 
-        for (entity, map_chunk) in to_add {
-            world.add_component(entity, map_chunk.clone()).unwrap();
+        for (entity, map_data) in to_add {
+            world.add_component(entity, map_data.clone()).unwrap();
             world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
-
-            historical_account(world, *current_step, entity, map_chunk, CoordPos { value: aabb.center });
         }
 
+        //increase the current step for tracking where we are in the history
         current_step.0 += 1;
 
         godot_print!("{:?}", current_step);
@@ -266,6 +257,8 @@ impl Map {
 /// Pushes the map chunk changes to the entity's history to be able to handle undo/redo
 pub fn historical_account(world: &mut World, current_step: crate::history::CurrentHistoricalStep, entity: Entity, map_chunk_data: MapChunkData, coord_pos: CoordPos) {
     
+    //TODO: Remove any history that is newer than the current step
+
     let mut map_chunk_history: Option<history::MapChunkHistory> = None;
     match world.get_component_mut::<history::MapChunkHistory>(entity) {
         Some(mut r) => {
@@ -285,7 +278,7 @@ pub fn historical_account(world: &mut World, current_step: crate::history::Curre
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MapChunkData {
     octree: Octree<i32, TileData>,
 }
