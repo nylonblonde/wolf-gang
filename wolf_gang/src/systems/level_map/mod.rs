@@ -94,6 +94,7 @@ impl Map {
         let volume = dimensions.x * dimensions.y * dimensions.z;
 
         let mut to_update: HashMap<Entity, MapChunkData> = HashMap::new();
+        let mut historically_significant: HashMap<Entity, MapChunkData> = HashMap::new();
 
         for i in 0..volume {
             let x = x_min_chunk + i % dimensions.x;
@@ -111,18 +112,22 @@ impl Map {
             }
         }
 
-        for (entity, mut map_data) in to_update {
+        for (entity, map_data) in &mut to_update {
 
-            historical_account(world, *current_step, entity, map_data.clone(), CoordPos { value: aabb.center });
+            let original = map_data.clone();
+            let mut map_data = map_data.clone();
+
             map_data.octree.remove_range(aabb);
 
-            world.add_component(entity, map_data).unwrap();
-            world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
+            if map_data != original {
+                world.add_component(*entity, map_data.clone()).unwrap();
+                world.add_tag(*entity, ManuallyChange(ChangeType::Direct)).unwrap();
+
+                historically_significant.insert(*entity, map_data);
+            }
         }
 
-        current_step.0 += 1;
-
-        godot_print!("{:?}", current_step);
+        history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center });
 
     }
 
@@ -140,6 +145,7 @@ impl Map {
         let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
 
         let mut entities: HashMap<Entity, MapChunkData> = HashMap::new();
+        let mut historically_significant: HashMap<Entity, MapChunkData> = HashMap::new();
 
         let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
 
@@ -158,6 +164,7 @@ impl Map {
                 .filter(tag_value(&pt));
 
             let mut exists = false;
+
             match map_chunk_exists_query.iter_entities(world).next() {
                 Some((entity, map_chunk)) => {
                     println!("Map chunk exists already");
@@ -170,7 +177,7 @@ impl Map {
             if !exists {
                 println!("Creating a new map chunk at {:?}", pt);
 
-                let map_chunk = MapChunkData{
+                let map_data = MapChunkData{
                     octree: Octree::new(AABB::new(
                         Point::new(
                             pt.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
@@ -183,24 +190,20 @@ impl Map {
 
                 let entity = world.insert((pt,),vec![
                     (
-                        map_chunk.clone(),
-                        history::MapChunkHistory::new(),
+                        map_data.clone(),
+                        history::MapChunkHistory::new(map_data.clone()),
                         #[cfg(not(test))]
                         MeshData::new(),
                     )
                 ])[0];
 
-                entities.insert(entity, map_chunk);
+                entities.insert(entity, map_data);
             }
-
         }
 
-        let mut to_add: HashMap<Entity, MapChunkData> = HashMap::new();
+        for (entity, map_data) in &mut entities {
 
-        for (entity, mut map_data) in entities {
-
-            //save the map chunk as it exists for undoing
-            historical_account(world, *current_step, entity, map_data.clone(), CoordPos { value: aabb.center });
+            let original = map_data.clone();
 
             let chunk_aabb = map_data.octree.get_aabb();
             let chunk_min = chunk_aabb.get_min();
@@ -238,47 +241,23 @@ impl Map {
                 }
             }
 
-            to_add.insert(entity, map_data.clone());
+            if *map_data != original {
+                let map_data = map_data.clone();
+
+                world.add_component(*entity, map_data.clone()).unwrap();
+                world.add_tag(*entity, ManuallyChange(ChangeType::Direct)).unwrap();
+
+                historically_significant.insert(*entity, map_data);
+            }
                 
         }
 
-        for (entity, map_data) in to_add {
-            world.add_component(entity, map_data.clone()).unwrap();
-            world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
-        }
+        history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center });
 
-        //increase the current step for tracking where we are in the history
-        current_step.0 += 1;
-
-        godot_print!("{:?}", current_step);
     }
 }
 
-/// Pushes the map chunk changes to the entity's history to be able to handle undo/redo
-pub fn historical_account(world: &mut World, current_step: crate::history::CurrentHistoricalStep, entity: Entity, map_chunk_data: MapChunkData, coord_pos: CoordPos) {
-    
-    //TODO: Remove any history that is newer than the current step
-
-    let mut map_chunk_history: Option<history::MapChunkHistory> = None;
-    match world.get_component_mut::<history::MapChunkHistory>(entity) {
-        Some(mut r) => {
-            r.steps.push(history::MapChunkChange{
-                coord_pos,
-                step_changed_at: current_step,
-                map_chunk_data
-            });
-
-            map_chunk_history = Some(r.clone());
-        },
-        None => {}
-    }
-
-    if let Some(map_chunk_history) = map_chunk_history {
-        world.add_component(entity, map_chunk_history).unwrap();
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MapChunkData {
     octree: Octree<i32, TileData>,
 }

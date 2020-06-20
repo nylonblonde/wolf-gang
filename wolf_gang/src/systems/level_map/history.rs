@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use legion::prelude::*;
-use crate::{history, input};
+use crate::{history, input, level_map};
 
 use super::MapChunkData;
 
@@ -11,9 +12,13 @@ pub struct MapChunkHistory {
 }
 
 impl MapChunkHistory {
-    pub fn new() -> MapChunkHistory {
+    pub fn new(first_data: level_map::MapChunkData) -> MapChunkHistory {
         MapChunkHistory {
-            steps: Vec::new()
+            steps: vec![MapChunkChange{
+                step_changed_at: crate::history::CurrentHistoricalStep(0),
+                coord_pos: level_map::CoordPos::default(),
+                map_chunk_data: first_data
+            }]
         }
     }
 }
@@ -77,18 +82,73 @@ pub fn create_undo_redo_input_system() -> Box<dyn FnMut(&mut World, &mut Resourc
 
 }
 
+pub fn add_to_history(world: &mut World, current_step: &mut crate::history::CurrentHistoricalStep, entities: &mut HashMap<Entity, MapChunkData>, coord_pos: super::CoordPos) {
+    let history_query = <Write<MapChunkHistory>>::query();
+
+    let mut to_update: HashMap<Entity, MapChunkHistory> = HashMap::with_capacity(entities.len());
+
+    for (entity, mut map_history) in history_query.iter_entities_mut(world) {
+
+        //truncate all steps that are ahead of this one (to remove the ability to redo if a new action takes place after undos have taken place)
+        let mut truncate_at: Option<usize> = None;
+        let len = map_history.steps.len();
+        for i in 0..len {
+
+            let step = &map_history.steps[i];
+
+            if step.step_changed_at.0 >= current_step.0 {
+                truncate_at = Some(i);
+                break;
+            }
+        }
+
+        if let Some(index) = truncate_at {
+            map_history.steps.truncate(index);
+        }
+
+        match entities.get_mut(&entity) {
+
+            Some(map_chunk_data) => {
+                godot_print!("what the hey, current_step is {}", current_step.0);
+
+                map_history.steps.push(MapChunkChange{
+                    coord_pos,
+                    step_changed_at: current_step.clone(),
+                    map_chunk_data: map_chunk_data.clone()
+                });
+
+                to_update.insert(entity, map_history.clone());
+
+            },
+
+            None => {}
+        }
+    }
+
+    for (entity, map_history) in to_update.clone() {
+
+        godot_print!("latest history changed at {}", map_history.steps.last().unwrap().step_changed_at.0);
+
+        world.add_component(entity, map_history).unwrap();
+        
+    }
+
+    if to_update.len() > 0 {
+        current_step.0 += 1;
+    }
+
+}
+
 /// Move to a historical step by the amount, and update CurrentHistoricalStep with where we are
 fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistoricalStep, amount: i32) {
 
-    //FIXME: Redo doesn't go all the way back to the most recent history
+    godot_print!("current = {}", current_step.0);
 
-    let next_step = current_step.0 as i32 + amount;
+    let next_step = current_step.0 as i32 + amount - 1;
 
-    if next_step < 0 {
+    if next_step < -1 {
         return
     }
-
-    godot_print!("{}", next_step);
 
     let target_step = history::CurrentHistoricalStep(next_step as u32);
 
@@ -98,30 +158,35 @@ fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistorical
 
     for (entity, (mut map_chunk, map_history)) in map_query.iter_entities_mut(world) {
 
-        godot_print!("Did the query even find anything");
+        godot_print!("map_history_len = {}", map_history.steps.len());
 
-        for change in map_history.steps.clone() {
+        let len = map_history.steps.len();
 
-            godot_print!("change: {:?}", change);
+        for i in 0..len {
+
+            let change = &map_history.steps[i];
 
             if change.step_changed_at == target_step {
+                *map_chunk = change.map_chunk_data.clone();
+                entities.push(entity);
+                break;
 
-                godot_print!("Found the target step");
+            } else if change.step_changed_at.0 > target_step.0 { //if the next change is past the target step, move to the previous in the list
 
-                *map_chunk = change.map_chunk_data;
-
+                *map_chunk = map_history.steps[i-1].map_chunk_data.clone();
                 entities.push(entity);
 
+                break;
             }
-
         }
+    }
 
+    if entities.len() > 0 {
+        *current_step = history::CurrentHistoricalStep(target_step.0 as u32 + 1);
     }
 
     for entity in entities {
         world.add_tag(entity, super::ManuallyChange(super::ChangeType::Direct)).unwrap();
     }
-
-    *current_step = target_step;
 
 }

@@ -60,7 +60,6 @@ impl WolfGang {
 
         godot_print!("hello, world.");
 
-
         self.universe = Some(Universe::new());
         self.world = Some(self.universe.as_ref().unwrap().create_world());
 
@@ -78,7 +77,7 @@ impl WolfGang {
 
         resources.insert(level_map::Map::default());    
 
-        resources.insert(history::CurrentHistoricalStep(0));
+        resources.insert(history::CurrentHistoricalStep::default());
 
         let mut world = self.world.as_mut().unwrap();
         input::initialize_input_config(world, input::CONFIG_PATH);
