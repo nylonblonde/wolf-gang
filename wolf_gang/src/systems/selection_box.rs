@@ -26,6 +26,7 @@ type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
 type Vector2D = nalgebra::Vector2<f32>;
 
+#[derive(Debug, Clone)]
 pub struct SelectionBox {
     pub aabb: AABB
 }

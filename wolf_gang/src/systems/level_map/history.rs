@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use legion::prelude::*;
-use crate::{history, input, level_map};
+use crate::{selection_box, history, input, level_map};
 
 use super::MapChunkData;
 
 use gdnative::godot_print;
+
+type AABB = crate::geometry::aabb::AABB<i32>;
+type Point = nalgebra::Vector3<i32>;
 
 #[derive(Clone)]
 pub struct MapChunkHistory {
@@ -17,6 +20,7 @@ impl MapChunkHistory {
             steps: vec![MapChunkChange{
                 step_changed_at: crate::history::CurrentHistoricalStep(0),
                 coord_pos: level_map::CoordPos::default(),
+                aabb: AABB::new(Point::zeros(), Point::new(1,1,1)),
                 map_chunk_data: first_data
             }]
         }
@@ -30,6 +34,7 @@ pub struct MapChunkChange {
     pub step_changed_at: crate::history::CurrentHistoricalStep,
     /// Stores the CoordPos so that we can move the cursor back to the spot it was in for that step
     pub coord_pos: super::CoordPos,
+    pub aabb: AABB,
     pub map_chunk_data: MapChunkData
 }
 
@@ -82,7 +87,7 @@ pub fn create_undo_redo_input_system() -> Box<dyn FnMut(&mut World, &mut Resourc
 
 }
 
-pub fn add_to_history(world: &mut World, current_step: &mut crate::history::CurrentHistoricalStep, entities: &mut HashMap<Entity, MapChunkData>, coord_pos: super::CoordPos) {
+pub fn add_to_history(world: &mut World, current_step: &mut crate::history::CurrentHistoricalStep, entities: &mut HashMap<Entity, MapChunkData>, coord_pos: super::CoordPos, aabb: AABB) {
     let history_query = <Write<MapChunkHistory>>::query();
 
     let mut to_update: HashMap<Entity, MapChunkHistory> = HashMap::with_capacity(entities.len());
@@ -113,6 +118,7 @@ pub fn add_to_history(world: &mut World, current_step: &mut crate::history::Curr
 
                 map_history.steps.push(MapChunkChange{
                     coord_pos,
+                    aabb,
                     step_changed_at: current_step.clone(),
                     map_chunk_data: map_chunk_data.clone()
                 });
@@ -154,7 +160,7 @@ fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistorical
 
     let map_query = <(Write<MapChunkData>, Read<MapChunkHistory>)>::query();
 
-    let mut entities: Vec<Entity> = Vec::new();
+    let mut entities: HashMap<Entity, MapChunkChange> = HashMap::new();
 
     for (entity, (mut map_chunk, map_history)) in map_query.iter_entities_mut(world) {
 
@@ -164,20 +170,30 @@ fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistorical
 
         for i in 0..len {
 
-            let change = &map_history.steps[i];
+            let change = &map_history.clone().steps[i];
 
             if change.step_changed_at == target_step {
                 *map_chunk = change.map_chunk_data.clone();
-                entities.push(entity);
+                entities.insert(entity, change.clone());
                 break;
 
             } else if change.step_changed_at.0 > target_step.0 { //if the next change is past the target step, move to the previous in the list
 
-                *map_chunk = map_history.steps[i-1].map_chunk_data.clone();
-                entities.push(entity);
-
+                let previous_chunk = map_history.steps[i-1].map_chunk_data.clone();
+                
+                if previous_chunk != *map_chunk {
+                    *map_chunk = previous_chunk;
+                    entities.insert(entity, change.clone());
+                }
                 break;
             }
+        }
+    }
+
+    if let Some((mut selection_box, mut coord_pos)) = <(Write<selection_box::SelectionBox>, Write<super::CoordPos>)>::query().iter_mut(world).next() {
+        if let Some((_, change)) = entities.clone().into_iter().next() {
+            selection_box.aabb = change.aabb;
+            *coord_pos = change.coord_pos;
         }
     }
 
@@ -185,7 +201,7 @@ fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistorical
         *current_step = history::CurrentHistoricalStep(target_step.0 as u32 + 1);
     }
 
-    for entity in entities {
+    for (entity, _) in entities {
         world.add_tag(entity, super::ManuallyChange(super::ChangeType::Direct)).unwrap();
     }
 

@@ -127,7 +127,7 @@ impl Map {
             }
         }
 
-        history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center });
+        history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center }, aabb);
 
     }
 
@@ -252,7 +252,7 @@ impl Map {
                 
         }
 
-        history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center });
+        history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center }, aabb);
 
     }
 }
