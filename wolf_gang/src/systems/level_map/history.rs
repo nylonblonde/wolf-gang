@@ -114,7 +114,6 @@ pub fn add_to_history(world: &mut World, current_step: &mut crate::history::Curr
         match entities.get_mut(&entity) {
 
             Some(map_chunk_data) => {
-                godot_print!("what the hey, current_step is {}", current_step.0);
 
                 map_history.steps.push(MapChunkChange{
                     coord_pos,

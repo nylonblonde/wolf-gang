@@ -247,15 +247,17 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 let chunk_point_below_query = <Read<MapChunkData>>::query().filter(tag_value(&chunk_point_below));
 
                                 if let Some(map_data) = chunk_point_below_query.iter(world).next() {
-                                    let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
-                                    
-                                    if curr_sides.symmetric_difference(&point_sides).count() > 0 {
 
-                                        //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
-                                        if point_sides.difference(&curr_sides).count() > 0 {
-                                            bottom = point_below;
+                                    if let Some(_) = map_data.octree.query_point(point_below) {
+                                        let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
+                                                                                
+                                        if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+
+                                            //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
+                                            if point_sides.difference(&curr_sides).count() > 0 {
+                                                bottom = point_below;
+                                            }
                                         }
-                                        break;
                                     }
                                 }
                             },
