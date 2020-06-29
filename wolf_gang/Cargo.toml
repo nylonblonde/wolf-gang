@@ -11,6 +11,7 @@ gdnative = "0.8.0"
 # legion =  { git = "file:/Users/lyon/RustProjects/legion", branch="experimental" } 
 legion = { git = "https://github.com/TomGillen/legion.git", commit="24091d7" }
 nalgebra = { version = "0.21.0", features = ["serde-serialize"] }
+lazy_static = "1.4.0"
 num = "0.2.1"
 ron = "0.5.1"
 serde = "1.0.106"

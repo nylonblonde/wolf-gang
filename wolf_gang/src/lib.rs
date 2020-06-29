@@ -3,7 +3,12 @@
 
 use gdnative::*;
 
+#[macro_use]
+extern crate lazy_static;
+
 use legion::prelude::*;
+
+use std::sync::Mutex;
 
 mod collections;
 mod geometry;
@@ -13,10 +18,34 @@ mod history;
 
 use systems::{camera, input, level_map, custom_mesh, selection_box, smoothing, transform, udp};
 
+mod nodes;
+
 #[cfg(test)]
 mod tests;
 
 static mut OWNER_NODE: Option<Node> = None;
+
+lazy_static! {
+    static ref GAME_UNIVERSE: Mutex<GameUniverse> = Mutex::new( 
+
+        {
+            let universe = Universe::new();
+            let world = universe.create_world();
+
+            GameUniverse{
+                universe,
+                world,
+                resources: Resources::default(),
+            }
+        }
+    );
+}
+
+pub struct GameUniverse {
+    pub universe: Universe,
+    pub world: legion::world::World,
+    pub resources: Resources,
+}
 
 pub struct Time {
     delta: f32
@@ -27,10 +56,10 @@ pub struct Time {
 #[inherit(Node)]
 #[user_data(user_data::LocalCellData<WolfGang>)]
 pub struct WolfGang {
-    universe: Option<Universe>,
-    world: Option<legion::world::World>,
+    // universe: Option<Universe>,
+    // world: Option<legion::world::World>,
     schedule: Option<Schedule>,
-    resources: Option<Resources>,
+    // resources: Option<Resources>,
 }
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
@@ -43,12 +72,11 @@ impl WolfGang {
 
         unsafe { OWNER_NODE = Some(owner); }
 
-        WolfGang {
-            universe: None,
-            world: None,
+        let wolf_gang = WolfGang {
             schedule: None,
-            resources: None,
-        }
+        };
+
+        wolf_gang
     }
     
     // In order to make a method known to Godot, the #[export] attribute has to be used.
@@ -60,12 +88,14 @@ impl WolfGang {
 
         godot_print!("hello, world.");
 
-        self.universe = Some(Universe::new());
-        self.world = Some(self.universe.as_ref().unwrap().create_world());
+        let mut game = GAME_UNIVERSE.lock().unwrap();
 
-        self.resources = Some(Resources::default());
+        // game.universe = Some(Universe::new());
+        // game.world = Some(game.universe.as_ref().unwrap().create_world());
 
-        let resources = self.resources.as_mut().unwrap();
+        // game.resources = Some(Resources::default());
+
+        let resources = &mut game.resources;
 
         resources.insert(Time{
             delta: 0.
@@ -79,8 +109,8 @@ impl WolfGang {
 
         resources.insert(history::CurrentHistoricalStep::default());
 
-        let mut world = self.world.as_mut().unwrap();
-        input::initialize_input_config(world, input::CONFIG_PATH);
+        let mut world = &mut game.world;
+        input::initialize_input_config(&mut world, input::CONFIG_PATH);
 
         let camera = camera::initialize_camera(&mut world);
 
@@ -95,7 +125,7 @@ impl WolfGang {
         // );
 
         // let camera = "".to_string();
-        selection_box::initialize_selection_box(world, camera);
+        selection_box::initialize_selection_box(&mut world, camera);
 
         // let test_node = node::NodeName("Cone".to_string());
         //     world.insert(
@@ -159,22 +189,27 @@ impl WolfGang {
     #[export]
     fn _process(&mut self, _owner: Node, delta: f64) {
 
-        let world = self.world.as_mut().unwrap();
+        let mut game = GAME_UNIVERSE.lock().unwrap();
 
-        let resources = self.resources.as_mut().unwrap();
+        let game = &mut *game;
+
+        let mut resources = &mut game.resources;
 
         resources.insert(Time{
             delta: delta as f32
         });
-        
+
+        let mut world = &mut game.world;
+
         let schedule = self.schedule.as_mut().unwrap();
-        schedule.execute(world, resources);
+        schedule.execute(&mut world, &mut resources);
     }
 }
 
 // Function that registers all exposed classes to Godot
 fn init(handle: gdnative::init::InitHandle) {
     handle.add_class::<WolfGang>();
+    handle.add_class::<nodes::edit_menu::EditMenu>();
 }
 
 // macros that create the entry-points of the dynamic library.
