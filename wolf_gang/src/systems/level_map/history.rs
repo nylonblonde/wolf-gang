@@ -145,7 +145,7 @@ pub fn add_to_history(world: &mut World, current_step: &mut crate::history::Curr
 }
 
 /// Move to a historical step by the amount, and update CurrentHistoricalStep with where we are
-fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistoricalStep, amount: i32) {
+pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistoricalStep, amount: i32) {
 
     godot_print!("current = {}", current_step.0);
 

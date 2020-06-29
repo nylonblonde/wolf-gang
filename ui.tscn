@@ -1,42 +1,14 @@
-[gd_scene load_steps=3 format=2]
+[gd_scene load_steps=2 format=2]
 
 [ext_resource path="res://EditMenu.gdns" type="Script" id=1]
-
-[sub_resource type="GDScript" id=1]
-script/source = "extends MenuButton
-
-
-# Declare member variables here. Examples:
-# var a = 2
-# var b = \"text\"
-
-
-# Called when the node enters the scene tree for the first time.
-func _ready():
-	var popup_menu = get_popup()
-	
-	popup_menu.connect(\"index_pressed\", self, \"item_handler\")
-
-func item_handler(id):
-	match id:
-		0: #new
-			print(\"new\")
-		1: #open
-			print(\"open\")
-		2: #save
-			print(\"save\")
-		3: #save as
-			print(\"save as\")
-
-"
 
 [node name="Control" type="Control"]
 anchor_right = 1.0
 anchor_bottom = 1.0
 margin_left = 1.29236
-margin_top = 1.29236
+margin_top = 2.10684
 margin_right = 1.29236
-margin_bottom = 1.29236
+margin_bottom = 2.10687
 __meta__ = {
 "_edit_use_anchors_": false
 }
@@ -53,10 +25,7 @@ margin_right = 35.0
 margin_bottom = 40.0
 text = "File"
 items = [ "New", null, 0, false, false, 0, 0, null, "", false, "Open...", null, 0, false, false, 1, 0, null, "", false, "Save", null, 0, false, true, 2, 0, null, "", false, "Save As...", null, 0, false, false, 3, 0, null, "", false ]
-script = SubResource( 1 )
-__meta__ = {
-"_edit_use_anchors_": false
-}
+switch_on_hover = true
 
 [node name="Edit" type="MenuButton" parent="HBoxContainer"]
 margin_left = 39.0
@@ -64,4 +33,5 @@ margin_right = 75.0
 margin_bottom = 40.0
 text = "Edit"
 items = [ "Undo", null, 0, false, true, 0, 0, null, "", false, "Redo", null, 0, false, true, 1, 0, null, "", false ]
+switch_on_hover = true
 script = ExtResource( 1 )
