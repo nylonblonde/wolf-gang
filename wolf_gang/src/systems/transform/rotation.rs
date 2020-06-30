@@ -45,7 +45,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
         for (rotation, mut direction, node_name) in query.iter_mut(&mut *world) {
             let spatial_node : Option<Spatial> = {
                 unsafe {
-                    match node::find_node(node_name.0.clone()) {
+                    match node::get_node(crate::OWNER_NODE.as_ref().unwrap(), node_name.0.clone()) {
                         Some(r) => {
                             r.cast()
                         },

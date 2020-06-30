@@ -56,10 +56,7 @@ pub struct Time {
 #[inherit(Node)]
 #[user_data(user_data::LocalCellData<WolfGang>)]
 pub struct WolfGang {
-    // universe: Option<Universe>,
-    // world: Option<legion::world::World>,
     schedule: Option<Schedule>,
-    // resources: Option<Resources>,
 }
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
@@ -90,11 +87,6 @@ impl WolfGang {
 
         let mut game = GAME_UNIVERSE.lock().unwrap();
 
-        // game.universe = Some(Universe::new());
-        // game.world = Some(game.universe.as_ref().unwrap().create_world());
-
-        // game.resources = Some(Resources::default());
-
         let resources = &mut game.resources;
 
         resources.insert(Time{
@@ -108,6 +100,8 @@ impl WolfGang {
         resources.insert(level_map::Map::default());    
 
         resources.insert(history::CurrentHistoricalStep::default());
+
+        resources.insert(level_map::document::Document::default());
 
         let mut world = &mut game.world;
         input::initialize_input_config(&mut world, input::CONFIG_PATH);
@@ -210,6 +204,8 @@ impl WolfGang {
 fn init(handle: gdnative::init::InitHandle) {
     handle.add_class::<WolfGang>();
     handle.add_class::<nodes::edit_menu::EditMenu>();
+    handle.add_class::<nodes::file_menu::FileMenu>();
+    handle.add_class::<nodes::file_dialog::SaveLoadDialog>();
 }
 
 // macros that create the entry-points of the dynamic library.

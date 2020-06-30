@@ -2,6 +2,8 @@ use gdnative::*;
 
 use legion::prelude::*;
 
+use super::utils;
+
 use crate::{
     GAME_UNIVERSE,
     history,
@@ -24,23 +26,7 @@ impl EditMenu {
     /// The "constructor" of the class.
     fn _init(menu_button: MenuButton) -> Self {
 
-        let popup_menu = unsafe { 
-            match menu_button.get_popup() {
-                Some(mut popup) => {
-                    match popup.connect(GodotString::from_str("index_pressed"), Some(menu_button.to_object()), GodotString::from_str("item_handler"), VariantArray::new(), 0) {
-                        Ok(r) => { 
-                            popup
-                        },
-                        Err(err) => {
-                            panic!("{:?}", err);
-                        }
-                    }
-                },
-                None => {
-                    panic!("edit_menu could not retrieve its PopupMenu");
-                }
-            }
-        };
+        let popup_menu = utils::get_popup_menu(menu_button);
 
         EditMenu{
             popup_menu

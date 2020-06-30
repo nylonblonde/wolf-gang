@@ -1,5 +1,6 @@
 pub mod mesh;
 pub mod history;
+pub mod document;
 
 use gdnative::godot_print;
 

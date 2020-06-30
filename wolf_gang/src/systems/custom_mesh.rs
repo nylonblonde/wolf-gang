@@ -95,7 +95,7 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
                 let indices = &mesh_data.indices;
                 
                 let immediate_geometry: Option<ImmediateGeometry> = unsafe { 
-                    match node::find_node(mesh_name.0.clone()) {
+                    match node::get_node(crate::OWNER_NODE.as_ref().unwrap(), mesh_name.0.clone()) {
                         Some(r) => {
                             Some(r.cast().unwrap())
                         },

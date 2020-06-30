@@ -17,18 +17,6 @@ fn detect_map_chunk_change() {
     let insert_count = Arc::new(Mutex::new(0u32));
     let insert_counter = insert_count.clone();
 
-    // // Same results whether I create the chunks beforehand or not
-    // let chunk_pt1 = Point::new(0,0,0);
-    // let chunk_pt2 = Point::new(-1,0,0);
-
-    // world.insert((chunk_pt1,), vec![
-    //     (level_map::MapChunkData::new(AABB::new(Point::new(5,5,5), Point::new(10,10,10))),)
-    // ]);
-
-    // world.insert((chunk_pt2,), vec![
-    //     (level_map::MapChunkData::new(AABB::new(Point::new(-5,5,5), Point::new(10,10,10))),)
-    // ]);
-
     world.insert((0u32,), vec![
         (Vec::<u32>::new(),)
     ]);
@@ -69,17 +57,6 @@ fn detect_map_chunk_change() {
         for (entity, component) in to_add {
             world.add_component(entity, component).unwrap();
         }
-
-        // let point = Point::new(0,0,*count as i32);
-
-        // let map = resources.get::<level_map::Map>().unwrap();
-        // let tile_data = level_map::TileData::new(Point::zeros());
-        // let aabb = AABB::new(point, Point::new(2,1,1));
-
-        //This function checks if the map chunks which would fit the aabb exist, creates them if not, and then inserts
-        // the tile_data
-        // map.insert(world, tile_data, aabb);
-        // println!("Inserting at {:?}", point);
 
         *count += 1;
     });

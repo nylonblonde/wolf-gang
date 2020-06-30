@@ -33,9 +33,7 @@ pub unsafe fn add_node(node: &mut Node) -> Option<NodeName> {
     // godot_print!("{}", string.clone());
 
     if NODE_CACHE.is_none() {
-        NODE_CACHE = Some(NodeCache {
-            cache: HashMap::new()
-        })
+        create_node_cache();
     }
 
     let node_cache = NODE_CACHE.as_mut().unwrap();
@@ -44,21 +42,52 @@ pub unsafe fn add_node(node: &mut Node) -> Option<NodeName> {
     Some(NodeName(string))
 }
 
+unsafe fn create_node_cache() {
+    NODE_CACHE = Some(NodeCache {
+        cache: HashMap::new()
+    })
+}
+
 /// Retrieves the node from cache if possible, otherwise uses the gdnative bindings to find it.
-pub unsafe fn find_node(name: String) -> Option<Node> {
+pub unsafe fn get_node(node: &Node, name: String) -> Option<Node> {
 
-    if NODE_CACHE.is_some() {
-        let node_cache = NODE_CACHE.as_ref().unwrap();
-
-        match node_cache.cache.get_key_value(&name) {
-            Some(r) => {
-                return Some(*r.1)
-            },
-            None => {}
-        }
+    if NODE_CACHE.is_none() {
+        create_node_cache();
     }
 
-    let owner = crate::OWNER_NODE.as_ref().unwrap();
+    let node_cache = NODE_CACHE.as_mut().unwrap();
 
-    owner.find_node(GodotString::from(name), true, false)
+    match node_cache.cache.get_key_value(&name) {
+        Some(r) => {
+            return Some(*r.1)
+        },
+        None => {
+            let result = node.get_node(NodePath::from_str(&name));
+
+            if let Some(r) = result {
+                node_cache.cache.insert(name, r);
+            }
+
+            return result
+        }
+    }
+}
+
+pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node) -> Option<T> {
+
+    let mut children = node.get_children();
+
+    let len = children.len();
+
+    for i in 0..len {
+        
+        let child = children.get_val(i);
+
+        if let Some(child) = child.try_to_object::<T>() {
+            return Some(child)
+        }
+        
+    }
+
+    None
 }

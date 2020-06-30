@@ -1,14 +1,16 @@
-[gd_scene load_steps=2 format=2]
+[gd_scene load_steps=4 format=2]
 
 [ext_resource path="res://EditMenu.gdns" type="Script" id=1]
+[ext_resource path="res://FileMenu.gdns" type="Script" id=2]
+[ext_resource path="res://SaveLoadDialog.gdns" type="Script" id=3]
 
 [node name="Control" type="Control"]
 anchor_right = 1.0
 anchor_bottom = 1.0
 margin_left = 1.29236
-margin_top = 2.10684
+margin_top = 6.4028
 margin_right = 1.29236
-margin_bottom = 2.10687
+margin_bottom = 6.40283
 __meta__ = {
 "_edit_use_anchors_": false
 }
@@ -26,6 +28,22 @@ margin_bottom = 40.0
 text = "File"
 items = [ "New", null, 0, false, false, 0, 0, null, "", false, "Open...", null, 0, false, false, 1, 0, null, "", false, "Save", null, 0, false, true, 2, 0, null, "", false, "Save As...", null, 0, false, false, 3, 0, null, "", false ]
 switch_on_hover = true
+script = ExtResource( 2 )
+
+[node name="FileDialog" type="FileDialog" parent="HBoxContainer/File"]
+visible = true
+margin_left = 1.43201
+margin_top = -1.43201
+margin_right = 645.432
+margin_bottom = 428.568
+resizable = true
+access = 1
+current_dir = "user://"
+current_path = "user://"
+script = ExtResource( 3 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
 
 [node name="Edit" type="MenuButton" parent="HBoxContainer"]
 margin_left = 39.0
