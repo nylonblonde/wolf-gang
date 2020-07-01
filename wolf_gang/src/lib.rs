@@ -8,7 +8,8 @@ extern crate lazy_static;
 
 use legion::prelude::*;
 
-use std::sync::Mutex;
+use std::sync:: Mutex;
+use std::cell::RefCell;
 
 mod collections;
 mod geometry;
@@ -32,7 +33,7 @@ lazy_static! {
             let universe = Universe::new();
             let world = universe.create_world();
 
-            GameUniverse{
+            GameUniverse {
                 universe,
                 world,
                 resources: Resources::default(),
@@ -41,10 +42,53 @@ lazy_static! {
     );
 }
 
+thread_local!{
+    pub static STATE_MACHINE: RefCell<StateMachine> = RefCell::new(
+            StateMachine{
+            states: Vec::new()
+        }
+    );
+}
+
 pub struct GameUniverse {
     pub universe: Universe,
     pub world: legion::world::World,
     pub resources: Resources,
+}
+
+pub struct GameState {
+    name: &'static str,
+    schedule: Schedule,
+    active: bool
+}
+
+pub struct StateMachine {
+    pub states: Vec<GameState>
+}
+
+impl StateMachine {
+    fn add_state(&mut self, name: &'static str, schedule: Schedule, active: bool) -> &GameState {
+
+        self.states.push(
+            GameState {
+                name,
+                schedule,
+                active
+            }
+        );
+
+        &self.states.last().unwrap()
+    }
+
+    pub fn state_set_active(&mut self, name: &'static str, active: bool) {
+        
+        for state in &mut self.states {
+            if state.name == name {
+                state.active = active;
+            }
+        }
+
+    }
 }
 
 pub struct Time {
@@ -56,7 +100,7 @@ pub struct Time {
 #[inherit(Node)]
 #[user_data(user_data::LocalCellData<WolfGang>)]
 pub struct WolfGang {
-    schedule: Option<Schedule>,
+    // schedule: Option<Schedule>,
 }
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
@@ -69,11 +113,7 @@ impl WolfGang {
 
         unsafe { OWNER_NODE = Some(owner); }
 
-        let wolf_gang = WolfGang {
-            schedule: None,
-        };
-
-        wolf_gang
+        WolfGang{}
     }
     
     // In order to make a method known to Godot, the #[export] attribute has to be used.
@@ -177,7 +217,11 @@ impl WolfGang {
             .add_thread_local(transform::rotation::create_system_local())
             .build();
 
-        self.schedule = Some(schedule);
+        STATE_MACHINE.with(|s| {
+            s.borrow_mut().add_state("MapEditor", schedule, true);
+        });
+
+        // self.schedule = Some(schedule);
     }
 
     #[export]
@@ -195,8 +239,15 @@ impl WolfGang {
 
         let mut world = &mut game.world;
 
-        let schedule = self.schedule.as_mut().unwrap();
-        schedule.execute(&mut world, &mut resources);
+        // let schedule = self.schedule.as_mut().unwrap();
+
+        STATE_MACHINE.with(|s| {
+            for state in &mut s.borrow_mut().states {
+                if state.active {
+                    state.schedule.execute(&mut world, &mut resources);
+                }
+            }
+        });
     }
 }
 
