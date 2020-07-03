@@ -1,12 +1,14 @@
 use gdnative::*;
 use crate::node;
 
+use crate::level_map;
+
 /// The EditMenu "class"
 #[derive(NativeClass)]
 #[inherit(FileDialog)]
 #[user_data(user_data::LocalCellData<SaveLoadDialog>)]
 pub struct SaveLoadDialog {
-
+    confirm_dialog: ConfirmationDialog,
 }
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
@@ -20,7 +22,17 @@ impl SaveLoadDialog {
         let self_dialog = file_dialog;
 
         unsafe {
-            match file_dialog.connect(GodotString::from("popup_hide"), Some(self_dialog.to_object()), GodotString::from("hide_handler"), VariantArray::new(), 0) {
+
+            //I am truly sorry for this lol
+            match file_dialog.connect(GodotString::from("popup_hide"), Some(self_dialog.to_object()), GodotString::from("hide_handler"), VariantArray::new(), 0)
+                .map(|_| { file_dialog.connect(GodotString::from("file_selected"), Some(self_dialog.to_object()), GodotString::from("file_selection_handler"), VariantArray::new(), 0) })
+                .map(|_| { 
+                    match file_dialog.get_line_edit() {
+                        Some(mut line_edit) => 
+                            line_edit.connect(GodotString::from("text_changed"), Some(self_dialog.to_object()), GodotString::from("line_edit_changed_handler"), VariantArray::new(), 0),
+                        None => panic!("{:?}", "Couldn't retrieve LineEdit from FileDialog")
+                    }
+                }) {
 
                 Ok(_) => {
 
@@ -36,31 +48,14 @@ impl SaveLoadDialog {
 
                     file_dialog.set_current_dir(maps_dir);
 
-                    let mut vbox = file_dialog.get_vbox().unwrap();
+                    let confirm_dialog = match node::get_child_by_type::<ConfirmationDialog>(&file_dialog) { 
+                        Some(r) => r,
+                        None => panic!("Couldn't get the ConfrimationDialog child of FileDialog")   
+                    };
 
-                    //Change the text label from "Files and Directories" to just "Files"
-                    if let Some(mut label) = node::get_child_by_type::<Label>(&vbox) {
-                        label.set_text(GodotString::from("Files:"));
+                    return SaveLoadDialog{
+                        confirm_dialog
                     }
-                    
-                    //Remove the HBoxContainer which allows us to navigate to different directories
-                    if let Some(hbox) = node::get_child_by_type::<HBoxContainer>(&vbox) {
-                        vbox.remove_child(Some(hbox.to_node()));
-                    }
-
-                    if let Some(vbox) = node::get_child_by_type::<VBoxContainer>(&file_dialog) {
-
-                        if let Some(mut hbox) = node::get_child_by_type::<HBoxContainer>(&vbox) {
-
-                            // Remove the File extension options
-                            if let Some(option) = node::get_child_by_type::<OptionButton>(&hbox) {
-                                hbox.remove_child(Some(option.to_node()));
-                            }
-
-                        }
-                    }
-
-                    return SaveLoadDialog{}
                 },
 
                 Err(err) => panic!("{:?}", err)
@@ -79,18 +74,26 @@ impl SaveLoadDialog {
 
         unsafe { 
 
-        match type_flag {
-            0 => { //open
-                file_dialog.set_mode(FileDialog::MODE_OPEN_FILE);
-            },
-            1 => { //save
-                file_dialog.set_mode(FileDialog::MODE_SAVE_FILE);   
-            },
-            _ => {}
-        }
+            match type_flag {
+                0 => { //open
+                    file_dialog.set_mode(FileDialog::MODE_OPEN_FILE);
+                },
+                1 => { //save
+                    file_dialog.set_mode(FileDialog::MODE_SAVE_FILE);   
+                },
+                _ => {}
+            }
 
             file_dialog.popup_centered_clamped(Vector2::new(800.0, 600.0), 0.75); 
-            file_dialog.deselect_items();
+            file_dialog.invalidate();
+            
+            //Update the Ok button in case Line Edit is blank
+            match file_dialog.get_line_edit() {
+                Some(line_edit) => {
+                    self.line_edit_changed_handler(file_dialog, line_edit.get_text());
+                },
+                None => panic!("Couldn't get LineEdit from FileDialog")
+            }
 
             crate::STATE_MACHINE.with(|s| {
                 s.borrow_mut().set_state_active("MapEditor", false);
@@ -103,6 +106,64 @@ impl SaveLoadDialog {
         crate::STATE_MACHINE.with(|s| {
             s.borrow_mut().set_state_active("MapEditor", true);
         })
+    }
+
+    ///Checks to see whether or not the text field is blank, then disables the confirmation button if it is
+    #[export]
+    fn line_edit_changed_handler(&mut self, mut file_dialog: FileDialog, new_text: GodotString) {
+
+        unsafe {    
+            match file_dialog.get_ok() {
+                Some(mut ok_button) => {
+                    if new_text.is_empty() {
+                        ok_button.set_disabled(true);
+                    } else {
+                        ok_button.set_disabled(false);
+                    }
+                },
+                None => panic!("Couldn't get Ok button for FileDialog")
+            }
+        }
+    }
+
+    #[export]
+    fn file_selection_handler(&mut self, file_dialog: FileDialog, mut path: GodotString) {
+
+        let mut game = crate::GAME_UNIVERSE.lock().unwrap();
+        let game = &mut *game;
+        let world = &mut game.world;
+        let resources = &mut game.resources;
+
+        unsafe {
+            match file_dialog.get_mode() {
+                FileDialogMode::ModeOpenFile => {
+
+                },
+                FileDialogMode::ModeSaveFile => {
+
+                    godot_print!("Saving...");
+
+                    let mut document = match resources.get_mut::<level_map::document::Document>() {
+                        Some(document) => document.clone(),
+                        None => level_map::document::Document::default()
+                    };
+
+                    godot_print!("{:?}", document);
+
+                    let suffix = ".wgm";
+                    if !path.ends_with(&GodotString::from(suffix)) {
+                        path = GodotString::from(path.to_string() + suffix);
+                    }
+
+                    document.file_path = Some(path.to_string());
+                    document.update_data(world);
+
+                    document.save();
+
+                },
+                _ => {}
+            }
+        }
     }
 
 }

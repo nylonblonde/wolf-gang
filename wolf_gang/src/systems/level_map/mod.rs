@@ -76,6 +76,30 @@ impl Default for Map {
 
 impl Map {
 
+    /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache, and resets the Document and CurrentHistoricalStep resources
+    pub fn reset(&self, world: &mut legion::world::World, resources: &mut Resources) {
+
+        let mut current_step = resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
+        let mut document = resources.get_mut::<document::Document>().unwrap();
+
+        let map_chunk_query = <(Read<MapChunkData>, Tagged<crate::node::NodeName>)>::query();
+
+        let mut entities: Vec<Entity> = Vec::new();
+
+        for (entity, (_, node_name)) in map_chunk_query.iter_entities(world) {
+            entities.push(entity);
+
+            unsafe { crate::node::remove_node(node_name.0.clone()); }
+        }
+
+        for entity in entities {
+            world.delete(entity);
+        }
+
+        *current_step = crate::history::CurrentHistoricalStep::default();
+        *document = document::Document::default();
+    }
+
     pub fn remove(&self, world: &mut legion::world::World, current_step: &mut crate::history::CurrentHistoricalStep, aabb: AABB) {
         let min = aabb.get_min();
         let max = aabb.get_max();

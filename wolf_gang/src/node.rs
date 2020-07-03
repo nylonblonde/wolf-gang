@@ -42,6 +42,25 @@ pub unsafe fn add_node(node: &mut Node) -> Option<NodeName> {
     Some(NodeName(string))
 }
 
+/// Removes the node from the scene as well as from the node cache
+pub unsafe fn remove_node(name: String) {
+    
+    if let Some(node_cache) = NODE_CACHE.as_mut() {
+
+        if let Some(node) = node_cache.cache.get(&name) {
+
+            match node.get_parent() {
+                Some(mut parent) => {
+                    parent.remove_child(Some(*node));
+                },
+                None => panic!("{:?} has no parent")
+            }
+            node_cache.cache.remove(&name);
+        }
+
+    }
+}
+
 unsafe fn create_node_cache() {
     NODE_CACHE = Some(NodeCache {
         cache: HashMap::new()

@@ -9,22 +9,20 @@ use serde::{Serialize, Deserialize};
 
 type Octree = octree::Octree<i32, level_map::TileData>;
 
-const MAP_PATH: &'static str = "user://maps/";
-
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Document {
-    file_name: Option<String>,
-    title: String,
+    pub file_path: Option<String>,
+    pub title: String,
     data: Vec<Octree>
 }
 
 impl Document {
-    pub fn new<S: ToString, T: ToString>(file_name: Option<S>, title: T) -> Self {
+    pub fn new<S: ToString, T: ToString>(file_path: Option<S>, title: T) -> Self {
 
         let title = title.to_string();
 
         Document {
-            file_name: match file_name {
+            file_path: match file_path {
                 Some(r) => {
                     Some(r.to_string())
                 },
@@ -35,13 +33,10 @@ impl Document {
         }
     }
 
-    pub fn update_data(&mut self) {
+    ///Updates the data for the document by iterating through queries on the world    
+    pub fn update_data(&mut self, world: &mut legion::world::World) {
         //go through and updata the data with the octree from each map chunk
         let map_query = <Read<level_map::MapChunkData>>::query();
-
-        let mut game = crate::GAME_UNIVERSE.lock().unwrap();
-        let game = &mut *game;
-        let world = &mut game.world;
 
         let mut data: Vec<Octree> = Vec::new();
         for map_data in map_query.iter(world) {
@@ -53,17 +48,19 @@ impl Document {
 
     pub fn save(self) {
 
-        match self.file_name.clone() {
+        match self.file_path.clone() {
 
             None => {
                 panic!("Save was attempted on a document that doesn't have a file name");
             },
 
-            Some(file_name) => {        
+            Some(file_path) => {     
+                
+                godot_print!("Saving {}", file_path);
 
                 let mut file = File::new();
 
-                if let Ok(_) = file.open(GodotString::from(MAP_PATH.to_string() + &file_name), File::WRITE) {
+                if let Ok(_) = file.open(GodotString::from(file_path), File::WRITE) {
                     let encoded: Vec<u8> = bincode::serialize(&self).unwrap();
 
                     let mut byte_array = ByteArray::new();
@@ -80,13 +77,13 @@ impl Document {
     }
 
     /// Get document from file saved in user://maps/<file_name>
-    pub fn from_file<S: ToString>(file_name: S) -> Option<Self> {
+    pub fn from_file<S: ToString>(file_path: S) -> Option<Self> {
 
-        let file_name = file_name.to_string();
+        let file_path = file_path.to_string();
 
         let mut file = File::new();
 
-        match file.open(GodotString::from(MAP_PATH.to_string() + &file_name), File::WRITE) {
+        match file.open(GodotString::from(file_path), File::WRITE) {
 
             Ok(_) => {
                 
