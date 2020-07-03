@@ -80,7 +80,7 @@ impl StateMachine {
         &self.states.last().unwrap()
     }
 
-    pub fn state_set_active(&mut self, name: &'static str, active: bool) {
+    pub fn set_state_active(&mut self, name: &'static str, active: bool) {
         
         for state in &mut self.states {
             if state.name == name {
