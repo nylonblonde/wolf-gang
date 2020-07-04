@@ -55,6 +55,8 @@ pub unsafe fn remove_node(name: String) {
                 },
                 None => panic!("{:?} has no parent")
             }
+
+            node.free();
             node_cache.cache.remove(&name);
         }
 

@@ -77,7 +77,7 @@ impl Default for Map {
 impl Map {
 
     /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache, and resets the Document and CurrentHistoricalStep resources
-    pub fn reset(&self, world: &mut legion::world::World, resources: &mut Resources) {
+    pub fn reset(&self, world: &mut legion::world::World, resources: &Resources) {
 
         let mut current_step = resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
         let mut document = resources.get_mut::<document::Document>().unwrap();

@@ -75,8 +75,23 @@ impl FileMenu {
 
     #[export]
     fn item_handler(&mut self, mut menu_button: MenuButton, id: i64) {
+
+        
+
         match id {
             0 => { //new
+
+                let mut game = crate::GAME_UNIVERSE.lock().unwrap();
+                let game = &mut *game;
+                let world = &mut game.world;
+                let resources = &game.resources;
+
+                let map = match resources.get_mut::<crate::level_map::Map>() {
+                    Some(map) => map,
+                    None => panic!("Couldn't get Map from Resources")
+                };
+
+                map.reset(world, resources);
 
             },
             1 => { //open
