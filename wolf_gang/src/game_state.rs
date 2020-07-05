@@ -1,20 +1,20 @@
+use std::ops::Deref;
 use std::any::Any;
 use legion::prelude::*;
 
-use std::borrow::BorrowMut;
+use std::borrow::Borrow;
 
-pub struct GameState<'a> {
+pub struct GameState {
     name: &'static str,
     pub schedule: Schedule,
     active: bool,
-    _phantom: std::marker::PhantomData<&'a ()>
 }
 
-impl<'a> GameState<'a> {
+impl GameState{
 
-    pub unsafe fn as_game_state<T: GameStateTraits<'a> + ?Sized>(original: &mut T) -> Box<GameState> {
-        cast(original)
-    }
+    // pub unsafe fn as_game_state<T: GameStateTraits<'a> + ?Sized>(original: &mut T) -> Box<GameState> {
+    //     cast(original)
+    // }
 
     pub fn is_active(&self) -> bool {
         self.active
@@ -27,87 +27,64 @@ impl<'a> GameState<'a> {
     pub fn get_name(&self) -> &'static str {
         self.name
     }
-
-    pub fn as_any(&'a self) -> &(dyn Any + 'a) {
-        self
-    }
-
-    pub fn as_any_mut(&'a mut self) -> &'a mut (dyn Any + 'a) {
-        self
-    }
 }
 
-pub trait GameStateTraits<'a>: GameStateBase {
+pub trait GameStateTraits: NewState + AsMut<GameState> {
+    fn initialize_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)>;
+    fn free_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)>;
+}
+
+pub trait NewState {
     fn new(name: &'static str, schedule: Schedule, active: bool) -> Self where Self: Sized;
-    fn initialize(&mut self, world: &mut World, resources: &mut Resources);
-    fn free(&mut self, world: &mut World, resources: &mut Resources);
 }
 
-unsafe fn cast<T, U: ?Sized>(original: &mut U) -> Box<T> {
-
-    let ptr: *mut U = original;
-    let new: *mut T = ptr as *mut T;
-    let new = new.clone();
-
-    Box::from_raw(new)
-}
-
-pub trait GameStateBase:  {} 
-
-impl<'a> GameStateBase for GameState<'a> {}
-
-impl<'a> GameStateTraits<'a> for GameState<'a> {
-
-    fn initialize(&mut self, _: &mut World, _: &mut Resources) {}
-    fn free(&mut self, _: &mut World, _: &mut Resources) {}
-
+impl NewState for GameState {  
     fn new(name: &'static str, schedule: Schedule, active: bool) -> Self {
         GameState {
             name,
             schedule,
             active,
-            _phantom: std::marker::PhantomData
         }
     }
 }
 
-impl<'a> AsMut<Schedule> for GameState<'a> {
+impl AsMut<Schedule> for GameState {
     fn as_mut(&mut self) -> &mut Schedule {
         &mut self.schedule
     }
 }
 
-pub struct StateMachine<'a> {
-    pub states: Vec<Box<dyn GameStateTraits<'a>>>
+impl AsMut<GameState> for GameState {
+    fn as_mut(&mut self) -> &mut GameState {
+        self
+    }
 }
 
-impl<'a> StateMachine<'a> {
+pub struct StateMachine {
+    pub states: Vec<Box<dyn GameStateTraits>>
+}
 
-    pub const STATES: Vec<Box<dyn GameStateTraits<'a>>> = Vec::new();
+impl StateMachine {
 
-    pub fn add_state(&mut self, mut game_state: impl GameStateTraits<'a> + 'static, world: &mut legion::world::World, resources: &mut Resources) -> &Box<dyn GameStateTraits<'a>> {
+    pub fn add_state(&mut self, mut game_state: impl GameStateTraits + 'static, world: &mut legion::world::World, resources: &mut Resources) -> &Box<dyn GameStateTraits> {
 
-        game_state.initialize(world, resources);
+        game_state.initialize_func()(world, resources);
 
         self.states.push(Box::new(game_state));
 
-        &self.states.last().unwrap()
+        self.states.last().unwrap()
     }
 
-    pub fn set_state_active(&'a mut self, name: &'static str, active: bool) {
+    pub fn set_state_active(&mut self, name: &'static str, active: bool) {
         
         for state in &mut self.states.iter_mut() {
-            let mut state = state.as_mut();
+            let state = state.as_mut();
 
-            let mut state: Box<GameState> = unsafe { cast(state) };
+            let game_state: &mut GameState = state.as_mut();
 
-            let state: &mut GameState = state.borrow_mut();
-
-            // if let Some(state) = state.as_mut() {
-                if state.get_name() == name {
-                    state.set_active(active);
-                }
-            // };
+            if game_state.get_name() == name {
+                game_state.set_active(active);
+            }
         }
 
     }

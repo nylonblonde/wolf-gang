@@ -1,4 +1,6 @@
 #![feature(cmp_min_max_by)]
+// #![feature(generic_associated_types)]
+
 #![allow(dead_code)]
 
 use std::borrow::Borrow;
@@ -21,7 +23,7 @@ mod history;
 mod editor;
 mod game_state;
 
-use game_state::{GameState, GameStateTraits};
+use game_state::{GameState, NewState, GameStateTraits};
 
 mod nodes;
 
@@ -50,7 +52,7 @@ lazy_static! {
 
 thread_local!{
 
-   pub static STATE_MACHINE: RefCell<game_state::StateMachine<'static>> = RefCell::new(
+   pub static STATE_MACHINE: RefCell<game_state::StateMachine> = RefCell::new(
         game_state::StateMachine{
             states: Vec::new()
         }
@@ -113,7 +115,8 @@ impl WolfGang {
         systems::input::initialize_input_config(world, systems::input::CONFIG_PATH);
 
         STATE_MACHINE.with(|s| {
-            s.borrow_mut().add_state(
+            let mut state_machine = s.borrow_mut();
+            state_machine.add_state(
                 editor::Editor::new("MapEditor", 
                     Schedule::builder()
                         .add_thread_local_fn(systems::input::create_thread_local_fn())
@@ -166,11 +169,11 @@ impl WolfGang {
         STATE_MACHINE.with(|s| {
             for state in &mut s.borrow_mut().states {
                 let state = state.as_mut();
-                let mut state = unsafe { GameState::as_game_state(state) };
-               
-                // if state.is_active() {
-                //     state.schedule.execute(&mut world, &mut resources);
-                // }
+
+                let game_state: &mut GameState = state.as_mut();
+                if game_state.is_active() {
+                    game_state.schedule.execute(&mut world, &mut resources);
+                }
             }
         });
     }

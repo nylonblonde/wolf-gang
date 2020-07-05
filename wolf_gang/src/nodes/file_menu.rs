@@ -2,13 +2,10 @@ use gdnative::*;
 use super::utils;
 use crate::{
     node,
-    game_state::GameState,
-    systems::{
-        level_map,
-        selection_box,
-    }
+    game_state::GameStateTraits,
 };
-use legion::prelude::*;
+
+use std::borrow::BorrowMut;
 
 /// The EditMenu "class"
 #[derive(NativeClass)]
@@ -96,39 +93,16 @@ impl FileMenu {
 
                 crate::STATE_MACHINE.with(|s| {
 
-                    godot_print!("k");
+                    for state in &mut s.borrow_mut().states {
 
-                    // let mut remove_at_index:Option<usize> = None;
-
-                    // for state in &s.borrow().states {
-                        // let state: &mut crate::editor::Editor<'static> = state.as_mut().as_mut().as_any().downcast_mut::<crate::editor::Editor>().unwrap();
-
-                        // let game_state: &GameState = state.as_ref();
-                        // if game_state.get_name() == "MapEditor" {
-                        //     state.free(world, resources);
-                        //     // remove_at_index = Some(i);
-
-                        //     state.initialize(world, resources);
-                        // }
-                    // }
-                    // if let Some(idx) = remove_at_index {
-                    //     states.remove(idx);
-                    // }
+                        let state: &mut (dyn GameStateTraits) = state.borrow_mut();
+                        
+                        state.free_func()(world, resources);
+                        
+                        state.initialize_func()(world, resources);
+                    }
+                    
                 });
-
-                // let map = match resources.get_mut::<level_map::Map>() {
-                //     Some(map) => map,
-                //     None => panic!("Couldn't get Map from Resources")
-                // };
-
-                // map.free(world, resources);
-
-                // let selection_box_query = <(Write<selection_box::SelectionBox>, Write<level_map::CoordPos>)>::query();
-
-                // for (mut selection_box, mut coord_pos) in  selection_box_query.iter_mut(world) {
-                //     *selection_box = selection_box::SelectionBox::new();
-                //     *coord_pos = level_map::CoordPos::default();
-                // }
 
             },
             1 => { //open

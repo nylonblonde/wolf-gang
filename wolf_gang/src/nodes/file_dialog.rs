@@ -65,7 +65,7 @@ impl SaveLoadDialog {
     }
 
     #[export]
-    fn _ready(&mut self, file_dialog: FileDialog) {
+    fn _ready(&mut self, _: FileDialog) {
         
     }
 
@@ -97,7 +97,8 @@ impl SaveLoadDialog {
             }
 
             crate::STATE_MACHINE.with(|s| {
-                // s.borrow().as_mut().set_state_active("MapEditor", false);
+                let state_machine: &mut StateMachine = &mut s.borrow_mut();
+                state_machine.set_state_active("MapEditor", false);
             })
         }
     } 
@@ -105,7 +106,8 @@ impl SaveLoadDialog {
     #[export]
     fn hide_handler(&mut self, _: FileDialog) {
         crate::STATE_MACHINE.with(|s| {
-            // s.borrow().as_mut().set_state_active("MapEditor", true);
+            let state_machine: &mut StateMachine = &mut s.borrow_mut();
+            state_machine.set_state_active("MapEditor", true);
         })
     }
 
