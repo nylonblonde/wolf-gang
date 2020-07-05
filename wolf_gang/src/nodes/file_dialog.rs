@@ -1,7 +1,8 @@
+use crate::game_state::StateMachine;
 use gdnative::*;
 use crate::node;
 
-use crate::level_map;
+use crate::systems::level_map;
 
 /// The EditMenu "class"
 #[derive(NativeClass)]
@@ -96,7 +97,7 @@ impl SaveLoadDialog {
             }
 
             crate::STATE_MACHINE.with(|s| {
-                s.borrow_mut().set_state_active("MapEditor", false);
+                // s.borrow().as_mut().set_state_active("MapEditor", false);
             })
         }
     } 
@@ -104,7 +105,7 @@ impl SaveLoadDialog {
     #[export]
     fn hide_handler(&mut self, _: FileDialog) {
         crate::STATE_MACHINE.with(|s| {
-            s.borrow_mut().set_state_active("MapEditor", true);
+            // s.borrow().as_mut().set_state_active("MapEditor", true);
         })
     }
 

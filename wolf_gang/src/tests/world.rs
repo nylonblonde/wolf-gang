@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use legion::prelude::*;
-use crate::level_map;
+use crate::systems::level_map;
 use std::sync::{Arc, Mutex};
 
 type AABB = crate::geometry::aabb::AABB<i32>;

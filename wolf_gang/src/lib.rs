@@ -1,6 +1,8 @@
 #![feature(cmp_min_max_by)]
 #![allow(dead_code)]
 
+use std::borrow::Borrow;
+use std::borrow::BorrowMut;
 use gdnative::*;
 
 #[macro_use]
@@ -16,8 +18,10 @@ mod geometry;
 mod systems;
 mod node;
 mod history;
+mod editor;
+mod game_state;
 
-use systems::{camera, input, level_map, custom_mesh, selection_box, smoothing, transform, udp};
+use game_state::{GameState, GameStateTraits};
 
 mod nodes;
 
@@ -42,9 +46,12 @@ lazy_static! {
     );
 }
 
+
+
 thread_local!{
-    pub static STATE_MACHINE: RefCell<StateMachine> = RefCell::new(
-            StateMachine{
+
+   pub static STATE_MACHINE: RefCell<game_state::StateMachine<'static>> = RefCell::new(
+        game_state::StateMachine{
             states: Vec::new()
         }
     );
@@ -56,40 +63,6 @@ pub struct GameUniverse {
     pub resources: Resources,
 }
 
-pub struct GameState {
-    name: &'static str,
-    schedule: Schedule,
-    active: bool
-}
-
-pub struct StateMachine {
-    pub states: Vec<GameState>
-}
-
-impl StateMachine {
-    fn add_state(&mut self, name: &'static str, schedule: Schedule, active: bool) -> &GameState {
-
-        self.states.push(
-            GameState {
-                name,
-                schedule,
-                active
-            }
-        );
-
-        &self.states.last().unwrap()
-    }
-
-    pub fn set_state_active(&mut self, name: &'static str, active: bool) {
-        
-        for state in &mut self.states {
-            if state.name == name {
-                state.active = active;
-            }
-        }
-
-    }
-}
 
 pub struct Time {
     delta: f32
@@ -124,104 +97,55 @@ impl WolfGang {
     fn _ready(&mut self, _owner: Node) {
 
         godot_print!("hello, world.");
+        
 
         let mut game = GAME_UNIVERSE.lock().unwrap();
+        let game = &mut *game;
 
         let resources = &mut game.resources;
+        let world = &mut game.world;
 
         resources.insert(Time{
             delta: 0.
         });
-
-        resources.insert(udp::ClientSocket::new("127.0.0.1:12345"));
-
-        resources.insert(udp::ServerSocket::new("127.0.0.1:12346"));
-
-        resources.insert(level_map::Map::default());    
-
-        resources.insert(history::CurrentHistoricalStep::default());
-
-        resources.insert(level_map::document::Document::default());
-
-        let mut world = &mut game.world;
-        input::initialize_input_config(&mut world, input::CONFIG_PATH);
-
-        let camera = camera::initialize_camera(&mut world);
-
-        // world.insert(
-        //     (),
-        //     (0..1).map(|_| (level_map::MapChunkData::new(), custom_mesh::MeshData::new(),))
-        // );
-
-        // world.insert(
-        //     (),
-        //     (0..1).map(|_| (level_map::Map::new(),))
-        // );
-
-        // let camera = "".to_string();
-        selection_box::initialize_selection_box(&mut world, camera);
-
-        // let test_node = node::NodeName("Cone".to_string());
-        //     world.insert(
-        //         (test_node.clone(),),
-        //         vec![
-        //             (
-        //                 transform::rotation::Rotation::default(),
-        //                 transform::rotation::Direction::default(),
-        //                 transform::position::Position::default(),
-        //                 camera::FocalPoint::default(),
-        //                 camera::FocalAngle(-45.0f32.to_radians(),45.0f32.to_radians(),0.),
-        //                 camera::Zoom(5.0)
-        //             )
-        //         ]
-        //     );
-
-        // let test_system = Box::new(|world: &mut legion::world::World|{
-        //     let node_name = node::NodeName("Cone".to_string());
-
-        //     let query = <(Write<camera::FocalAngle>,)>::query()
-        //         .filter(tag_value(&node_name));
-
-        //     unsafe {
-        //         for (mut focal_angle,) in query.iter_unchecked(world) {
-        //             focal_angle.1 += 1.0f32.to_radians();
-        //         }
-        //     }
-        // });
-
-        let schedule = Schedule::builder()
-            .add_thread_local_fn(input::create_thread_local_fn())
-            .add_system(smoothing::create_system())
-            .add_system(camera::create_movement_system())
-            .add_system(camera::create_rotation_system())
-            .add_system(level_map::mesh::create_add_material_system())
-            .add_system(selection_box::create_system())
-            .add_system(selection_box::create_coord_to_pos_system())
-            .add_system(custom_mesh::create_tag_system())
-            .flush()
-            //systems which add nodes should go first
-            .add_thread_local(custom_mesh::create_draw_system_local())
-            //systems that work on nodes follow
-            
-            .add_thread_local_fn(selection_box::create_orthogonal_dir_thread_local_fn())
-            .add_thread_local_fn(selection_box::create_movement_thread_local_fn())
-            .add_thread_local_fn(selection_box::create_expansion_thread_local_fn())
-            .add_thread_local_fn(selection_box::create_tile_tool_thread_local_fn())
-            .add_thread_local_fn(level_map::history::create_undo_redo_input_system())
-            .add_thread_local_fn(level_map::mesh::create_drawing_thread_local_fn())
-            .add_thread_local_fn(camera::create_focal_point_thread_local_fn())
-            .add_thread_local_fn(camera::create_camera_angle_thread_local_fn())
-            .add_thread_local_fn(camera::create_follow_selection_box_thread_local_fn())
-            // .add_thread_local_fn(test_system)
-            .add_thread_local(transform::position::create_system_local())
-            .add_thread_local(transform::rotation::create_system_local())
-            .build();
+        resources.insert(systems::udp::ClientSocket::new("127.0.0.1:12345"));
+        resources.insert(systems::udp::ServerSocket::new("127.0.0.1:12346"));
+        systems::input::initialize_input_config(world, systems::input::CONFIG_PATH);
 
         STATE_MACHINE.with(|s| {
-            s.borrow_mut().add_state("MapEditor", schedule, true);
+            s.borrow_mut().add_state(
+                editor::Editor::new("MapEditor", 
+                    Schedule::builder()
+                        .add_thread_local_fn(systems::input::create_thread_local_fn())
+                        .add_system(systems::smoothing::create_system())
+                        .add_system(systems::camera::create_movement_system())
+                        .add_system(systems::camera::create_rotation_system())
+                        .add_system(systems::level_map::mesh::create_add_material_system())
+                        .add_system(systems::selection_box::create_system())
+                        .add_system(systems::selection_box::create_coord_to_pos_system())
+                        .add_system(systems::custom_mesh::create_tag_system())
+                        .flush()
+                        //systems which add nodes should go first
+                        .add_thread_local(systems::custom_mesh::create_draw_system_local())
+                        //systems that work on nodes follow
+                        
+                        .add_thread_local_fn(systems::selection_box::create_orthogonal_dir_thread_local_fn())
+                        .add_thread_local_fn(systems::selection_box::create_movement_thread_local_fn())
+                        .add_thread_local_fn(systems::selection_box::create_expansion_thread_local_fn())
+                        .add_thread_local_fn(systems::selection_box::create_tile_tool_thread_local_fn())
+                        .add_thread_local_fn(systems::level_map::history::create_undo_redo_input_system())
+                        .add_thread_local_fn(systems::level_map::mesh::create_drawing_thread_local_fn())
+                        .add_thread_local_fn(systems::camera::create_focal_point_thread_local_fn())
+                        .add_thread_local_fn(systems::camera::create_camera_angle_thread_local_fn())
+                        .add_thread_local_fn(systems::camera::create_follow_selection_box_thread_local_fn())
+                        // .add_thread_local_fn(test_system)
+                        .add_thread_local(systems::transform::position::create_system_local())
+                        .add_thread_local(systems::transform::rotation::create_system_local())
+                        .build(),
+                    true
+                ),
+                world, resources);
         });
-
-        // self.schedule = Some(schedule);
     }
 
     #[export]
@@ -239,13 +163,14 @@ impl WolfGang {
 
         let mut world = &mut game.world;
 
-        // let schedule = self.schedule.as_mut().unwrap();
-
         STATE_MACHINE.with(|s| {
             for state in &mut s.borrow_mut().states {
-                if state.active {
-                    state.schedule.execute(&mut world, &mut resources);
-                }
+                let state = state.as_mut();
+                let mut state = unsafe { GameState::as_game_state(state) };
+               
+                // if state.is_active() {
+                //     state.schedule.execute(&mut world, &mut resources);
+                // }
             }
         });
     }

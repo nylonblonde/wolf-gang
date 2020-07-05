@@ -2,7 +2,7 @@ pub mod mesh;
 pub mod history;
 pub mod document;
 
-use gdnative::godot_print;
+// use gdnative::godot_print;
 
 use std::collections::HashMap;
 use legion::prelude::*;
@@ -13,7 +13,9 @@ use crate::{
 };
 
 #[cfg(not(test))]
-use crate::custom_mesh::MeshData;
+use crate::systems::{
+    custom_mesh::MeshData,
+};
 
 type AABB = crate::geometry::aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;
@@ -60,6 +62,7 @@ pub fn map_coords_to_world(map_coord: Point) -> nalgebra::Vector3<f32> {
     )
 }
 
+#[derive(Copy, Clone)]
 pub struct Map {
     chunk_dimensions: Point,
     // map_chunk_pool: HashMap<Point, MapChunkData>
@@ -77,10 +80,7 @@ impl Default for Map {
 impl Map {
 
     /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache, and resets the Document and CurrentHistoricalStep resources
-    pub fn reset(&self, world: &mut legion::world::World, resources: &Resources) {
-
-        let mut current_step = resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
-        let mut document = resources.get_mut::<document::Document>().unwrap();
+    pub fn free(&self, world: &mut legion::world::World) {
 
         let map_chunk_query = <(Read<MapChunkData>, Tagged<crate::node::NodeName>)>::query();
 
@@ -95,9 +95,6 @@ impl Map {
         for entity in entities {
             world.delete(entity);
         }
-
-        *current_step = crate::history::CurrentHistoricalStep::default();
-        *document = document::Document::default();
     }
 
     pub fn remove(&self, world: &mut legion::world::World, current_step: &mut crate::history::CurrentHistoricalStep, aabb: AABB) {

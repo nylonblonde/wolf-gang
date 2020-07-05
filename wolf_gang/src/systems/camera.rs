@@ -5,15 +5,18 @@ use legion::prelude::*;
 
 use nalgebra;
 
-use crate::selection_box;
-use crate::node;
-use crate::smoothing::Smoothing;
-use crate::transform::{
-    position::Position,
-    rotation::{ Rotation, Direction }
+use crate::systems::{
+    selection_box,
+    smoothing::Smoothing,
+    transform::{
+        position::Position,
+        rotation::{Rotation, Direction}
+    },
+    input::{ Action, InputActionComponent },
+    level_map
 };
-use crate::input::{ Action, InputActionComponent };
-use crate::level_map;
+
+use crate::node;
 
 type Vector3D = nalgebra::Vector3<f32>;
 type Rotation3D = nalgebra::Rotation3<f32>;
@@ -40,7 +43,6 @@ const SPEED : f32 = 4.;
 
 pub fn initialize_camera(world: &mut legion::world::World) -> String {
     
-    
     let mut camera: Camera = Camera::new();
 
     let node_name = unsafe { 
@@ -66,6 +68,30 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
     ]);
 
     node_name.0
+}
+
+pub fn free_camera(world: &mut legion::world::World, name: &String) {
+
+    let node_name = node::NodeName(name.clone());
+
+    let camera_query = <Tagged<node::NodeName>>::query()
+        .filter(tag_value(&node_name));
+
+    let mut entities: Vec<Entity> = Vec::new();
+
+    //seems redundant to use loop instead of just next but idk, might be good to catch cases with accidental dupes?
+    for (entity, node_name) in camera_query.iter_entities(world) {
+        unsafe {
+            node::remove_node(node_name.clone().0);
+        }
+            entities.push(entity);
+
+    }
+
+    for entity in entities {
+        world.delete(entity);
+    }
+
 }
 
 pub fn create_movement_system() -> Box<dyn Schedulable> {
@@ -189,7 +215,7 @@ pub fn create_focal_point_thread_local_fn() -> Box<dyn FnMut(&mut legion::world:
 /// Creates a smoothing entity that will handle smoothing between the selection box's position and the current focal point
 pub fn create_follow_selection_box_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
     let selection_box_query = <(Read<selection_box::RelativeCamera>, Read<level_map::CoordPos>)>::query()
-        .filter(changed::<crate::level_map::CoordPos>());
+        .filter(changed::<level_map::CoordPos>());
 
     Box::new(move |world: &mut legion::world::World, _| {
 

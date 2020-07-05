@@ -14,11 +14,14 @@ use num::Float;
 use std::cmp::Ordering;
 
 use crate::geometry::aabb;
-use crate::custom_mesh;
 use crate::node;
-use crate::transform;
-use crate::input;
-use crate::level_map;
+
+use crate::systems::{
+    custom_mesh,
+    transform,
+    input,
+    level_map,
+};
 
 type AABB = aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;
@@ -85,6 +88,25 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
             )
         ]
     );
+}
+
+/// Removes all SelectionBox entities from the world, and frees and removes the related Godot nodes
+pub fn free_all(world: &mut World) {
+    let selection_box_query = <(Read<SelectionBox>, Tagged<node::NodeName>)>::query();
+
+    let mut entities: Vec<Entity> = Vec::new();
+
+    for (entity, (_, node_name)) in selection_box_query.iter_entities(world) {
+        unsafe {
+            node::remove_node(node_name.clone().0);
+        }
+
+        entities.push(entity);
+    }
+
+    for entity in entities {
+        world.delete(entity);
+    }
 }
 
 /// Gets the axis closest to forward from a or b, adjusted by adjust_angle around the up axis. We adjust it so that we can smooth out the comparison at 45
@@ -202,7 +224,7 @@ pub fn create_movement_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resou
                 
                 if input_component.repeated(time.delta, 0.25) {
                     
-                    let selection_box_query = <(Read<CameraAdjustedDirection>, Write<crate::level_map::CoordPos>)>::query()
+                    let selection_box_query = <(Read<CameraAdjustedDirection>, Write<level_map::CoordPos>)>::query()
                         .filter(component::<SelectionBox>());
 
                     for (camera_adjusted_dir, mut coord_pos) in selection_box_query.iter_unchecked(world) {
@@ -255,7 +277,7 @@ pub fn create_coord_to_pos_system() -> Box<dyn Schedulable> {
         .build(move |_, world, _, query| {
 
             for (coord_pos, mut position) in query.iter_mut(&mut *world) {
-                let coord_pos = crate::level_map::map_coords_to_world(coord_pos.value);
+                let coord_pos = level_map::map_coords_to_world(coord_pos.value);
                 position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
             }
         })
@@ -341,7 +363,7 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
             
             if input_component.repeated(time.delta, 0.25) {
                 
-                let selection_box_query = <(Write<SelectionBox>, Write<crate::level_map::CoordPos>, Read<CameraAdjustedDirection>)>::query();
+                let selection_box_query = <(Write<SelectionBox>, Write<level_map::CoordPos>, Read<CameraAdjustedDirection>)>::query();
                 
                 unsafe { 
                     for (mut selection_box, mut coord_pos, camera_adjusted_dir) in selection_box_query.iter_unchecked(world) {

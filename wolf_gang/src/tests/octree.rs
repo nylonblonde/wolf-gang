@@ -2,7 +2,7 @@ use nalgebra::Vector3;
 
 use crate::collections::octree::Octree;
 use crate::geometry::aabb;
-use crate::level_map::TileData;
+use crate::systems::level_map::TileData;
 
 type Point = Vector3<i32>;
 type AABB = aabb::AABB<i32>;

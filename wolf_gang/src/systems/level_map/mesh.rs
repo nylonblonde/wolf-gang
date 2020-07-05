@@ -1,7 +1,7 @@
 /// Handles the creation and defining of mesh nodes in Godot
 
 use std::collections::HashSet;
-use crate::custom_mesh; 
+use crate::systems::custom_mesh; 
 use crate::geometry::aabb;
 use crate::collections::octree::PointData;
 
