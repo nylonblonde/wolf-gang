@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=2]
+[gd_scene load_steps=5 format=2]
 
 [ext_resource path="res://EditMenu.gdns" type="Script" id=1]
 [ext_resource path="res://FileMenu.gdns" type="Script" id=2]
 [ext_resource path="res://SaveLoadDialog.gdns" type="Script" id=3]
+[ext_resource path="res://FileConfirmation.gdns" type="Script" id=4]
 
 [node name="Control" type="Control"]
 anchor_right = 1.0
@@ -30,8 +31,16 @@ items = [ "New", null, 0, false, false, 0, 0, null, "", false, "Open...", null, 
 switch_on_hover = true
 script = ExtResource( 2 )
 
+[node name="ConfirmationDialog" type="ConfirmationDialog" parent="HBoxContainer/File"]
+margin_right = 569.0
+margin_bottom = 70.0
+dialog_text = "There are unsaved changes to this document, are you sure you would like to continue?"
+script = ExtResource( 4 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
 [node name="FileDialog" type="FileDialog" parent="HBoxContainer/File"]
-visible = true
 margin_left = 1.43201
 margin_top = -1.43201
 margin_right = 645.432

@@ -46,6 +46,24 @@ impl Document {
         self.data = data;
     }
 
+    /// Returns a Vec<u8> of the result of serializing the document using bincode
+    pub fn to_raw(self) -> Vec<u8> {
+        let encoded: Vec<u8> = bincode::serialize(&self).unwrap();
+
+        encoded
+    }
+
+    /// Helper function to get a ByteArray for use in Godot's buffer and file classes
+    pub fn to_byte_array(original: Vec<u8>) -> ByteArray {
+        let mut byte_array = ByteArray::new();
+
+        for byte in original {
+            byte_array.push(byte);
+        }
+
+        byte_array
+    }
+
     pub fn save(self) {
 
         match self.file_path.clone() {
@@ -61,13 +79,9 @@ impl Document {
                 let mut file = File::new();
 
                 if let Ok(_) = file.open(GodotString::from(file_path), File::WRITE) {
-                    let encoded: Vec<u8> = bincode::serialize(&self).unwrap();
+                    let encoded = self.to_raw();
 
-                    let mut byte_array = ByteArray::new();
-
-                    for byte in encoded {
-                        byte_array.push(byte);
-                    }
+                    let byte_array = Self::to_byte_array(encoded);
 
                     file.store_buffer(byte_array);
                     file.close();
@@ -76,14 +90,12 @@ impl Document {
         }
     }
 
-    /// Get document from file saved in user://maps/<file_name>
-    pub fn from_file<S: ToString>(file_path: S) -> Option<Self> {
-
+    pub fn raw_from_file<S: ToString>(file_path: S) -> Vec<u8> {
         let file_path = file_path.to_string();
 
         let mut file = File::new();
 
-        match file.open(GodotString::from(file_path), File::WRITE) {
+        match file.open(GodotString::from(file_path), File::READ) {
 
             Ok(_) => {
                 
@@ -97,12 +109,20 @@ impl Document {
                     encoded.push(byte_array.get(i));
                 }
 
-                Some(bincode::deserialize::<Self>(&encoded).unwrap())
+                encoded
+
+                // Some(bincode::deserialize::<Self>(&encoded).unwrap())
             },
-            _err => {
-                None
-            }
+            err => panic!("{:?}", err)
+            
         }
+    }
+
+    pub fn from_file<S: ToString>(file_path: S) -> Result<Self, Box<bincode::ErrorKind>> {
+
+        let raw = Self::raw_from_file(file_path);
+
+        bincode::deserialize::<Self>(&raw)
         
     }
 }

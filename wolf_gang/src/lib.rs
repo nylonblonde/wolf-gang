@@ -185,6 +185,7 @@ fn init(handle: gdnative::init::InitHandle) {
     handle.add_class::<nodes::edit_menu::EditMenu>();
     handle.add_class::<nodes::file_menu::FileMenu>();
     handle.add_class::<nodes::file_dialog::SaveLoadDialog>();
+    handle.add_class::<nodes::file_confirmation::FileConfirmation>();
 }
 
 // macros that create the entry-points of the dynamic library.

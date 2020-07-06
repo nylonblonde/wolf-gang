@@ -3,18 +3,19 @@ use super::utils;
 use crate::{
     node,
     game_state::GameStateTraits,
+    systems::level_map::document,
 };
 
 use std::borrow::BorrowMut;
 
-/// The EditMenu "class"
 #[derive(NativeClass)]
 #[inherit(MenuButton)]
 #[register_with(Self::register_signals)]
 #[user_data(user_data::LocalCellData<FileMenu>)]
 pub struct FileMenu {
     popup_menu: PopupMenu,
-    file_dialog: Option<FileDialog>
+    file_dialog: Option<FileDialog>,
+    confirmation_dialog: Option<ConfirmationDialog>    
 }
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
@@ -29,7 +30,8 @@ impl FileMenu {
 
         FileMenu{
             popup_menu,
-            file_dialog: None
+            file_dialog: None,
+            confirmation_dialog: None
         }
 
     }
@@ -43,31 +45,47 @@ impl FileMenu {
                 export_info: init::ExportInfo::new(VariantType::I64),
                 usage: init::PropertyUsage::DEFAULT
             }]
-        })
+        });
+        builder.add_signal(init::Signal {
+            name: "confirmation_popup",
+            args: &[]
+        });
     }
 
     #[export]
     fn _ready(&mut self, mut menu_button: MenuButton) {
         unsafe {
 
-            let dialog = node::get_node(&menu_button, "FileDialog".to_string()); 
+            //Get the FileDilaog for saving and loading
+            let file_dialog = node::get_child_by_type::<FileDialog>(&menu_button); 
+
+            match file_dialog {
+                Some(file_dialog) => {
+
+                    match menu_button.connect(GodotString::from("save_load_popup"), Some(file_dialog.to_object()), GodotString::from("save_load_handler"), VariantArray::new(), 0) {
+                        Ok(_) => {
+                            self.file_dialog = Some(file_dialog)
+                        },
+                        Err(err) => panic!("{:?}", err)
+                    }
+                    
+                },
+                None => panic!("Couldn't find the FileDialog!")
+            }
+
+            //Get the confirmation dialog
+            let dialog = node::get_child_by_type::<ConfirmationDialog>(&menu_button);
 
             match dialog {
                 Some(dialog) => {
-                    match dialog.cast::<FileDialog>() {
-                        Some(file_dialog) => {
-
-                            match menu_button.connect(GodotString::from("save_load_popup"), Some(file_dialog.to_object()), GodotString::from("save_load_handler"), VariantArray::new(), 0) {
-                                Ok(_) => {
-                                    self.file_dialog = Some(file_dialog)
-                                },
-                                Err(err) => panic!("{:?}", err)
-                            }
+                    match menu_button.connect(GodotString::from("confirmation_popup"), Some(dialog.to_object()), GodotString::from("new_confirmation_handler"), VariantArray::new(), 0) {
+                        Ok(_) => {
+                            self.confirmation_dialog = Some(dialog);
                         },
-                        None => panic!("Couldn't cast the FileDialog Node")
+                        Err(err) => panic!("{:?}", err)
                     }
                 },
-                None => panic!("Couldn't find the FileDialog!")
+                None => panic!("Couldn't find the ConfirmationDialog")
             }
 
         }
@@ -96,9 +114,21 @@ impl FileMenu {
                     for state in &mut s.borrow_mut().states {
 
                         let state: &mut (dyn GameStateTraits) = state.borrow_mut();
-                        
+
+                        {
+                            if let Some(doc) = resources.get_mut::<document::Document>() {
+                                if doc.file_path == None {
+                                    //Emit signal to confirm if you want new document despite unsaved changes
+                                    unsafe { menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]); }
+
+                                    //get outta here, we're done
+                                    return
+                                }
+                            }
+                        }
+
+                        //clear the world of related entities and free related nodes before re-initializing
                         state.free_func()(world, resources);
-                        
                         state.initialize_func()(world, resources);
                     }
                     
