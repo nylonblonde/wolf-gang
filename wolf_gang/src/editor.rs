@@ -38,6 +38,12 @@ impl AsMut<GameState> for Editor {
     }
 }
 
+impl AsRef<GameState> for Editor {
+    fn as_ref(&self) -> &GameState {
+        &self.game_state
+    }
+}
+
 impl NewState for Editor {
     fn new(name: &'static str, schedule: Schedule, active: bool) -> Self {
 

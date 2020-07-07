@@ -4,7 +4,6 @@ use gdnative::*;
 #[inherit(ConfirmationDialog)]
 #[user_data(user_data::LocalCellData<FileConfirmation>)]
 pub struct FileConfirmation {
-    // confirm_dialog: ConfirmationDialog,
 }
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
@@ -13,22 +12,86 @@ pub struct FileConfirmation {
 impl FileConfirmation {
     
     /// The "constructor" of the class.
-    fn _init(_: ConfirmationDialog) -> Self {
+    fn _init(mut confirmation_dialog: ConfirmationDialog) -> Self {
 
-        FileConfirmation{}
+        FileConfirmation{
+        }
+        
     }
 
-    /// Confirmation for ConfirmationDialog that will popup when opening or pressing New when there are unsaved changes
+    unsafe fn disconnect_signal(mut emitter: ConfirmationDialog, target: ConfirmationDialog, signal: GodotString) {
+
+        let mut connections = target.get_incoming_connections();
+
+        for i in 0..connections.len() {
+            let connection = connections.get_val(i);
+
+            let dict = connection.to_dictionary();
+
+            let incoming_signal = dict.get(&GodotString::from("signal_name").to_variant()).to_godot_string();
+
+            if incoming_signal == signal {
+                let incoming_method = dict.get(&GodotString::from("method_name").to_variant()).to_godot_string();
+
+                emitter.disconnect(incoming_signal, Some(target.to_object()), incoming_method);
+            }
+        }
+    }
+
+    /// Confirmation for ConfirmationDialog that will popup when pressing New when there are unsaved changes
     #[export]
     fn new_confirmation_handler(&mut self, mut confirmation_dialog: ConfirmationDialog) {
 
-        unsafe { confirmation_dialog.popup_centered(Vector2::new(0., 0.)); }
+        unsafe { 
+
+            let signal = GodotString::from("confirmed");
+            let method = GodotString::from("new_confirmation_ok_handler");
+
+            let mut emitter = confirmation_dialog;
+
+            Self::disconnect_signal(emitter, confirmation_dialog, signal.clone());
+
+            emitter.connect(signal, Some(confirmation_dialog.to_object()), method, VariantArray::new(), 0).unwrap();
+
+            confirmation_dialog.popup_centered(Vector2::new(0., 0.)); 
+        
+        }
+    }
+
+    /// Confirmation for ConfirmationDialog that will popup when opening a file when there are unsaved changes
+    #[export]
+    fn open_confirmation_handler(&mut self, mut confirmation_dialog: ConfirmationDialog) {
+        unsafe { 
+            let signal = GodotString::from("confirmed");
+
+            let emitter = confirmation_dialog;
+
+            Self::disconnect_signal(emitter, confirmation_dialog, signal.clone());
+
+            confirmation_dialog.popup_centered(Vector2::new(0., 0.)); 
+        }
     }
 
     #[export]
-    fn open_confirmation_handler(&mut self, mut confirmation_dialog: ConfirmationDialog) {
+    fn new_confirmation_ok_handler(&mut self, _: ConfirmationDialog) {
 
-        unsafe { confirmation_dialog.popup_centered(Vector2::new(0., 0.)); }
+        let mut game = crate::GAME_UNIVERSE.lock().unwrap();
+        let game = &mut *game;
+
+        let world = &mut game.world;
+        let resources = &mut game.resources;
+
+        crate::STATE_MACHINE.with(|s| {
+            let mut state_machine = s.borrow_mut();
+
+            match state_machine.get_state_mut("MapEditor") {
+                Some(editor_state) => {
+                    editor_state.free_func()(world, resources);
+                    editor_state.initialize_func()(world, resources);
+                },
+                None => panic!("Couldn't get the MapEditor state")
+            }
+        });
     }
 
 }

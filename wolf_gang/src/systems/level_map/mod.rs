@@ -199,25 +199,17 @@ impl Map {
             if !exists {
                 println!("Creating a new map chunk at {:?}", pt);
 
-                let map_data = MapChunkData{
-                    octree: Octree::new(AABB::new(
+                let (entity, map_data) = self.insert_mapchunk_with_octree(
+                    Octree::new(AABB::new(
                         Point::new(
                             pt.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
                             pt.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
                             pt.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
                         ),
                         self.chunk_dimensions
-                    ))
-                };
-
-                let entity = world.insert((pt,),vec![
-                    (
-                        map_data.clone(),
-                        history::MapChunkHistory::new(map_data.clone()),
-                        #[cfg(not(test))]
-                        MeshData::new(),
-                    )
-                ])[0];
+                    )), 
+                    world, false
+                );
 
                 entities.insert(entity, map_data);
             }
@@ -275,6 +267,31 @@ impl Map {
         }
 
         history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center }, aabb);
+
+    }
+
+    /// Inserts a new mapchunk with the octree data into world
+    pub fn insert_mapchunk_with_octree(self, octree: Octree<i32, TileData>, world: &mut World, changed: bool) -> (Entity, MapChunkData) {
+        let map_data = MapChunkData{
+            octree
+        };
+
+        let chunk_pt = map_data.get_chunk_point();
+
+        let (entity, map_data) = (world.insert((chunk_pt,), vec![
+            (
+                map_data.clone(),
+                history::MapChunkHistory::new(map_data.clone()),
+                #[cfg(not(test))]
+                MeshData::new(),
+            )
+        ])[0], map_data);
+
+        if changed {
+            world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
+        }
+
+        (entity, map_data)
 
     }
 }

@@ -46,9 +46,28 @@ impl Document {
         self.data = data;
     }
 
+    /// Populate the world with the required entities
+    pub fn populate_world(&self, world: &mut legion::world::World, resources: &mut Resources) {
+
+        match resources.get::<level_map::Map>() {
+            Some(map) => {
+                
+                for octree in &self.data {
+
+                    godot_print!("inserting map chunk");
+
+                    map.insert_mapchunk_with_octree(octree.clone(), world, true);
+                }
+
+            },
+            None => panic!("Couldn't find the Map resource when populating the world")
+        }
+
+    }
+
     /// Returns a Vec<u8> of the result of serializing the document using bincode
-    pub fn to_raw(self) -> Vec<u8> {
-        let encoded: Vec<u8> = bincode::serialize(&self).unwrap();
+    pub fn to_raw(&self) -> Vec<u8> {
+        let encoded: Vec<u8> = bincode::serialize(self).unwrap();
 
         encoded
     }
@@ -111,7 +130,6 @@ impl Document {
 
                 encoded
 
-                // Some(bincode::deserialize::<Self>(&encoded).unwrap())
             },
             err => panic!("{:?}", err)
             
@@ -122,8 +140,18 @@ impl Document {
 
         let raw = Self::raw_from_file(file_path);
 
-        bincode::deserialize::<Self>(&raw)
+        let result = bincode::deserialize::<Self>(&raw);
+
+        for octree in &result.as_ref().unwrap().data {
+            godot_print!("{:?}", octree.query_range(octree.get_aabb()));
+        }
+
+        result
         
+    }
+
+    pub fn from_raw(raw: &Vec<u8>) -> Result<Self, Box<bincode::ErrorKind>> {
+        bincode::deserialize::<Self>(raw)
     }
 }
 

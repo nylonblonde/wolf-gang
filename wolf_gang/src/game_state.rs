@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::any::Any;
 use legion::prelude::*;
 
-use std::borrow::Borrow;
+use std::borrow::BorrowMut;
 
 pub struct GameState {
     name: &'static str,
@@ -29,7 +29,7 @@ impl GameState{
     }
 }
 
-pub trait GameStateTraits: NewState + AsMut<GameState> {
+pub trait GameStateTraits: NewState + AsMut<GameState> + AsRef<GameState> {
     fn initialize_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)>;
     fn free_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)>;
 }
@@ -60,6 +60,12 @@ impl AsMut<GameState> for GameState {
     }
 }
 
+impl AsRef<GameState> for GameState {
+    fn as_ref(&self) -> &GameState {
+        self
+    }
+}
+
 pub struct StateMachine {
     pub states: Vec<Box<dyn GameStateTraits>>
 }
@@ -74,6 +80,33 @@ impl StateMachine {
 
         self.states.last().unwrap()
     }
+
+    pub fn get_state(&self, name: &'static str) -> Option<&Box<dyn GameStateTraits>> {
+
+        for state in &self.states {
+
+            let game_state: &GameState = state.as_ref().as_ref();
+            if game_state.get_name() == name {
+                return Some(state);
+            }
+        }
+
+        None
+    }
+
+    pub fn get_state_mut(&mut self, name: &'static str) -> Option<&mut Box<dyn GameStateTraits>> {
+
+        for state in &mut self.states {
+
+            let game_state: &GameState = state.as_mut().as_mut();
+            if game_state.get_name() == name {
+                return Some(state);
+            }
+        }
+
+        None
+    }
+
 
     pub fn set_state_active(&mut self, name: &'static str, active: bool) {
         

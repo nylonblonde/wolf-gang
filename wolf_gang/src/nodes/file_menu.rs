@@ -109,23 +109,23 @@ impl FileMenu {
                 let world = &mut game.world;
                 let resources = &mut game.resources;
 
+                {
+                    if let Some(doc) = resources.get_mut::<document::Document>() {
+                        if doc.file_path == None {
+                            //Emit signal to confirm if you want new document despite unsaved changes
+                            unsafe { menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]); }
+
+                            //get outta here, we're done
+                            return
+                        }
+                    }
+                }
+
                 crate::STATE_MACHINE.with(|s| {
 
                     for state in &mut s.borrow_mut().states {
 
                         let state: &mut (dyn GameStateTraits) = state.borrow_mut();
-
-                        {
-                            if let Some(doc) = resources.get_mut::<document::Document>() {
-                                if doc.file_path == None {
-                                    //Emit signal to confirm if you want new document despite unsaved changes
-                                    unsafe { menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]); }
-
-                                    //get outta here, we're done
-                                    return
-                                }
-                            }
-                        }
 
                         //clear the world of related entities and free related nodes before re-initializing
                         state.free_func()(world, resources);

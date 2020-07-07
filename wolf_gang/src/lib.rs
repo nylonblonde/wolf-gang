@@ -1,5 +1,4 @@
 #![feature(cmp_min_max_by)]
-// #![feature(generic_associated_types)]
 
 #![allow(dead_code)]
 
@@ -48,9 +47,7 @@ lazy_static! {
     );
 }
 
-
-
-thread_local!{
+thread_local! {
 
    pub static STATE_MACHINE: RefCell<game_state::StateMachine> = RefCell::new(
         game_state::StateMachine{

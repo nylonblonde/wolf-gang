@@ -1,8 +1,14 @@
-use crate::game_state::StateMachine;
 use gdnative::*;
-use crate::node;
+use crate::{
+    node,
+    game_state::{StateMachine, GameStateTraits},
+    systems::{
+        level_map,
+        level_map::document::Document,
+    }
+};
 
-use crate::systems::level_map;
+use std::borrow::BorrowMut;
 
 /// The EditMenu "class"
 #[derive(NativeClass)]
@@ -164,6 +170,11 @@ impl SaveLoadDialog {
         let world = &mut game.world;
         let resources = &mut game.resources;
 
+        let mut doc = match resources.get_mut::<level_map::document::Document>() {
+            Some(document) => document.clone(),
+            None => panic!("Couldn't retrieve document Resource")
+        };
+
         unsafe {
             match file_dialog.get_mode() {
                 FileDialogMode::ModeOpenFile => {
@@ -172,27 +183,49 @@ impl SaveLoadDialog {
 
                     file_dialog.emit_signal(GodotString::from("confirmation_popup"), &[]);
 
+                    //If working from a saved document, check to see if the current document is up to date with the saved one
+                    if let Some(file_path) = &doc.file_path {
+                        let saved = Document::raw_from_file(file_path);
+                        let current = doc.to_raw();
+
+                        if saved != current {
+                            //emmit confirmation dialog popup signal
+                        }
+                    }
+
+                    crate::STATE_MACHINE.with(|s| {
+                        let mut state_machine = s.borrow_mut();
+                        
+                        match state_machine.get_state_mut("MapEditor") {
+                            Some(editor_state) => {
+
+                                editor_state.free_func()(world, resources);
+                                editor_state.initialize_func()(world, resources);
+
+                                doc = Document::from_file(path).unwrap();
+
+                                doc.populate_world(world, resources);
+
+                            },
+                            None => panic!("Couldn't retrieve MapEditor state while trying to open document")
+                        }
+
+                    });
+
                 },
                 FileDialogMode::ModeSaveFile => {
 
                     godot_print!("Saving...");
-
-                    let mut document = match resources.get_mut::<level_map::document::Document>() {
-                        Some(document) => document.clone(),
-                        None => level_map::document::Document::default()
-                    };
-
-                    godot_print!("{:?}", document);
 
                     let suffix = ".wgm";
                     if !path.ends_with(&GodotString::from(suffix)) {
                         path = GodotString::from(path.to_string() + suffix);
                     }
 
-                    document.file_path = Some(path.to_string());
-                    document.update_data(world);
+                    doc.file_path = Some(path.to_string());
+                    doc.update_data(world);
 
-                    document.save();
+                    doc.save();
 
                 },
                 _ => {}
