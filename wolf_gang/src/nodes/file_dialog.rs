@@ -53,11 +53,6 @@ impl SaveLoadDialog {
 
                     file_dialog.set_current_dir(maps_dir);
 
-                    // let confirm_dialog = match node::get_child_by_type::<ConfirmationDialog>(&file_dialog) { 
-                    //     Some(r) => r,
-                    //     None => panic!("Couldn't get the ConfirmationDialog child of FileDialog")   
-                    // };
-
                     return SaveLoadDialog{
                         confirm_dialog: None
                     }

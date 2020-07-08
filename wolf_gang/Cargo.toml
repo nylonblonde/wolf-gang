@@ -8,8 +8,10 @@ edition = "2018"
 
 [dependencies]
 gdnative = "0.8.1"
-# legion =  { git = "file:/Users/lyon/RustProjects/legion", branch="experimental" } 
-legion = { git = "https://github.com/TomGillen/legion.git", commit="24091d7" }
+# in case of regression, this commit will for sure work
+# legion = { git = "https://github.com/TomGillen/legion.git", commit="24091d7" }
+legion = { git = "https://github.com/TomGillen/legion.git", commit=" 80a3d15"}
+# legion = "0.2.4"
 nalgebra = { version = "0.21.0", features = ["serde-serialize"] }
 lazy_static = "1.4.0"
 num = "0.2.1"

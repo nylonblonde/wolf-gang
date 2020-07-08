@@ -1,8 +1,4 @@
-use std::ops::Deref;
-use std::any::Any;
 use legion::prelude::*;
-
-use std::borrow::BorrowMut;
 
 pub struct GameState {
     name: &'static str,

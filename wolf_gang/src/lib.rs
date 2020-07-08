@@ -2,8 +2,6 @@
 
 #![allow(dead_code)]
 
-use std::borrow::Borrow;
-use std::borrow::BorrowMut;
 use gdnative::*;
 
 #[macro_use]
@@ -22,7 +20,7 @@ mod history;
 mod editor;
 mod game_state;
 
-use game_state::{GameState, NewState, GameStateTraits};
+use game_state::{GameState, NewState};
 
 mod nodes;
 
@@ -97,7 +95,6 @@ impl WolfGang {
 
         godot_print!("hello, world.");
         
-
         let mut game = GAME_UNIVERSE.lock().unwrap();
         let game = &mut *game;
 
@@ -138,9 +135,9 @@ impl WolfGang {
                         .add_thread_local_fn(systems::camera::create_focal_point_thread_local_fn())
                         .add_thread_local_fn(systems::camera::create_camera_angle_thread_local_fn())
                         .add_thread_local_fn(systems::camera::create_follow_selection_box_thread_local_fn())
-                        // .add_thread_local_fn(test_system)
-                        .add_thread_local(systems::transform::position::create_system_local())
+                        // // .add_thread_local_fn(test_system)
                         .add_thread_local(systems::transform::rotation::create_system_local())
+                        .add_thread_local(systems::transform::position::create_system_local())
                         .build(),
                     true
                 ),
