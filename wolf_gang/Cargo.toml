@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-gdnative = "0.8.0"
+gdnative = "0.8.1"
 # legion =  { git = "file:/Users/lyon/RustProjects/legion", branch="experimental" } 
 legion = { git = "https://github.com/TomGillen/legion.git", commit="24091d7" }
 nalgebra = { version = "0.21.0", features = ["serde-serialize"] }

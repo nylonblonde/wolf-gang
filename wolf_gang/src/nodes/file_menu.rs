@@ -3,7 +3,9 @@ use super::utils;
 use crate::{
     node,
     game_state::GameStateTraits,
-    systems::level_map::document,
+    systems::level_map::{
+        document::Document
+    }
 };
 
 use std::borrow::BorrowMut;
@@ -99,26 +101,48 @@ impl FileMenu {
     #[export]
     fn item_handler(&mut self, mut menu_button: MenuButton, id: i64) {
 
+
+        let mut game = crate::GAME_UNIVERSE.lock().unwrap();
+        let game = &mut *game;
+        let world = &mut game.world;
+        let resources = &mut game.resources;
+
+        let mut doc = match resources.get_mut::<Document>() {
+            Some(document) => document.clone(),
+            None => panic!("Couldn't retrieve document Resource")
+        };
+
         match id {
             0 => { //new
 
                 godot_print!("New");
+                
+                match &doc.file_path {
+                    Some(file_path) => {
+                        let saved = Document::raw_from_file(file_path);
 
-                let mut game = crate::GAME_UNIVERSE.lock().unwrap();
-                let game = &mut *game;
-                let world = &mut game.world;
-                let resources = &mut game.resources;
+                        doc.update_data(world);
+                        let current = doc.to_raw();
 
-                {
-                    if let Some(doc) = resources.get_mut::<document::Document>() {
-                        if doc.file_path == None {
+                        if saved != current {
+                            unsafe { menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]); }
+                            return
+                        }
+                    },
+                    None => {
+
+                        doc.update_data(world);
+
+                        if doc != Document::default() {
                             //Emit signal to confirm if you want new document despite unsaved changes
                             unsafe { menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]); }
 
-                            //get outta here, we're done
-                            return
                         }
+
+                        //get outta here, we're done
+                        return
                     }
+                    
                 }
 
                 crate::STATE_MACHINE.with(|s| {
@@ -136,6 +160,31 @@ impl FileMenu {
 
             },
             1 => { //open
+
+                let mut file_dialog = self.file_dialog.unwrap();
+
+                //If working from a saved document, check to see if the current document is up to date with the saved one
+                match &doc.file_path {
+                    Some(file_path) => {
+                        let saved = Document::raw_from_file(file_path);
+
+                        doc.update_data(world);
+                        let current = doc.to_raw();
+
+                        if saved != current {
+                            unsafe { file_dialog.emit_signal(GodotString::from("confirmation_popup"), &[]); }
+                            return
+                        }
+                    },
+                    None => {
+                        doc.update_data(world);
+
+                        if doc != Document::default() {
+                            unsafe { file_dialog.emit_signal(GodotString::from("confirmation_popup"), &[]); }
+                            return
+                        }
+                    }
+                }
 
                 unsafe { menu_button.emit_signal(GodotString::from("save_load_popup"), &[Variant::from_i64(0)]); }
 

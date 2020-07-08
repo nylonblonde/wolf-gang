@@ -41,6 +41,7 @@ __meta__ = {
 }
 
 [node name="FileDialog" type="FileDialog" parent="HBoxContainer/File"]
+visible = true
 margin_left = 1.43201
 margin_top = -1.43201
 margin_right = 645.432

@@ -12,7 +12,7 @@ pub struct FileConfirmation {
 impl FileConfirmation {
     
     /// The "constructor" of the class.
-    fn _init(mut confirmation_dialog: ConfirmationDialog) -> Self {
+    fn _init(_: ConfirmationDialog) -> Self {
 
         FileConfirmation{
         }
@@ -62,11 +62,15 @@ impl FileConfirmation {
     #[export]
     fn open_confirmation_handler(&mut self, mut confirmation_dialog: ConfirmationDialog) {
         unsafe { 
-            let signal = GodotString::from("confirmed");
 
-            let emitter = confirmation_dialog;
+            let signal = GodotString::from("confirmed");
+            let method = GodotString::from("open_confirmation_ok_handler");
+
+            let mut emitter = confirmation_dialog;
 
             Self::disconnect_signal(emitter, confirmation_dialog, signal.clone());
+
+            emitter.connect(signal, Some(confirmation_dialog.to_object()), method, VariantArray::new(), 0).unwrap();
 
             confirmation_dialog.popup_centered(Vector2::new(0., 0.)); 
         }
@@ -92,6 +96,18 @@ impl FileConfirmation {
                 None => panic!("Couldn't get the MapEditor state")
             }
         });
+    }
+
+    #[export]
+    fn open_confirmation_ok_handler(&mut self, confirmation_dialog: ConfirmationDialog) {
+        unsafe {
+            let mut menu_button: MenuButton = confirmation_dialog.get_parent()
+                .expect("Couldn't get MenuButton which should be the parent of the ConfirmationDialog")
+                .cast::<MenuButton>().unwrap();
+
+            menu_button.emit_signal(GodotString::from("save_load_popup"), &[Variant::from_i64(0)]);
+        }
+
     }
 
 }

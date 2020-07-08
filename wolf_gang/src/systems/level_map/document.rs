@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 
 type Octree = octree::Octree<i32, level_map::TileData>;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Document {
     pub file_path: Option<String>,
     pub title: String,
@@ -46,7 +46,7 @@ impl Document {
         self.data = data;
     }
 
-    /// Populate the world with the required entities
+    /// Populate the world with the required entities from self's document data
     pub fn populate_world(&self, world: &mut legion::world::World, resources: &mut Resources) {
 
         match resources.get::<level_map::Map>() {
@@ -146,7 +146,7 @@ impl Document {
             godot_print!("{:?}", octree.query_range(octree.get_aabb()));
         }
 
-        result
+        result 
         
     }
 

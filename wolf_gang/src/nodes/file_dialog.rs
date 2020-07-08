@@ -1,16 +1,13 @@
 use gdnative::*;
 use crate::{
     node,
-    game_state::{StateMachine, GameStateTraits},
+    game_state::{StateMachine},
     systems::{
         level_map,
         level_map::document::Document,
     }
 };
 
-use std::borrow::BorrowMut;
-
-/// The EditMenu "class"
 #[derive(NativeClass)]
 #[inherit(FileDialog)]
 #[register_with(Self::register_signals)]
@@ -163,7 +160,7 @@ impl SaveLoadDialog {
     }
 
     #[export]
-    fn file_selection_handler(&mut self, mut file_dialog: FileDialog, mut path: GodotString) {
+    fn file_selection_handler(&mut self, file_dialog: FileDialog, mut path: GodotString) {
 
         let mut game = crate::GAME_UNIVERSE.lock().unwrap();
         let game = &mut *game;
@@ -181,18 +178,6 @@ impl SaveLoadDialog {
 
                     godot_print!("Opening...");
 
-                    file_dialog.emit_signal(GodotString::from("confirmation_popup"), &[]);
-
-                    //If working from a saved document, check to see if the current document is up to date with the saved one
-                    if let Some(file_path) = &doc.file_path {
-                        let saved = Document::raw_from_file(file_path);
-                        let current = doc.to_raw();
-
-                        if saved != current {
-                            //emmit confirmation dialog popup signal
-                        }
-                    }
-
                     crate::STATE_MACHINE.with(|s| {
                         let mut state_machine = s.borrow_mut();
                         
@@ -205,6 +190,9 @@ impl SaveLoadDialog {
                                 doc = Document::from_file(path).unwrap();
 
                                 doc.populate_world(world, resources);
+
+                                //Overwrite Document resource with loaded one
+                                resources.insert(doc);
 
                             },
                             None => panic!("Couldn't retrieve MapEditor state while trying to open document")
