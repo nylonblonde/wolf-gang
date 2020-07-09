@@ -104,15 +104,17 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
         let dimensions = self.aabb.dimensions.abs();
 
         let smaller_half = dimensions/two;
-        let larger_half = dimensions - smaller_half;
+        let larger_half = dimensions - smaller_half - Vector3::new(adj, adj, adj);
 
         let (tx, rx) = mpsc::channel::<Octree<N,T>>();
 
         let max_elements = Arc::new(self.max_elements);
 
         rayon::scope(move |s| {
+            
             //down back left
             let sub_max = min + larger_half;
+
             let downbackleft = AABB::<N>::from_extents(
                 min,
                 sub_max
@@ -125,7 +127,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
                 let max_elements = Arc::clone(&max_elements);
 
                 s.spawn(move |s| {
-                    //down back right
+
                     let sub_min = min + Vector3::new(larger_half.x + adj, zero, zero);
                     let sub_max = Vector3::new(
                         max.x, sub_min.y + larger_half.y, sub_min.z + larger_half.z
@@ -138,7 +140,9 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
                     tx1.send(Octree::new(downbackright, *max_elements)).unwrap();
         
                     if dimensions.z > one {
+                        
                         s.spawn(move |s| {
+
                             //down forward right
                             let sub_min = min + Vector3::new(larger_half.x + adj, zero, larger_half.z + adj);
                             let sub_max = Vector3::new(
@@ -152,6 +156,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
             
                             if dimensions.y > one {
                                 s.spawn(move |_| {
+                                    
                                     //up forward right
                                     let sub_min = min + Vector3::new(larger_half.x + adj, larger_half.y + adj, larger_half.z + adj);
                                     let upforwardright = AABB::<N>::from_extents(
@@ -187,6 +192,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
 
                     if dimensions.y > one {
                         s.spawn(move |_| {
+
                             //up forward left
                             let sub_min = min + Vector3::new(zero, larger_half.y + adj, larger_half.z + adj);
                             let sub_max = Vector3::new(
@@ -223,6 +229,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
                     if dimensions.x > one {
 
                         s.spawn(move |_| {
+
                             //up back right
                             let sub_min = min + Vector3::new(larger_half.x + adj, larger_half.y + adj, zero);
                             let sub_max = Vector3::new(
@@ -247,7 +254,6 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
 
         let mut total_volume = zero;
         for child in &self.children {
-            //TODO: Perform a better check here: are the pieces overlapping?
             total_volume = total_volume + child.aabb.dimensions.x * child.aabb.dimensions.y * child.aabb.dimensions.z;
         }
 
@@ -271,20 +277,19 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
     /// Removes all elements which fit inside range, silently avoiding positions that do not fit inside the octree
     pub fn remove_range(&mut self, range: AABB<N>) {
 
-        let to_remove: Mutex<Vec<T>> = Mutex::new(Vec::with_capacity(self.max_elements));
+        let (tx, rx) = mpsc::channel::<T>();
 
-        self.elements.par_iter().for_each(|element| {
+        self.elements.par_iter().for_each_with(tx, |tx, element| {
 
             let pt = element.get_point();
 
             if range.contains_point(pt) {
-                to_remove.lock().unwrap().push(*element);
+                tx.send(*element).unwrap();
             }
             
         });
 
-        let to_remove_lock = to_remove.lock().unwrap();
-        let to_remove: &Vec<T> = to_remove_lock.as_ref();
+        let to_remove: Vec<T> = rx.into_iter().collect();
 
         self.elements = self.elements.clone().into_iter().filter(|&e| !to_remove.contains(&e)).collect();
 
@@ -310,38 +315,13 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
             )
         }
 
-        let ret_val: Mutex<Option<Result<(), InsertionError<N>>>> = Mutex::new(None);
-
-        let to_add: Mutex<Vec<T>> = Mutex::new(Vec::with_capacity(self.max_elements));
-
         //if element already exists at point, replace it
-        self.elements.par_iter().for_each(|element| {
-            let mut ret_val = ret_val.lock().unwrap();
-
-            if ret_val.is_some() {
-                return {}
-            }
-
+        self.elements.par_iter_mut().for_each_with(element, |el, element| {
             if element.get_point() == pt {
-
-                let mut to_add_lock = to_add.lock().unwrap();
-                let to_add: &mut Vec<T> = to_add_lock.as_mut();
-                to_add.push(*element);
-                *ret_val = Some(Ok({}));
+                *element = *el;
             }
         });
-
-        let to_add_lock = to_add.lock().unwrap();
-        let to_add: &Vec<T> = to_add_lock.as_ref();
-        for element in to_add {
-            self.elements.push(*element);
-        }
-
-        let ret_val = ret_val.lock().unwrap();
-        if let Some(ret_val) = ret_val.as_ref() {
-            return ret_val.clone()
-        }
-        
+       
         match &self.paternity { //do first match because you still need to insert into children after subdividing, not either/or
 
             Paternity::ChildFree | Paternity::ProudParent if self.max_elements > self.elements.len() => {
@@ -374,12 +354,21 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
                     }
                 );
 
-                for child in &mut self.children {
+                let (tx, rx) = mpsc::channel::<Result<(), InsertionError<N>>>();
+
+                self.children.par_iter_mut().for_each_with(tx, |tx, child| {
                     // println!("Inserting into child");                    
                     match child.insert(element) {
-                        Ok(_) => return Ok({}),
-                        Err(err) => { result = Err(err) }
-                    }               
+                        Ok(_) => tx.send(Ok({})),
+                        Err(err) => tx.send(Err(err))
+                    }.unwrap();               
+                });
+
+                let mut received = rx.into_iter();
+                if let Some(r) = received.find(|x| x.is_ok()) {
+                    return r;
+                } else if let Some(r) = received.find(|x| x.is_err()) {
+                    return r;
                 }
 
                 result
@@ -413,18 +402,16 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
             return None;
         }
 
-        let ret_val: Mutex<Option<T>> = Mutex::new(None);
+        let (tx, rx) = mpsc::channel::<T>();
 
-        self.elements.par_iter().for_each(|element| {
+        self.elements.par_iter().for_each_with(tx, |tx, element| {
             if element.get_point() == point  {
-                let mut ret = ret_val.lock().unwrap();
-                *ret = Some(*element);
+                tx.send(*element).unwrap();
             }
         });
 
-        let ret_val = ret_val.lock().unwrap();
-        if let Some(ret_val) = ret_val.as_ref() {
-            return Some(*ret_val);
+        if let Some(result) = rx.into_iter().next() {
+            return Some(result);
         }
 
         if let Paternity::ChildFree = self.paternity {
@@ -447,37 +434,42 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
 
     pub fn query_range(&self, range: AABB<N>) -> Vec<T> {
 
-        let elements_in_range: Mutex<Vec<T>> = Mutex::new(Vec::with_capacity(self.max_elements));
+        let mut elements_in_range: Vec<T> = Vec::with_capacity(self.max_elements);
         
         if !self.aabb.intersects_bounds(range) {
-            let elements_in_range = elements_in_range.lock().unwrap();
-            return elements_in_range.clone()
+            return elements_in_range
         }
 
         if self.elements.len() == 0 {
-            let elements_in_range = elements_in_range.lock().unwrap();
-            return elements_in_range.clone()
+            return elements_in_range
         }
 
-        self.elements.par_iter().for_each(|element| {
+        let (tx, rx) = mpsc::channel::<T>();
+
+        self.elements.par_iter().for_each_with(tx, |tx, element| {
+
             if self.aabb.contains_point(element.get_point()) {
-                let mut elements_in_range = elements_in_range.lock().unwrap();
-                elements_in_range.push(*element);
+                tx.send(*element).unwrap();
             }
         });
 
+        elements_in_range.extend(rx.into_iter());
+
         if let Paternity::ChildFree = self.paternity {
-            let elements_in_range = elements_in_range.lock().unwrap();
-            return elements_in_range.clone()
+            return elements_in_range
         }
 
-        self.children.par_iter().for_each(|child| {
-            let mut elements_in_range = elements_in_range.lock().unwrap();
-            elements_in_range.append(&mut child.query_range(range));
+        let (tx, rx) = mpsc::channel::<Vec<T>>();
+
+        self.children.par_iter().for_each_with(tx, |tx, child| {
+            tx.send(child.query_range(range)).unwrap();
         });
 
-        let elements_in_range = elements_in_range.lock().unwrap();
-        return elements_in_range.clone()
+        for mut received in rx {
+            elements_in_range.append(&mut received)
+        }
+
+        return elements_in_range
     }
 }
 

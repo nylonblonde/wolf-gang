@@ -139,6 +139,21 @@ fn overwrite_element() {
 }
 
 #[test]
+fn overwrite_all() {
+    let aabb = AABB::new(
+        Point::new(0,0,0), Point::new(9,9,9)
+    );
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb, octree::DEFAULT_MAX
+    );
+
+    let mut count = 0;
+    fill_octree(aabb, &mut octree, &mut count);
+    fill_octree(aabb, &mut octree, &mut count);
+}
+
+#[test]
 fn query_point() {
     let aabb = AABB::new(
         Point::new(0,0,0), Point::new(4,4,4)
