@@ -2,12 +2,19 @@ use core::fmt::Debug;
 use serde::{Serialize, Deserialize};
 use std::ops::{AddAssign, SubAssign, DivAssign};
 
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+
+use rayon::prelude::*;
+
 use std::error;
 use std::fmt;
 
 use nalgebra::{Scalar, Vector3};
 use num::{Num, NumCast, Signed};
 use crate::geometry::aabb::AABB;
+
+pub static DEFAULT_MAX: usize = 16;
 
 pub trait PointData<N: Scalar> : Copy {
     fn get_point(&self) -> Vector3<N>;
@@ -35,7 +42,7 @@ impl<'a, N: Scalar, T: PointData<N>> Iterator for OctreeIter<N, T> {
     }
 }
 
-impl<'de, N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone + Serialize + Deserialize<'de>, T: PointData<N> + Debug> IntoIterator for Octree<N, T> {
+impl<'de, N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone + Serialize + Deserialize<'de>, T: PointData<N> + PartialEq + Debug + Sync + Send> IntoIterator for Octree<N, T> {
     type Item = T;
     type IntoIter = OctreeIter<N, T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -51,24 +58,26 @@ impl<'de, N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + Div
 #[allow(dead_code)]
 pub struct Octree <N: Scalar, T: PointData<N>>{
     aabb: AABB<N>,
-    num_elements: usize,
-    elements: [Option<T>; 32],
+    max_elements: usize,
+    elements: Vec<T>,
     children: Vec<Octree<N, T>>,
-    paternity: Paternity
+    paternity: Paternity,
+    // phantom: PhantomData<&'a Octree<'a, N, T>>
 }
 
 #[allow(dead_code)]
-impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone, T: PointData<N> + Debug> Octree<N, T> {
+impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone, T: PointData<N> + PartialEq + Debug + Sync + Send> Octree<N, T> {
 
-    pub fn new(aabb: AABB<N>) -> Octree<N, T> {
+    pub fn new(aabb: AABB<N>, max_elements: usize) -> Octree<N, T> {
         println!("Creating new Octree with a min of {:?} and a max of {:?}", aabb.get_min(), aabb.get_max());
 
         Octree {
             aabb,
-            num_elements: 0,
-            elements: [Option::<T>::None; 32],
+            max_elements,
+            elements: Vec::with_capacity(max_elements),
             children: Vec::with_capacity(8),
-            paternity: Paternity::ChildFree
+            paternity: Paternity::ChildFree,
+            // phantom: PhantomData
         }
     }
 
@@ -97,109 +106,149 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
         let smaller_half = dimensions/two;
         let larger_half = dimensions - smaller_half;
 
-        //down back left
-        let sub_max = min + larger_half;
-        let downbackleft = AABB::<N>::from_extents(
-            min,
-            sub_max
-        );
-        self.children.push(Octree::new(downbackleft));
+        let (tx, rx) = mpsc::channel::<Octree<N,T>>();
 
-        if dimensions.x > one {
-            //down back right
-            let sub_min = min + Vector3::new(larger_half.x + adj, zero, zero);
-            let sub_max = Vector3::new(
-                max.x, sub_min.y + larger_half.y, sub_min.z + larger_half.z
-            );
+        let max_elements = Arc::new(self.max_elements);
 
-            let downbackright = AABB::<N>::from_extents(
-                sub_min,
+        rayon::scope(move |s| {
+            //down back left
+            let sub_max = min + larger_half;
+            let downbackleft = AABB::<N>::from_extents(
+                min,
                 sub_max
             );
-            self.children.push(Octree::new(downbackright));
-
-            if dimensions.z > one {
-                //down forward right
-                let sub_min = min + Vector3::new(larger_half.x + adj, zero, larger_half.z + adj);
-                let sub_max = Vector3::new(
-                    max.x, sub_min.y + larger_half.y, max.z
-                );
-                let downforwardright = AABB::<N>::from_extents(
-                    sub_min,
-                    sub_max
-                );
-                self.children.push(Octree::new(downforwardright));
-
-                if dimensions.y > one {
-                    //up forward right
-                    let sub_min = min + Vector3::new(larger_half.x + adj, larger_half.y + adj, larger_half.z + adj);
-                    let upforwardright = AABB::<N>::from_extents(
-                        sub_min,
-                        max
-                    );
-                    self.children.push(Octree::new(upforwardright));
-                }
-            }
-        }
-
-        if dimensions.z > one {
-            //down forward left
-            let sub_min = min + Vector3::new(zero, zero, larger_half.z + adj);
-            let sub_max = Vector3::new(
-                sub_min.x + larger_half.x, sub_min.y + larger_half.y, max.z
-            );
-
-            let downforwardleft = AABB::<N>::from_extents(
-                sub_min, 
-                sub_max
-            );
-            self.children.push(Octree::new(downforwardleft));
-
-            if dimensions.y > one {
-                //up forward left
-                let sub_min = min + Vector3::new(zero, larger_half.y + adj, larger_half.z + adj);
-                let sub_max = Vector3::new(
-                    sub_min.x + larger_half.x, max.y, max.z
-                );
-                let upforwardleft = AABB::<N>::from_extents(
-                    sub_min,
-                    sub_max
-                );
-                self.children.push(Octree::new(upforwardleft));
-            }
-        }
-
-        if dimensions.y > one {
-            //up back left
-            let sub_min = min + Vector3::new(zero, larger_half.y + adj, zero);
-            let sub_max = Vector3::new(
-                sub_min.x + larger_half.x, max.y, sub_min.z + larger_half.z
-            );
-            let upbackleft = AABB::<N>::from_extents(
-                sub_min,
-                sub_max
-            );
-            self.children.push(Octree::new(upbackleft));
+            tx.send(Octree::new(downbackleft, *max_elements)).unwrap();
 
             if dimensions.x > one {
-                //up back right
-                let sub_min = min + Vector3::new(larger_half.x + adj, larger_half.y + adj, zero);
-                let sub_max = Vector3::new(
-                    max.x, max.y, sub_min.z + larger_half.z
-                );
-                let upbackright = AABB::<N>::from_extents(
-                    sub_min,
-                    sub_max
-                );
-                self.children.push(Octree::new(upbackright));
-            }
-        }
+
+                let tx1 = tx.clone();
+                let max_elements = Arc::clone(&max_elements);
+
+                s.spawn(move |s| {
+                    //down back right
+                    let sub_min = min + Vector3::new(larger_half.x + adj, zero, zero);
+                    let sub_max = Vector3::new(
+                        max.x, sub_min.y + larger_half.y, sub_min.z + larger_half.z
+                    );
         
+                    let downbackright = AABB::<N>::from_extents(
+                        sub_min,
+                        sub_max
+                    );
+                    tx1.send(Octree::new(downbackright, *max_elements)).unwrap();
+        
+                    if dimensions.z > one {
+                        s.spawn(move |s| {
+                            //down forward right
+                            let sub_min = min + Vector3::new(larger_half.x + adj, zero, larger_half.z + adj);
+                            let sub_max = Vector3::new(
+                                max.x, sub_min.y + larger_half.y, max.z
+                            );
+                            let downforwardright = AABB::<N>::from_extents(
+                                sub_min,
+                                sub_max
+                            );
+                            tx1.send(Octree::new(downforwardright, *max_elements)).unwrap();
+            
+                            if dimensions.y > one {
+                                s.spawn(move |_| {
+                                    //up forward right
+                                    let sub_min = min + Vector3::new(larger_half.x + adj, larger_half.y + adj, larger_half.z + adj);
+                                    let upforwardright = AABB::<N>::from_extents(
+                                        sub_min,
+                                        max
+                                    );
+                                    tx1.send(Octree::new(upforwardright, *max_elements)).unwrap();
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+
+            if dimensions.z > one {
+
+                let tx2 = tx.clone();
+                let max_elements = Arc::clone(&max_elements);
+
+                s.spawn(move |s| {
+
+                    //down forward left
+                    let sub_min = min + Vector3::new(zero, zero, larger_half.z + adj);
+                    let sub_max = Vector3::new(
+                        sub_min.x + larger_half.x, sub_min.y + larger_half.y, max.z
+                    );
+        
+                    let downforwardleft = AABB::<N>::from_extents(
+                        sub_min, 
+                        sub_max
+                    );
+                    tx2.send(Octree::new(downforwardleft, *max_elements)).unwrap();
+
+                    if dimensions.y > one {
+                        s.spawn(move |_| {
+                            //up forward left
+                            let sub_min = min + Vector3::new(zero, larger_half.y + adj, larger_half.z + adj);
+                            let sub_max = Vector3::new(
+                                sub_min.x + larger_half.x, max.y, max.z
+                            );
+                            let upforwardleft = AABB::<N>::from_extents(
+                                sub_min,
+                                sub_max
+                            );
+                            tx2.send(Octree::new(upforwardleft, *max_elements)).unwrap();
+                        });
+                    }
+                });
+            }
+
+            if dimensions.y > one {
+
+                let tx3 = tx.clone();
+                let max_elements = Arc::clone(&max_elements);
+
+                s.spawn(move |s| {
+
+                    //up back left
+                    let sub_min = min + Vector3::new(zero, larger_half.y + adj, zero);
+                    let sub_max = Vector3::new(
+                        sub_min.x + larger_half.x, max.y, sub_min.z + larger_half.z
+                    );
+                    let upbackleft = AABB::<N>::from_extents(
+                        sub_min,
+                        sub_max
+                    );
+                    tx3.send(Octree::new(upbackleft, *max_elements)).unwrap();
+        
+                    if dimensions.x > one {
+
+                        s.spawn(move |_| {
+                            //up back right
+                            let sub_min = min + Vector3::new(larger_half.x + adj, larger_half.y + adj, zero);
+                            let sub_max = Vector3::new(
+                                max.x, max.y, sub_min.z + larger_half.z
+                            );
+                            let upbackright = AABB::<N>::from_extents(
+                                sub_min,
+                                sub_max
+                            );
+                            tx3.send(Octree::new(upbackright, *max_elements)).unwrap();
+                        });
+                    }
+                });
+            }
+        });
+
+        for received in rx {
+            self.children.push(received);
+        }
+
         self.paternity = Paternity::ProudParent;
 
         let mut total_volume = zero;
         for child in &self.children {
-            total_volume= total_volume + child.aabb.dimensions.x * child.aabb.dimensions.y * child.aabb.dimensions.z;
+            //TODO: Perform a better check here: are the pieces overlapping?
+            total_volume = total_volume + child.aabb.dimensions.x * child.aabb.dimensions.y * child.aabb.dimensions.z;
         }
 
         let volume = dimensions.x * dimensions.y * dimensions.z;
@@ -222,24 +271,28 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
     /// Removes all elements which fit inside range, silently avoiding positions that do not fit inside the octree
     pub fn remove_range(&mut self, range: AABB<N>) {
 
-        for element in self.elements.iter_mut() {
-            if let Some(el) = element {
-                let pt = el.get_point();
+        let to_remove: Mutex<Vec<T>> = Mutex::new(Vec::with_capacity(self.max_elements));
 
-                if range.contains_point(pt) {
+        self.elements.par_iter().for_each(|element| {
 
-                    println!("Removal should have happened here");
+            let pt = element.get_point();
 
-                    *element = None;
-                }
+            if range.contains_point(pt) {
+                to_remove.lock().unwrap().push(*element);
             }
-        }
+            
+        });
+
+        let to_remove_lock = to_remove.lock().unwrap();
+        let to_remove: &Vec<T> = to_remove_lock.as_ref();
+
+        self.elements = self.elements.clone().into_iter().filter(|&e| !to_remove.contains(&e)).collect();
 
         if let Paternity::ProudParent = self.paternity {
 
-            for child in &mut self.children {
+            self.children.par_iter_mut().for_each(|child|{
                 child.remove_range(range);
-            }
+            });
 
         }
 
@@ -257,22 +310,42 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
             )
         }
 
+        let ret_val: Mutex<Option<Result<(), InsertionError<N>>>> = Mutex::new(None);
+
+        let to_add: Mutex<Vec<T>> = Mutex::new(Vec::with_capacity(self.max_elements));
+
         //if element already exists at point, replace it
-        for el in &mut self.elements {
-            match el {
-                Some(r) if r.get_point() == pt => {
-                    *el = Some(*r);
-                    return Ok({})
-                },
-                _ => {}
+        self.elements.par_iter().for_each(|element| {
+            let mut ret_val = ret_val.lock().unwrap();
+
+            if ret_val.is_some() {
+                return {}
             }
+
+            if element.get_point() == pt {
+
+                let mut to_add_lock = to_add.lock().unwrap();
+                let to_add: &mut Vec<T> = to_add_lock.as_mut();
+                to_add.push(*element);
+                *ret_val = Some(Ok({}));
+            }
+        });
+
+        let to_add_lock = to_add.lock().unwrap();
+        let to_add: &Vec<T> = to_add_lock.as_ref();
+        for element in to_add {
+            self.elements.push(*element);
+        }
+
+        let ret_val = ret_val.lock().unwrap();
+        if let Some(ret_val) = ret_val.as_ref() {
+            return ret_val.clone()
         }
         
         match &self.paternity { //do first match because you still need to insert into children after subdividing, not either/or
 
-            Paternity::ChildFree if self.num_elements < self.elements.len() => {
-                self.elements[self.num_elements as usize] = Some(element);
-                self.num_elements = self.num_elements + 1;
+            Paternity::ChildFree | Paternity::ProudParent if self.max_elements > self.elements.len() => {
+                self.elements.push(element);
                 // println!("Inserted {:?} between {:?} and {:?} at position {}", element.get_point(), self.aabb.get_min(), self.aabb.get_max(), self.num_elements);
 
                 return Ok({});
@@ -302,15 +375,11 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
                 );
 
                 for child in &mut self.children {
-                    
-                    //only return true if true because we need to check all of them
-                    
+                    // println!("Inserting into child");                    
                     match child.insert(element) {
                         Ok(_) => return Ok({}),
                         Err(err) => { result = Err(err) }
-                    }
-                        
-                            
+                    }               
                 }
 
                 result
@@ -325,14 +394,7 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
     }
 
     pub fn count(&self) -> usize{
-        let mut count: usize = 0;
-
-        for el in &self.elements {
-            match el {
-                Some(_) => {count += 1},
-                None => {}
-            }
-        }
+        let mut count: usize = self.elements.len();
 
         return match &self.paternity {
             Paternity::ChildFree => count,
@@ -351,22 +413,23 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
             return None;
         }
 
-        for &element in self.elements.iter() {
+        let ret_val: Mutex<Option<T>> = Mutex::new(None);
 
-            match element {
-                Some(el) => {
-                    if el.get_point() == point  {
-                        return element
-                    }
-                },
-                _ => continue
+        self.elements.par_iter().for_each(|element| {
+            if element.get_point() == point  {
+                let mut ret = ret_val.lock().unwrap();
+                *ret = Some(*element);
             }
+        });
+
+        let ret_val = ret_val.lock().unwrap();
+        if let Some(ret_val) = ret_val.as_ref() {
+            return Some(*ret_val);
         }
 
         if let Paternity::ChildFree = self.paternity {
             return None
         }
-
 
         for child in &self.children {
 
@@ -384,37 +447,37 @@ impl<N: Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssig
 
     pub fn query_range(&self, range: AABB<N>) -> Vec<T> {
 
-        let mut elements_in_range = vec![];
+        let elements_in_range: Mutex<Vec<T>> = Mutex::new(Vec::with_capacity(self.max_elements));
         
         if !self.aabb.intersects_bounds(range) {
-            return elements_in_range
+            let elements_in_range = elements_in_range.lock().unwrap();
+            return elements_in_range.clone()
         }
 
-        if self.num_elements == 0 {
-            return elements_in_range
+        if self.elements.len() == 0 {
+            let elements_in_range = elements_in_range.lock().unwrap();
+            return elements_in_range.clone()
         }
 
-        for &element in self.elements.iter() {
-
-            match element {
-                None => continue,
-                Some(el) => {
-                    if self.aabb.contains_point(el.get_point()) {
-                        elements_in_range.push(el);
-                    }
-                } 
+        self.elements.par_iter().for_each(|element| {
+            if self.aabb.contains_point(element.get_point()) {
+                let mut elements_in_range = elements_in_range.lock().unwrap();
+                elements_in_range.push(*element);
             }
-        }
+        });
 
         if let Paternity::ChildFree = self.paternity {
-            return elements_in_range
+            let elements_in_range = elements_in_range.lock().unwrap();
+            return elements_in_range.clone()
         }
 
-        for child in &self.children {
+        self.children.par_iter().for_each(|child| {
+            let mut elements_in_range = elements_in_range.lock().unwrap();
             elements_in_range.append(&mut child.query_range(range));
-        }
+        });
 
-        elements_in_range
+        let elements_in_range = elements_in_range.lock().unwrap();
+        return elements_in_range.clone()
     }
 }
 

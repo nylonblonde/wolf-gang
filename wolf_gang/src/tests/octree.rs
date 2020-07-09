@@ -1,6 +1,7 @@
 use nalgebra::Vector3;
 
 use crate::collections::octree::Octree;
+use crate::collections::octree;
 use crate::geometry::aabb;
 use crate::systems::level_map::TileData;
 
@@ -15,7 +16,7 @@ fn even_subdivision() {
     );
 
     let mut octree = Octree::<i32, TileData>::new(
-        aabb
+        aabb, octree::DEFAULT_MAX
     );
 
     let mut count = 0;
@@ -34,7 +35,7 @@ fn odd_subdivision() {
     println!("{:?} {:?}", aabb.get_min(), aabb.get_max());
 
     let mut octree = Octree::<i32, TileData>::new(
-        aabb
+        aabb, octree::DEFAULT_MAX
     );
 
     let mut count = 0;
@@ -50,7 +51,7 @@ fn tiny_test() {
         Point::new(2, -1, 2), Point::new(3,0,3));
 
     let mut octree = Octree::<i32, TileData>::new(
-        aabb
+        aabb, octree::DEFAULT_MAX
     );
 
     let mut count = 0;
@@ -65,7 +66,22 @@ fn large_test() {
         Point::new(0,0,0), Point::new(9,9,9));
 
     let mut octree = Octree::<i32, TileData>::new(
-        aabb
+        aabb, octree::DEFAULT_MAX
+    );
+
+    let mut count = 0;
+    fill_octree(aabb, &mut octree, &mut count);
+
+    assert_eq!(octree.count(), count);
+}
+
+#[test]
+fn large_test_small_max() {
+    let aabb = AABB::from_extents(
+        Point::new(0,0,0), Point::new(9,9,9));
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb, 1
     );
 
     let mut count = 0;
@@ -113,7 +129,7 @@ fn overwrite_element() {
     );
 
     let mut octree = Octree::<i32, TileData>::new(
-        aabb
+        aabb, octree::DEFAULT_MAX
     );
 
     let mut count = 0;
@@ -129,7 +145,7 @@ fn query_point() {
     );
 
     let mut octree = Octree::<i32, TileData>::new(
-        aabb
+        aabb, octree::DEFAULT_MAX
     );
 
     let mut count = 0;
@@ -147,7 +163,7 @@ fn remove_element() {
     );
 
     let mut octree = Octree::<i32, TileData>::new(
-        aabb
+        aabb, octree::DEFAULT_MAX
     );
 
     fill_octree(aabb, &mut octree, &mut 0);
@@ -161,9 +177,54 @@ fn remove_element() {
 }
 
 #[test]
+fn remove_all() {
+    let aabb = AABB::from_extents(
+        Point::new(0,0,0), Point::new(9,9,9));
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb, octree::DEFAULT_MAX
+    );
+
+    let mut count = 0;
+    fill_octree(aabb, &mut octree, &mut count);
+    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
+
+    println!("removing...");
+    octree.remove_range(aabb);
+
+    println!("filling...");
+    fill_octree(aabb, &mut octree, &mut count);
+
+    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
+
+    println!("removing...");
+    octree.remove_range(aabb);
+
+    println!("filling...");
+    fill_octree(aabb, &mut octree, &mut count);
+
+    println!("removing...");
+    octree.remove_range(aabb);
+
+    println!("filling...");
+    fill_octree(aabb, &mut octree, &mut count);
+
+    println!("removing...");
+    octree.remove_range(aabb);
+
+    println!("filling...");
+    fill_octree(aabb, &mut octree, &mut count);
+
+    println!("removing...");
+    octree.remove_range(aabb);
+
+    assert!(octree.into_iter().count() == 0)
+}
+
+#[test]
 fn serialize_deserialize() {
 
-    let mut octree = Octree::<i32, TileData>::new(AABB::from_extents(Point::new(-5,-5,-5), Point::new(5,5,5)));
+    let mut octree = Octree::<i32, TileData>::new(AABB::from_extents(Point::new(-5,-5,-5), Point::new(5,5,5)), octree::DEFAULT_MAX);
 
     octree.insert(TileData::new(Point::new(1,0,0))).unwrap();
     octree.insert(TileData::new(Point::new(0,1,0))).unwrap();

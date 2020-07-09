@@ -3,13 +3,16 @@ pub mod history;
 pub mod document;
 
 // use gdnative::godot_print;
-
+use std::marker::PhantomData;
 use std::collections::HashMap;
 use legion::prelude::*;
 use serde::{Serialize, Deserialize};
 
 use crate::{ 
-    collections::octree::Octree,
+    collections::{
+        octree,
+        octree::Octree,
+    }
 };
 
 #[cfg(not(test))]
@@ -207,7 +210,7 @@ impl Map {
                             pt.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
                         ),
                         self.chunk_dimensions
-                    )), 
+                    ), octree::DEFAULT_MAX), 
                     world, false
                 );
 
@@ -273,7 +276,7 @@ impl Map {
     /// Inserts a new mapchunk with the octree data into world
     pub fn insert_mapchunk_with_octree(self, octree: Octree<i32, TileData>, world: &mut World, changed: bool) -> (Entity, MapChunkData) {
         let map_data = MapChunkData{
-            octree
+            octree,
         };
 
         let chunk_pt = map_data.get_chunk_point();
@@ -304,7 +307,7 @@ pub struct MapChunkData {
 impl MapChunkData {
     pub fn new(aabb: AABB) -> Self {
         MapChunkData {
-            octree: Octree::new(aabb)
+            octree: Octree::new(aabb, octree::DEFAULT_MAX),
         }
     }
 

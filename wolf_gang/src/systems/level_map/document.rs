@@ -6,6 +6,7 @@ use gdnative::*;
 use bincode;
 
 use serde::{Serialize, Deserialize};
+use std::marker::PhantomData;
 
 type Octree = octree::Octree<i32, level_map::TileData>;
 

@@ -1,4 +1,5 @@
 #![feature(cmp_min_max_by)]
+#![feature(inner_deref)]
 
 #![allow(dead_code)]
 
