@@ -51,6 +51,7 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
 
 pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
     let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>, Tagged<ManuallyChange>)>::query();
+    let map_query = <(Read<MapChunkData>, Tagged<ManuallyChange>)>::query();
     
     let neighbor_dirs = [
         Point::x(),
@@ -80,36 +81,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
         unsafe {
 
-            //for entities that need to have ManuallyChange added
-            let to_change: Arc<Mutex<HashSet<Entity>>> = Arc::new(Mutex::new(HashSet::new()));
-
-            //for entities that need to have ManuallyChange removed
-            let to_changed: Arc<Mutex<HashSet<Entity>>> = Arc::new(Mutex::new(HashSet::new()));
-
-            for (entity, (map_data, mut mesh_data, changed)) in write_mesh_query.iter_entities_unchecked(world) { 
-            // write_mesh_query.par_entities_for_each_unchecked(world, |(entity, (map_data, mut mesh_data, changed))|{
-
-                {
-                    let mut to_changed = to_changed.lock().unwrap();
-                    to_changed.insert(entity);
-                }
-
-                //only manually change neighbors if it is a direct change
-                if changed.0 == ChangeType::Direct {
-                    for dir in &all_dirs {
-                        
-                        let neighbor_chunk_pt = map_data.get_chunk_point() + dir;
-
-                        let neighbor_chunk_query = <Read<MapChunkData>>::query()
-                            .filter(tag_value(&neighbor_chunk_pt));
-
-                        for (entity, _) in neighbor_chunk_query.iter_entities_unchecked(world) {
-                            
-                            let mut to_change = to_change.lock().unwrap();
-                            to_change.insert(entity);
-                        }
-                    }
-                }
+            // for (entity, (map_data, mut mesh_data, changed)) in write_mesh_query.iter_entities_unchecked(world) { 
+            write_mesh_query.par_for_each_unchecked(world, |(map_data, mut mesh_data, _)|{
 
                 godot_print!("Drawing {:?}", map_data.get_chunk_point());
                 mesh_data.verts = Vector3Array::new();
@@ -779,39 +752,28 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     //only add indices for points that aren't overlapping
                                     if (*next_point - *border_point).length() > std::f32::EPSILON {
 
-                                        if open_sides.contains(&dir) {
+            let mut to_changed: Vec<Entity> = Vec::new();
+            let mut to_change: Vec<Entity> = Vec::new();
 
-                                            let j = offset - begin;
+            for (entity, (map_data,change)) in map_query.iter_entities_unchecked(world) {
+                to_changed.push(entity);
 
-                                            mesh_data.indices.push(j % indices_len + begin);
-                                            mesh_data.indices.push((j+1) % indices_len + begin);
-                                            mesh_data.indices.push((j+2) % indices_len + begin);
+                //only manually change neighbors if it is a direct change
+                if change.0 == ChangeType::Direct {
+                    for dir in &all_dirs {
 
-                                            mesh_data.indices.push((j+2) % indices_len + begin);
-                                            mesh_data.indices.push((j+1) % indices_len + begin);
-                                            mesh_data.indices.push((j+3) % indices_len + begin);
+                        let neighbor_chunk_pt = map_data.get_chunk_point() + dir;
 
-                                        } else {
-                                            // godot_print!("{:?} is not drawing {:?}", point, dir);
-                                        }
-                                    } else {
-                                        // godot_print!("Skipped some points because they were too close");
-                                    }
-                                }
+                        let neighbor_chunk_query = <Read<MapChunkData>>::query()
+                            .filter(tag_value(&neighbor_chunk_pt));
 
-                                offset += 2;
+                        for (entity, _) in neighbor_chunk_query.iter_entities_unchecked(world) {
 
+                            to_change.push(entity);
                             }
                         }
-
                     }
-
                 }
-            };
-
-
-            let to_change = to_change.lock().unwrap();
-            let to_changed = to_changed.lock().unwrap();
 
             for entity in &*to_change {
                 world.add_tag(*entity, ManuallyChange(ChangeType::Indirect)).unwrap();
