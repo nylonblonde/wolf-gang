@@ -293,17 +293,23 @@ fn remove_all() {
     println!("filling...");
     fill_octree(aabb, &mut octree, &mut count);
 
-    println!("removing...");
-    octree.remove_range(aabb);
-
-    println!("filling...");
-    fill_octree(aabb, &mut octree, &mut count);
+    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
 
     println!("removing...");
     octree.remove_range(aabb);
 
     println!("filling...");
     fill_octree(aabb, &mut octree, &mut count);
+
+    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
+
+    println!("removing...");
+    octree.remove_range(aabb);
+
+    println!("filling...");
+    fill_octree(aabb, &mut octree, &mut count);
+
+    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
 
     println!("removing...");
     octree.remove_range(aabb);

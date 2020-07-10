@@ -426,18 +426,15 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
             return None
         }
 
-        for child in &self.children {
+        let (tx, rx) = mpsc::channel::<T>();
 
-            let child_query = child.query_point(point);
-
-            if child_query.is_some() {
-
-                return child_query; 
+        self.children.par_iter().for_each_with(tx, |tx, child|  {
+            if let Some(result) = child.query_point(point) {
+                tx.send(result).unwrap();
             }
-            
-        }
+        });
 
-        None
+        rx.into_iter().next()
     }
 
     pub fn query_range(&self, range: AABB<N>) -> Vec<T> {
