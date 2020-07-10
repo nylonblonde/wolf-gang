@@ -1,9 +1,10 @@
+use std::hash::Hash;
 use core::fmt::Debug;
 use serde::{Serialize, Deserialize};
 use std::ops::{AddAssign, SubAssign, DivAssign};
 
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use rayon::prelude::*;
 
@@ -14,7 +15,7 @@ use nalgebra::{Scalar, Vector3};
 use num::{Num, NumCast, Signed};
 use crate::geometry::aabb::AABB;
 
-pub static DEFAULT_MAX: usize = 16;
+pub static DEFAULT_MAX: usize = 32;
 
 pub trait PointData<N: Scalar> : Copy {
     fn get_point(&self) -> Vector3<N>;
@@ -42,7 +43,7 @@ impl<'a, N: Scalar, T: PointData<N>> Iterator for OctreeIter<N, T> {
     }
 }
 
-impl<'de, N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone + Serialize + Deserialize<'de>, T: PointData<N> + PartialEq + Debug + Sync + Send> IntoIterator for Octree<N, T> {
+impl<'de, N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone + Serialize + Deserialize<'de>, T: PointData<N> + Hash + Eq + PartialEq + Debug + Sync + Send> IntoIterator for Octree<N, T> {
     type Item = T;
     type IntoIter = OctreeIter<N, T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -66,7 +67,7 @@ pub struct Octree <N: Scalar, T: PointData<N>>{
 }
 
 #[allow(dead_code)]
-impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone, T: PointData<N> + PartialEq + Debug + Sync + Send> Octree<N, T> {
+impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone, T: PointData<N> + Hash + Eq + PartialEq + Debug + Sync + Send> Octree<N, T> {
 
     pub fn new(aabb: AABB<N>, max_elements: usize) -> Octree<N, T> {
         println!("Creating new Octree with a min of {:?} and a max of {:?}", aabb.get_min(), aabb.get_max());
@@ -277,6 +278,12 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
     /// Removes all elements which fit inside range, silently avoiding positions that do not fit inside the octree
     pub fn remove_range(&mut self, range: AABB<N>) {
 
+        if let Paternity::ChildFree = self.paternity {
+            if self.elements.len() == 0 {
+                return;
+            }
+        }
+
         let (tx, rx) = mpsc::channel::<T>();
 
         self.elements.par_iter().for_each_with(tx, |tx, element| {
@@ -290,8 +297,9 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
         });
 
         let to_remove: Vec<T> = rx.into_iter().collect();
-
-        self.elements = self.elements.clone().into_iter().filter(|&e| !to_remove.contains(&e)).collect();
+        self.elements = self.elements.clone().into_iter()
+            .filter(|element| !to_remove.contains(element))
+            .collect();
 
         if let Paternity::ProudParent = self.paternity {
 
@@ -316,7 +324,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
         }
 
         //if element already exists at point, replace it
-        self.elements.par_iter_mut().for_each_with(element, |el, element| {
+        self.elements.clone().into_iter().collect::<Vec<T>>().par_iter_mut().for_each_with(element, |el, element| {
             if element.get_point() == pt {
                 *element = *el;
             }
@@ -348,7 +356,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
 
             Paternity::ProudParent => {
 
-                let mut result = Err(
+                let result = Err(
                     InsertionError {
                         error_type: InsertionErrorType::BlockFull(self.aabb)
                     }
@@ -440,15 +448,17 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
             return elements_in_range
         }
 
-        if self.elements.len() == 0 {
-            return elements_in_range
+        if let Paternity::ChildFree = self.paternity {
+            if self.elements.len() == 0 {
+                return elements_in_range
+            }
         }
 
         let (tx, rx) = mpsc::channel::<T>();
 
         self.elements.par_iter().for_each_with(tx, |tx, element| {
 
-            if self.aabb.contains_point(element.get_point()) {
+            if range.contains_point(element.get_point()) {
                 tx.send(*element).unwrap();
             }
         });

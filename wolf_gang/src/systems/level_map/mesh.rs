@@ -17,6 +17,9 @@ type AABB = aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
 
+use rayon::prelude::*;
+use std::sync::mpsc;
+
 use super::*;
 
 pub const TILE_PIXELS: f32 = 64.;
@@ -83,7 +86,8 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
             //for entities that need to have ManuallyChange removed
             let to_changed: Arc<Mutex<HashSet<Entity>>> = Arc::new(Mutex::new(HashSet::new()));
 
-            write_mesh_query.par_entities_for_each_unchecked(world, |(entity, (map_data, mut mesh_data, changed))|{
+            for (entity, (map_data, mut mesh_data, changed)) in write_mesh_query.iter_entities_unchecked(world) { 
+            // write_mesh_query.par_entities_for_each_unchecked(world, |(entity, (map_data, mut mesh_data, changed))|{
 
                 {
                     let mut to_changed = to_changed.lock().unwrap();
@@ -803,7 +807,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                     }
 
                 }
-            });
+            };
 
 
             let to_change = to_change.lock().unwrap();
@@ -867,20 +871,23 @@ pub fn scale_from_origin(pt: Vector3, origin: Vector3, scale_amount: f32) -> Vec
 } 
 
 pub fn get_open_sides(neighbor_dirs: &[Point; 8], world: &legion::world::World, map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
-    let mut open_sides: HashSet<Point> = HashSet::new();
+    // let mut open_sides: HashSet<Point> = HashSet::new();
     let chunk_max = map_data.octree.get_aabb().get_max();
     let chunk_min = map_data.octree.get_aabb().get_min();
     
-    for dir in neighbor_dirs {
+    let (tx, rx) = mpsc::channel::<Point>();
+
+    // for dir in neighbor_dirs {
+    neighbor_dirs.par_iter().for_each_with(tx, |tx, dir| {
 
         let neighbor = point + *dir;
 
         if checked.contains(&neighbor) {
-            continue;
+            return {}
         }
 
         match map_data.octree.query_point(neighbor) {
-            Some(_) => continue,
+            Some(_) => return {},
             None => {
 
                 match map_data.octree.get_aabb().contains_point(neighbor) {
@@ -913,21 +920,24 @@ pub fn get_open_sides(neighbor_dirs: &[Point; 8], world: &legion::world::World, 
                             Some(map_data) => {
                                 
                                 match map_data.octree.query_point(neighbor) {
-                                    Some(_) => continue,
+                                    Some(_) => return {},
                                     None => {
-                                        open_sides.insert(*dir);
+                                        tx.send(*dir).unwrap();
                                     }
                                 }
 
                             },
-                            None => { open_sides.insert(*dir); }
+                            None => { tx.send(*dir).unwrap(); }
                         }
                     },
-                    true => { open_sides.insert(*dir); }
+                    true => { tx.send(*dir).unwrap(); }
                 }
             }
         }
-    }
+    });
+
+    let open_sides: HashSet<Point> = rx.into_iter().collect();
+
     open_sides
 }
 

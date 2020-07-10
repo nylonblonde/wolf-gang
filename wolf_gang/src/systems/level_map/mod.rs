@@ -3,6 +3,7 @@ pub mod history;
 pub mod document;
 
 // use gdnative::godot_print;
+use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::collections::HashMap;
 use legion::prelude::*;
@@ -144,7 +145,7 @@ impl Map {
 
             map_data.octree.remove_range(aabb);
 
-            if map_data != original {
+            if map_data.octree.query_range(aabb).into_iter().collect::<HashSet<TileData>>().symmetric_difference(&original.octree.query_range(aabb).into_iter().collect::<HashSet<TileData>>()).count() > 0 {
                 world.add_component(*entity, map_data.clone()).unwrap();
                 world.add_tag(*entity, ManuallyChange(ChangeType::Direct)).unwrap();
 
@@ -193,7 +194,7 @@ impl Map {
             match map_chunk_exists_query.iter_entities(world).next() {
                 Some((entity, map_chunk)) => {
                     println!("Map chunk exists already");
-                    entities.insert(entity, (*map_chunk).clone());
+                    entities.insert(entity, map_chunk.as_ref().clone());
                     exists = true;
                 },
                 _ => {}
@@ -258,7 +259,7 @@ impl Map {
                 }
             }
 
-            if *map_data != original {
+            if map_data.octree.query_range(aabb).into_iter().collect::<HashSet<TileData>>().symmetric_difference(&original.octree.query_range(aabb).into_iter().collect::<HashSet<TileData>>()).count() > 0 {
                 let map_data = map_data.clone();
 
                 world.add_component(*entity, map_data.clone()).unwrap();
@@ -324,7 +325,7 @@ impl MapChunkData {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+#[derive(Serialize, Deserialize, Eq, Hash, PartialEq, Clone, Debug)]
 pub struct TileData {
     point: Point
 }

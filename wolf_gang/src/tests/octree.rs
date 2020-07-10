@@ -172,6 +172,81 @@ fn query_point() {
 }
 
 #[test]
+fn remove_range_tiny_max() {
+    let aabb = AABB::from_extents(
+        Point::new(0,0,0), Point::new(7,7,7)
+    );
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb, 1
+    );
+
+    fill_octree(aabb, &mut octree, &mut 0);
+
+    let before = octree.clone().into_iter().count();
+
+    octree.remove_range(AABB::from_extents(Point::new(0,0,0), Point::new(0,0,0)));
+
+    assert_eq!(octree.clone().into_iter().count(), before-1);
+
+    // let before = octree.clone().into_iter().count();
+
+    // octree.remove_range(AABB::from_extents(Point::new(1,1,1), Point::new(2,1,1)));
+
+    // assert_eq!(octree.into_iter().count(), before-2);
+}
+
+#[test]
+fn query_range_tiny_max() {
+    let aabb = AABB::from_extents(
+        Point::new(0,0,0), Point::new(7,7,7)
+    );
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb, 1
+    );
+
+    let mut count = 0;
+    fill_octree(aabb, &mut octree, &mut count);
+    assert_eq!(octree.query_range(AABB::from_extents(Point::zeros(), Point::zeros())).len(), 1);
+    assert_eq!(octree.into_iter().count(), count);
+}
+
+#[test]
+fn iter_count_tiny_max() {
+    let aabb = AABB::from_extents(
+        Point::new(0,0,0), Point::new(7,7,7)
+    );
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb, 1
+    );
+
+    let mut count = 0;
+    fill_octree(aabb, &mut octree, &mut count);
+
+    assert_eq!(count, octree.into_iter().count());
+}
+
+#[test]
+fn contains_point_tiny_max() {
+    let aabb = AABB::from_extents(
+        Point::new(0,0,0), Point::new(7,7,7)
+    );
+
+    let mut octree = Octree::<i32, TileData>::new(
+        aabb, 1
+    );
+
+    fill_octree(aabb, &mut octree, &mut 0);
+
+    assert!(aabb.contains_point(Point::new(0,0,0)));
+    assert!(aabb.contains_point(Point::new(1,0,0)));
+    assert!(aabb.contains_point(Point::new(2,0,0)));
+
+}
+
+#[test]
 fn remove_element() {
     let aabb = AABB::new(
         Point::new(0,0,0), Point::new(7,7,7)
