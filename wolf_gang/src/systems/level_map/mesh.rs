@@ -78,7 +78,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
     ];
 
     Box::new(move |world, _| {
-
+        
         unsafe {
 
             // for (entity, (map_data, mut mesh_data, changed)) in write_mesh_query.iter_entities_unchecked(world) { 
@@ -752,6 +752,36 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     //only add indices for points that aren't overlapping
                                     if (*next_point - *border_point).length() > std::f32::EPSILON {
 
+                                        if open_sides.contains(&dir) {
+
+                                            let j = offset - begin;
+
+                                            mesh_data.indices.push(j % indices_len + begin);
+                                            mesh_data.indices.push((j+1) % indices_len + begin);
+                                            mesh_data.indices.push((j+2) % indices_len + begin);
+
+                                            mesh_data.indices.push((j+2) % indices_len + begin);
+                                            mesh_data.indices.push((j+1) % indices_len + begin);
+                                            mesh_data.indices.push((j+3) % indices_len + begin);
+
+                                        } else {
+                                            // godot_print!("{:?} is not drawing {:?}", point, dir);
+                                        }
+                                    } else {
+                                        // godot_print!("Skipped some points because they were too close");
+                                    }
+                                }
+
+                                offset += 2;
+
+                            }
+                        }
+
+                    }
+
+                }
+            });
+
             let mut to_changed: Vec<Entity> = Vec::new();
             let mut to_change: Vec<Entity> = Vec::new();
 
@@ -761,19 +791,19 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                 //only manually change neighbors if it is a direct change
                 if change.0 == ChangeType::Direct {
                     for dir in &all_dirs {
-
+                        
                         let neighbor_chunk_pt = map_data.get_chunk_point() + dir;
 
                         let neighbor_chunk_query = <Read<MapChunkData>>::query()
                             .filter(tag_value(&neighbor_chunk_pt));
 
                         for (entity, _) in neighbor_chunk_query.iter_entities_unchecked(world) {
-
+                            
                             to_change.push(entity);
-                            }
                         }
                     }
                 }
+            }
 
             for entity in &*to_change {
                 world.add_tag(*entity, ManuallyChange(ChangeType::Indirect)).unwrap();
