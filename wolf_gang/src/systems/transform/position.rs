@@ -46,7 +46,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
             };
 
             match spatial_node {
-                Some(mut r) => { 
+                Some(r) => { 
                     unsafe { r.assume_safe().set_translation(position.value); } }
                 None => {}
             }

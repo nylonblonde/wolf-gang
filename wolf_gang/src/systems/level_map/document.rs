@@ -100,7 +100,7 @@ impl Document {
                 
                 godot_print!("Saving {}", file_path);
 
-                let mut file = File::new();
+                let file = File::new();
 
                 if let Ok(_) = file.open(GodotString::from(file_path), File::WRITE) {
                     let encoded = self.to_raw();
@@ -117,7 +117,7 @@ impl Document {
     pub fn raw_from_file<S: ToString>(file_path: S) -> Vec<u8> {
         let file_path = file_path.to_string();
 
-        let mut file = File::new();
+        let file = File::new();
 
         match file.open(GodotString::from(file_path), File::READ) {
 

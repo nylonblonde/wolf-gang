@@ -24,9 +24,9 @@ impl FileConfirmation {
         
     }
 
-    unsafe fn disconnect_signal(mut emitter: &ConfirmationDialog, target: &ConfirmationDialog, signal: &'static str) {
+    unsafe fn disconnect_signal(emitter: &ConfirmationDialog, target: &ConfirmationDialog, signal: &'static str) {
 
-        let mut connections = target.get_incoming_connections();
+        let connections = target.get_incoming_connections();
 
         for i in 0..connections.len() {
             let connection = connections.get(i);
@@ -45,14 +45,14 @@ impl FileConfirmation {
 
     /// Confirmation for ConfirmationDialog that will popup when pressing New when there are unsaved changes
     #[export]
-    fn new_confirmation_handler(&mut self, mut confirmation_dialog: &ConfirmationDialog) {
+    fn new_confirmation_handler(&mut self, confirmation_dialog: &ConfirmationDialog) {
 
         unsafe { 
 
             let signal = "confirmed";
             let method = "new_confirmation_ok_handler";
 
-            let mut emitter = confirmation_dialog;
+            let emitter = confirmation_dialog;
 
             Self::disconnect_signal(emitter, confirmation_dialog, signal);
 
@@ -65,13 +65,13 @@ impl FileConfirmation {
 
     /// Confirmation for ConfirmationDialog that will popup when opening a file when there are unsaved changes
     #[export]
-    fn open_confirmation_handler(&mut self, mut confirmation_dialog: &ConfirmationDialog) {
+    fn open_confirmation_handler(&mut self, confirmation_dialog: &ConfirmationDialog) {
         unsafe { 
 
             let signal = "confirmed";
             let method = "open_confirmation_ok_handler";
 
-            let mut emitter = confirmation_dialog;
+            let emitter = confirmation_dialog;
 
             Self::disconnect_signal(emitter, confirmation_dialog, signal);
 
@@ -106,7 +106,7 @@ impl FileConfirmation {
     #[export]
     fn open_confirmation_ok_handler(&mut self, confirmation_dialog: &ConfirmationDialog) {
         unsafe {
-            let mut menu_button: &MenuButton = &confirmation_dialog.get_parent()
+            let menu_button: &MenuButton = &confirmation_dialog.get_parent()
                 .expect("Couldn't get MenuButton which should be the parent of the ConfirmationDialog")
                 .assume_safe().cast::<MenuButton>().unwrap();
 

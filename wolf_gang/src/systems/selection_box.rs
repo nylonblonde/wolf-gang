@@ -62,7 +62,7 @@ pub struct RelativeCamera(pub String);
 
 pub fn initialize_selection_box(world: &mut World, camera_name: String) {
 
-    let mut mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
+    let mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
 
     let node_name = unsafe { 
         node::add_node(mesh.upcast())
@@ -459,10 +459,10 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
             for (selection_box, mut mesh_data) in queries.iter_mut(&mut *world) {
 
-                mesh_data.verts = Vector3Array::new();
-                mesh_data.normals = Vector3Array::new();
-                mesh_data.uvs = Vector2Array::new();
-                mesh_data.indices = Int32Array::new();
+                mesh_data.verts.clear();
+                mesh_data.normals.clear();
+                mesh_data.uvs.clear();
+                mesh_data.indices.clear();
 
                 //offset that the next face will begin on, increments by the number of verts for each face
                 //at the end of each loop
@@ -482,9 +482,9 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                 for i in 0..3 { 
 
-                    let mut verts: Vector3Array = Vector3Array::new();  
-                    let mut normals: Vector3Array = Vector3Array::new();
-                    let mut uvs: Vector2Array = Vector2Array::new();
+                    let mut verts: Vec<Vector3> = Vec::new();  
+                    let mut normals: Vec<Vector3> = Vec::new();
+                    let mut uvs: Vec<Vector2> = Vec::new();
 
                     let max_margin = 0.9;
 
@@ -733,7 +733,7 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                     
 
-                    let mut indices: Int32Array = Int32Array::new();
+                    let mut indices: Vec<i32> = Vec::with_capacity(48);
 
                     //add indices for all "quads" in the face;
                     for j in 0..8 {
@@ -749,13 +749,15 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                     }
 
-                    mesh_data.verts.append(&verts);
-                    mesh_data.normals.append(&normals);
-                    mesh_data.uvs.append(&uvs);
-                    mesh_data.indices.append(&indices);
-
-                    //increase the offset for the next loop by the number of verts in the face
+                    //increase the offset for the next loop by the number of verts in the face before consuming verts
                     offset += verts.len() as i32;
+
+                    mesh_data.verts.extend(verts);
+                    mesh_data.normals.extend(normals);
+                    mesh_data.uvs.extend(uvs);
+                    mesh_data.indices.extend(indices);
+
+                   
                 }
 
                 // godot_print!("Updated selection box mesh");

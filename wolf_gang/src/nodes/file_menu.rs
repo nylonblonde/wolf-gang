@@ -5,7 +5,6 @@ use gdnative::api::{
     MenuButton,
     PopupMenu,
 };
-use gdnative::nativescript::OwnerArg;
 
 use super::utils;
 use crate::{
@@ -63,7 +62,7 @@ impl FileMenu {
     }
 
     #[export]
-    fn _ready(&mut self, mut menu_button: &MenuButton) {
+    fn _ready(&mut self, menu_button: &MenuButton) {
         unsafe {
 
             //Get the FileDilaog for saving and loading
@@ -107,8 +106,7 @@ impl FileMenu {
     }
 
     #[export]
-    fn item_handler(&mut self, mut menu_button: &MenuButton, id: i64) {
-
+    fn item_handler(&mut self, menu_button: &MenuButton, id: i64) {
 
         let mut game = crate::GAME_UNIVERSE.lock().unwrap();
         let game = &mut *game;
@@ -133,7 +131,7 @@ impl FileMenu {
                         let current = doc.to_raw();
 
                         if saved != current {
-                            unsafe { menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]); }
+                            menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]);
                             return
                         }
                     },
@@ -143,8 +141,7 @@ impl FileMenu {
 
                         if doc != Document::default() {
                             //Emit signal to confirm if you want new document despite unsaved changes
-                            unsafe { menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]); }
-
+                            menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]);
                         }
 
                         //get outta here, we're done
@@ -169,7 +166,7 @@ impl FileMenu {
             },
             1 => { //open
 
-                let mut file_dialog = self.file_dialog.unwrap();
+                let file_dialog = self.file_dialog.unwrap();
 
                 //If working from a saved document, check to see if the current document is up to date with the saved one
                 match &doc.file_path {
@@ -194,7 +191,7 @@ impl FileMenu {
                     }
                 }
 
-                unsafe { menu_button.emit_signal("save_load_popup", &[Variant::from_i64(0)]); }
+                menu_button.emit_signal("save_load_popup", &[Variant::from_i64(0)]); 
 
             },
             2 => { //save
@@ -202,7 +199,7 @@ impl FileMenu {
             },
             3 => { //save-as
 
-                unsafe { menu_button.emit_signal("save_load_popup", &[Variant::from_i64(1)]); }
+                menu_button.emit_signal("save_load_popup", &[Variant::from_i64(1)]); 
                 
             },
             _ => {}

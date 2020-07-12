@@ -54,7 +54,7 @@ pub unsafe fn remove_node(name: String) {
         if let Some(node) = node_cache.cache.get(&name) {
 
             match node.assume_safe().get_parent() {
-                Some(mut parent) => {
+                Some(parent) => {
                     parent.assume_safe().remove_child(node);
                 },
                 None => panic!("{:?} has no parent")
@@ -99,7 +99,7 @@ pub unsafe fn get_node(node: &Node, name: String) -> Option<Ref<Node, Shared>> {
 
 pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node) -> Option<Ref<T>> {
 
-    let mut children = node.get_children();
+    let children = node.get_children();
 
     let len = children.len();
 

@@ -3,6 +3,7 @@ use gdnative::api::{
     ConfirmationDialog,
     Directory,
     FileDialog,
+    file_dialog::Mode
 };
 
 use crate::{
@@ -28,7 +29,7 @@ pub struct SaveLoadDialog {
 impl SaveLoadDialog {
     
     /// The "constructor" of the class.
-    fn new(mut file_dialog: &FileDialog) -> Self {
+    fn new(file_dialog: &FileDialog) -> Self {
 
         let self_dialog = file_dialog;
 
@@ -39,7 +40,7 @@ impl SaveLoadDialog {
                 .map(|_| { file_dialog.connect("file_selected", self_dialog.assume_shared(), "file_selection_handler", VariantArray::new_shared(), 0) })
                 .map(|_| { 
                     match file_dialog.get_line_edit() {
-                        Some(mut line_edit) => 
+                        Some(line_edit) => 
                             line_edit.assume_safe().connect("text_changed", self_dialog.assume_shared(), "line_edit_changed_handler", VariantArray::new_shared(), 0),
                         None => panic!("{:?}", "Couldn't retrieve LineEdit from FileDialog")
                     }
@@ -49,7 +50,7 @@ impl SaveLoadDialog {
 
                     let maps_dir = GodotString::from("user://maps");
                     //make maps directory if it doesn't exist
-                    let mut directory = Directory::new();
+                    let directory = Directory::new();
                     if !directory.dir_exists(maps_dir.clone()) {
                         match directory.make_dir(maps_dir.clone()) {
                             Ok(_) => {},
@@ -77,7 +78,7 @@ impl SaveLoadDialog {
     }
 
     #[export]
-    fn _ready(&mut self, mut file_dialog: &FileDialog) {
+    fn _ready(&mut self, file_dialog: &FileDialog) {
         unsafe {
             match file_dialog.get_parent() {
                 Some(parent) => {
@@ -102,7 +103,7 @@ impl SaveLoadDialog {
 
     #[export]
     /// Tells the FileDialog whether to open as Open or Save dialogs
-    fn save_load_handler(&mut self, mut file_dialog: &FileDialog, type_flag: i64) {
+    fn save_load_handler(&mut self, file_dialog: &FileDialog, type_flag: i64) {
 
         unsafe { 
 
@@ -144,11 +145,11 @@ impl SaveLoadDialog {
 
     ///Checks to see whether or not the text field is blank, then disables the confirmation button if it is
     #[export]
-    fn line_edit_changed_handler(&mut self, mut file_dialog: &FileDialog, new_text: GodotString) {
+    fn line_edit_changed_handler(&mut self, file_dialog: &FileDialog, new_text: GodotString) {
 
         unsafe {    
             match file_dialog.get_ok() {
-                Some(mut ok_button) => {
+                Some(ok_button) => {
                     if new_text.is_empty() {
                         ok_button.assume_safe().as_ref().set_disabled(true);
                     } else {
@@ -175,7 +176,7 @@ impl SaveLoadDialog {
 
         unsafe {
             match file_dialog.mode() {
-                MODE_OPEN_FILE => {
+                Mode::OPEN_FILE => {
 
                     godot_print!("Opening...");
 
@@ -202,7 +203,7 @@ impl SaveLoadDialog {
                     });
 
                 },
-                MODE_SAVE_FILE => {
+                Mode::SAVE_FILE => {
 
                     godot_print!("Saving...");
 

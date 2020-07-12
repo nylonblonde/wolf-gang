@@ -252,7 +252,7 @@ impl InputConfig {
 
     fn transcode_to_input_map(&self) {
 
-        let mut input_map = InputMap::godot_singleton();
+        let input_map = InputMap::godot_singleton();
 
         for action in &self.actions {
             let (name, inputs) = action;
@@ -279,7 +279,7 @@ impl InputConfig {
                                 InputType::Key => {
                                     input_map.action_add_event(GodotString::from_str(&name), 
                                         {
-                                            let mut input_event_key = InputEventKey::new();
+                                            let input_event_key = InputEventKey::new();
                                             input_event_key.set_scancode(r.code);
                                             input_event_key
                                         }
@@ -299,7 +299,7 @@ impl InputConfig {
 
     pub fn save(&self, path: &str) {
 
-        let mut file = File::new();
+        let file = File::new();
         match file.open(GodotString::from_str(path), File::WRITE) {
             Ok(_) => {},
             _err => {
@@ -320,7 +320,7 @@ impl InputConfig {
 
 /// Loads a config file if it can find it, otherwise, creates a new InputConfig and inserts the config entities from the relevant data
 pub fn initialize_input_config(world: &mut legion::world::World, path: &str) {
-    let mut file = File::new();
+    let file = File::new();
 
     let input_config = match file.file_exists(GodotString::from_str(path)) {
         true => InputConfig::new(),

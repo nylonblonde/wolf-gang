@@ -13,11 +13,21 @@ use legion::prelude::*;
 use crate::node::NodeName;  
 
 pub struct MeshData {
-    pub verts: Vector3Array,
-    pub uvs: Vector2Array,
-    pub uv2s: Vector2Array,
-    pub normals: Vector3Array,
-    pub indices: Int32Array,
+    pub verts: Vec<Vector3>,
+    pub uvs: Vec<Vector2>,
+    pub uv2s: Vec<Vector2>,
+    pub normals: Vec<Vector3>,
+    pub indices: Vec<i32>,
+}
+
+impl MeshData {
+    pub fn clear(&mut self) {
+        self.verts.clear();
+        self.uvs.clear();
+        self.uv2s.clear();
+        self.normals.clear();
+        self.indices.clear();
+    }
 }
 
 pub struct Material {
@@ -41,11 +51,11 @@ impl Material {
 impl MeshData {
     pub fn new() -> Self {
         MeshData {
-            verts: Vector3Array::new(),
-            uvs: Vector2Array::new(),
-            uv2s: Vector2Array::new(),
-            normals: Vector3Array::new(),
-            indices: Int32Array::new()
+            verts: Vec::new(),
+            uvs: Vec::new(),
+            uv2s: Vec::new(),
+            normals: Vec::new(),
+            indices: Vec::new()
         }
     }
 }
@@ -118,14 +128,14 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
                     let uv2s_len = uv2s.len();
 
                     for i in 0..indices.len() {
-                        let index = indices.get(i);
+                        let index = indices[i] as usize;
 
-                        immediate_geometry.set_normal(normals.get(index));
-                        immediate_geometry.set_uv(uvs.get(index));
+                        immediate_geometry.set_normal(normals[index]);
+                        immediate_geometry.set_uv(uvs[index]);
                         if index < uv2s_len {
-                            immediate_geometry.set_uv2(uv2s.get(index));
+                            immediate_geometry.set_uv2(uv2s[index]);
                         }
-                        immediate_geometry.add_vertex(verts.get(index));
+                        immediate_geometry.add_vertex(verts[index]);
                     }
 
                     immediate_geometry.end();
