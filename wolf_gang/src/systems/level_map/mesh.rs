@@ -56,7 +56,7 @@ pub fn create_add_components_system() -> Box<dyn FnMut(&mut legion::world::World
             }
             match world.add_component(entity, 
                 MapMeshData {
-                    rows: (0..area).map(|_| VertexData::default()).collect()
+                    cols: (0..area).map(|_| VertexData::default()).collect()
                 }
             ) {
                 Ok(_) => { godot_print!("Added MapMeshData!"); },
@@ -879,7 +879,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
         write_mesh_query.par_entities_for_each_mut(world, |(entity, (mut map_mesh_data, mut mesh_data, _))| {
             if let Some(map) = map_vert_datas.lock().unwrap().get_mut(&entity) {
                 map.drain().for_each(|(index, data)| {
-                    let vertex_data = &mut map_mesh_data.rows[index];
+                    let vertex_data = &mut map_mesh_data.cols[index];
                     vertex_data.replace(data);
                 });
             }
@@ -887,7 +887,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
             mesh_data.clear();
 
             let mut offset = 0;
-            for vertex_data in &map_mesh_data.rows {
+            for vertex_data in &map_mesh_data.cols {
                 
                 mesh_data.verts.extend(vertex_data.verts.iter());
                 mesh_data.normals.extend(vertex_data.normals.iter());
@@ -1117,7 +1117,7 @@ fn get_direction_of_edge(pt1: Vector3, pt2: Vector3, center: Vector3) -> Point {
 }
 
 pub struct MapMeshData {
-    rows: Vec<VertexData>
+    cols: Vec<VertexData>
 }
 
 #[derive(Debug)]
