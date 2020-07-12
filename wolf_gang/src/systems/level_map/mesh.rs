@@ -1,13 +1,12 @@
 /// Handles the creation and defining of mesh nodes in Godot
 
+use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 use crate::systems::custom_mesh; 
 use crate::geometry::aabb;
 use crate::collections::octree::PointData;
 
-use std::sync::{Arc, Mutex};
-
-use gdnative::*;
+use gdnative::prelude::*;
 
 use nalgebra;
 
@@ -48,7 +47,6 @@ pub fn create_add_material_system() -> Box<dyn Schedulable> {
         })
 }
 
-
 pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
     let write_mesh_query = <(Read<MapChunkData>, Write<custom_mesh::MeshData>, Tagged<ManuallyChange>)>::query();
     let map_query = <(Read<MapChunkData>, Tagged<ManuallyChange>)>::query();
@@ -78,718 +76,829 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
     ];
 
     Box::new(move |world, _| {
+
+        let mut map_data_vec: Vec<MapChunkData> = Vec::new();
+        let mut change_vec: Vec<ManuallyChange> = Vec::new();
+
+        for (entity, (map_data, mesh_data, change)) in write_mesh_query.iter_entities_mut(world) {
+            map_data_vec.push((*map_data).clone());
+            change_vec.push(change.clone());
+        }
+
+        map_data_vec.into_par_iter().zip(change_vec.into_par_iter()).for_each(|(map_data, change)| {
         
-        unsafe {
-
             // for (entity, (map_data, mut mesh_data, changed)) in write_mesh_query.iter_entities_unchecked(world) { 
-            write_mesh_query.par_for_each_unchecked(world, |(map_data, mut mesh_data, _)|{
+            // write_mesh_query.par_for_each_unchecked(world, |(map_data, mut mesh_data, change)|{
 
-                godot_print!("Drawing {:?}", map_data.get_chunk_point());
-                mesh_data.verts = Vector3Array::new();
-                mesh_data.normals = Vector3Array::new();
-                mesh_data.uvs = Vector2Array::new();
-                mesh_data.uv2s = Vector2Array::new();
-                mesh_data.indices = Int32Array::new();
+            let now = std::time::Instant::now();
 
-                let mut checked: HashSet::<Point> = HashSet::new();
+            let change_aabb = match change.0 {
+                ChangeType::Direct(aabb) => get_aabb_change_in_range(aabb, map_data.octree.get_aabb()),
+                ChangeType::Indirect(aabb) => get_aabb_change_in_range(aabb, map_data.octree.get_aabb())
+            };
 
-                let mut offset = 0;
-                for tile in map_data.octree.clone().into_iter() {
+            // godot_print!("Drawing {:?}", map_data.get_chunk_point());
+            // mesh_data.verts = Vector3Array::new();
+            // mesh_data.normals = Vector3Array::new();
+            // mesh_data.uvs = Vector2Array::new();
+            // mesh_data.uv2s = Vector2Array::new();
+            // mesh_data.indices = Int32Array::new();
+
+            let mut offset = 0;
+
+            let aabb = map_data.octree.get_aabb();
+            let max = aabb.get_max();
+            let min = aabb.get_min();
+
+            let change_min = change_aabb.get_min();
+            let area = change_aabb.dimensions.x * change_aabb.dimensions.z;
+            
+            let checked: Arc<Mutex<HashSet<Point>>> = Arc::new(Mutex::new(HashSet::new()));
+
+            (0..0+area+1).collect::<Vec<i32>>().par_iter().for_each(|i| {
+
+                let chunk_pt = map_data.get_chunk_point();
+
+                let x = (i % change_aabb.dimensions.x) + change_min.x;
+                let z = (i / change_aabb.dimensions.x) + change_min.z;
+
+                let (checked_tx, checked_rx) = mpsc::channel::<Point>();
+
+                map_data.octree.query_range(AABB::from_extents(Point::new(x, min.y, z), Point::new(x, max.y, z))).par_iter().for_each_with((checked.clone(), checked_tx), |(checked, checked_tx), tile| {
 
                     let point = tile.get_point();
 
-                    if checked.contains(&point) {
-                        continue
-                    }
+                    let checked = {
+                        let mut checked_lock = checked.lock().unwrap();
+                        let checked = &mut *checked_lock;
+                        
+                        checked_tx.send(point).unwrap();
 
-                    checked.insert(point);
+                        checked.clone()
+                    };
 
-                    let chunk_top_y = map_data.octree.get_aabb().get_max().y;
+                    let mut true_top: Option<Vector3D> = None;
 
-                    let true_top = get_true_top(point, world, &map_data, &checked);
-                    let true_top = map_coords_to_world(true_top).y;
-
-                    let mut top = point;
                     let mut draw_top: bool = true;
                     
                     let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
-                    for y in point.y+1..chunk_top_y+2 {
-                        let point_above = Point::new(point.x, y, point.z);
-                        
-                        match map_data.octree.query_point(point_above) {
-                            Some(_) => {
+                    let point_above = point + Point::y();
 
-                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
+                    //If this tile does not match any of the conditions that would make it a top facing tile
+                    if let false = match map_data.octree.query_point(point_above) {
+                        Some(_) => {
+                            let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
 
-                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
-                                    //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
-                                    if curr_sides.difference(&point_sides).count() == 0 {
-                                        draw_top = false;
-                                    }
-                                    break;
+                            if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                                //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
+                                if curr_sides.difference(&point_sides).count() == 0 {
+                                    draw_top = false;
+                                }
+                                true
+                            } else {
+
+                                let point_y_in_world = point_above.y as f32 * TILE_DIMENSIONS.y;
+                                let subdivide_for_repeat = is_a_subdivision(point_y_in_world);
+
+                                if subdivide_for_repeat {
+                                    draw_top = false;
+                                    // draw_top = true; //comment out when not debugging
+                                    true                                                                                                                                          
                                 } else {
+                                    let tt = super::map_coords_to_world(get_true_top(point, world, &map_data, &checked));
+                                    true_top = Some(tt);
 
-                                    let point_y_in_world = point_above.y as f32 * TILE_DIMENSIONS.y;
-                                    let subdivide_for_repeat = is_a_subdivision(point_y_in_world);
+                                    let diff = tt.y - 1. - map_coords_to_world(point_above).y;
 
-                                    if subdivide_for_repeat {
+                                    //if approx zero
+                                    if diff > -std::f32::EPSILON && diff < std::f32::EPSILON {
+                                        println!("Reached this at {:?}", point);
                                         draw_top = false;
-                                        // draw_top = true; //comment out when not debugging
-                                        break                                                                                                                                           ;
-                                    }
-
-                                    if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
-                                        draw_top = false;
-                                        break;
+                                        true
+                                    } else {
+                                        false
                                     }
                                 }
+                            }
+                            // checked.insert(point_above);
+                            // top = point_above;
+                        },
+                        None if point.y > max.y => {
 
-                                checked.insert(point_above);
-                                top = point_above;
-                            },
-                            None if y > chunk_top_y => {
+                            let chunk_point_above = map_data.get_chunk_point()+Point::y();
 
-                                let chunk_point_above = map_data.get_chunk_point()+Point::y();
+                            let chunk_point_above_query = <Read<MapChunkData>>::query()
+                                .filter(tag_value(&chunk_point_above));
 
-                                let chunk_point_above_query = <Read<MapChunkData>>::query()
-                                    .filter(tag_value(&chunk_point_above));
+                            if let Some(map_data) = chunk_point_above_query.iter(world).next() {
+                                if let Some(_) = map_data.octree.query_point(point_above) {
 
-                                if let Some(map_data) = chunk_point_above_query.iter(world).next() {
-                                    if let Some(_) = map_data.octree.query_point(point_above) {
+                                    let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
 
-                                        let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
-
-                                        if curr_sides.symmetric_difference(&point_sides).count() > 0 {
-                                            //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
-                                            if curr_sides.difference(&point_sides).count() == 0 {
-                                                draw_top = false;
-                                            }
-
-                                        } else {
+                                    if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                                        //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
+                                        if curr_sides.difference(&point_sides).count() == 0 {
                                             draw_top = false;
                                         }
+
+                                    } else {
+                                        draw_top = false;
                                     }
                                 }
-
                             }
-                            None => {
-                                break;
-                            }
+                            true
                         }
+                        None => true
+                    } {
+                        return{}
                     }
 
-                    let mut bottom = point;
-                    let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;
+                    godot_print!("Top is {:?}", point);
+                    
+                    // for y in point.y+1..chunk_top_y+2 {
+                    //     let point_above = Point::new(point.x, y, point.z);
+                        
+                    //     match map_data.octree.query_point(point_above) {
+                    //         Some(_) => {
+
+                    //             let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
+
+                    //             if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                    //                 //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
+                    //                 if curr_sides.difference(&point_sides).count() == 0 {
+                    //                     draw_top = false;
+                    //                 }
+                    //                 break;
+                    //             } else {
+
+                    //                 let point_y_in_world = point_above.y as f32 * TILE_DIMENSIONS.y;
+                    //                 let subdivide_for_repeat = is_a_subdivision(point_y_in_world);
+
+                    //                 if subdivide_for_repeat {
+                    //                     draw_top = false;
+                    //                     // draw_top = true; //comment out when not debugging
+                    //                     break                                                                                                                                           ;
+                    //                 }
+
+                    //                 if map_coords_to_world(point).y < true_top - 1. && map_coords_to_world(point_above).y + TILE_DIMENSIONS.y > true_top - 1. {
+                    //                     draw_top = false;
+                    //                     break;
+                    //                 }
+                    //             }
+
+                    //             checked.insert(point_above);
+                    //             top = point_above;
+                    //         },
+                    //         None if y > chunk_top_y => {
+
+                    //             let chunk_point_above = map_data.get_chunk_point()+Point::y();
+
+                    //             let chunk_point_above_query = <Read<MapChunkData>>::query()
+                    //                 .filter(tag_value(&chunk_point_above));
+
+                    //             if let Some(map_data) = chunk_point_above_query.iter(world).next() {
+                    //                 if let Some(_) = map_data.octree.query_point(point_above) {
+
+                    //                     let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
+
+                    //                     if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                    //                         //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
+                    //                         if curr_sides.difference(&point_sides).count() == 0 {
+                    //                             draw_top = false;
+                    //                         }
+
+                    //                     } else {
+                    //                         draw_top = false;
+                    //                     }
+                    //                 }
+                    //             }
+
+                    //         }
+                    //         None => {
+                    //             break;
+                    //         }
+                    //     }
+                    // }
+
+                    // let mut bottom = point;
+                    // let chunk_bottom_y = map_data.octree.get_aabb().get_min().y;
                     
                     // let mut draw_bottom: bool = true;
 
-                    for y in (chunk_bottom_y-1..point.y).rev() {
+                    // for y in (chunk_bottom_y-1..point.y).rev() {
 
-                        let point_below = Point::new(point.x, y, point.z);      
+                    //     let point_below = Point::new(point.x, y, point.z);      
 
-                        match map_data.octree.query_point(point_below) {
-                            Some(_) => {
+                    //     match map_data.octree.query_point(point_below) {
+                    //         Some(_) => {
 
-                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
+                    //             let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
                                 
-                                if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                    //             if curr_sides.symmetric_difference(&point_sides).count() > 0 {
 
-                                    //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
-                                    if point_sides.difference(&curr_sides).count() > 0 {
-                                        bottom = point_below;
-                                    }
-                                    break;
-                                } else {
+                    //                 //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
+                    //                 if point_sides.difference(&curr_sides).count() > 0 {
+                    //                     bottom = point_below;
+                    //                 }
+                    //                 break;
+                    //             } else {
 
-                                    let point_y_in_world = bottom.y as f32 * TILE_DIMENSIONS.y;
-                                    let subdivide_for_repeat = is_a_subdivision(point_y_in_world);
+                    //                 let point_y_in_world = bottom.y as f32 * TILE_DIMENSIONS.y;
+                    //                 let subdivide_for_repeat = is_a_subdivision(point_y_in_world);
 
-                                    if subdivide_for_repeat {
-                                        break;
-                                    }
+                    //                 if subdivide_for_repeat {
+                    //                     break;
+                    //                 }
 
-                                    if map_coords_to_world(point).y >= true_top - 1. && true_top - 1. > map_coords_to_world(point_below).y {
-                                        break;
-                                    } 
-                                }
+                    //                 if map_coords_to_world(point).y >= true_top - 1. && true_top - 1. > map_coords_to_world(point_below).y {
+                    //                     break;
+                    //                 } 
+                    //             }
 
-                                checked.insert(point_below);
-                                bottom = point_below;
-                            },
-                            None if y < chunk_bottom_y => {
+                    //             checked.insert(point_below);
+                    //             bottom = point_below;
+                    //         },
+                    //         None if y < chunk_bottom_y => {
 
-                                let chunk_point_below = map_data.get_chunk_point() - Point::y();
+                    //             let chunk_point_below = map_data.get_chunk_point() - Point::y();
 
-                                let chunk_point_below_query = <Read<MapChunkData>>::query().filter(tag_value(&chunk_point_below));
+                    //             let chunk_point_below_query = <Read<MapChunkData>>::query().filter(tag_value(&chunk_point_below));
 
-                                if let Some(map_data) = chunk_point_below_query.iter(world).next() {
+                    //             if let Some(map_data) = chunk_point_below_query.iter(world).next() {
 
-                                    if let Some(_) = map_data.octree.query_point(point_below) {
-                                        let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
+                    //                 if let Some(_) = map_data.octree.query_point(point_below) {
+                    //                     let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
                                                                                 
-                                        if curr_sides.symmetric_difference(&point_sides).count() > 0 {
+                    //                     if curr_sides.symmetric_difference(&point_sides).count() > 0 {
 
-                                            //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
-                                            if point_sides.difference(&curr_sides).count() > 0 {
-                                                bottom = point_below;
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            None => break
+                    //                         //if there are more points in point_sides than the current_sides. ie: if sides are getting covered as we go down
+                    //                         if point_sides.difference(&curr_sides).count() > 0 {
+                    //                             bottom = point_below;
+                    //                         }
+                    //                     }
+                    //                 }
+                    //             }
+                    //         },
+                    //         None => break
                             
-                        }
+                    //     }
 
-                    }
+                    // }
 
                     // godot_print!("Point {:?}'s top is {:?}", point.y, top.y);
                     // godot_print!("Point {:?}'s bottom is {:?}", point.y, bottom.y);
 
                     // draw_top = true;
 
-                    let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top, &checked);
+                    // let open_sides = get_open_sides(&neighbor_dirs, world, &map_data, top, &checked);
 
-                    let world_point = map_coords_to_world(top);
+                    // let world_point = map_coords_to_world(top);
 
-                    let top_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
-                    let top_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
-                    let bottom_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
-                    let bottom_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
+                    // let top_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
+                    // let top_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z+TILE_DIMENSIONS.z);
+                    // let bottom_left = Vector3::new(world_point.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
+                    // let bottom_right = Vector3::new(world_point.x+TILE_DIMENSIONS.x, world_point.y+TILE_DIMENSIONS.y, world_point.z);
 
-                    let mut center = bottom_left + (top_right - bottom_left) / 2.;
+                    // let mut center = bottom_left + (top_right - bottom_left) / 2.;
                     
-                    // if there are no open sides, all we have to draw is a simple 2 triangle face
-                    if open_sides.is_empty() {
+                    // // if there are no open sides, all we have to draw is a simple 2 triangle face
+                    // if open_sides.is_empty() {
 
-                        if draw_top { 
+                    //     if draw_top { 
 
-                            mesh_data.verts.push(&top_right);
-                            mesh_data.verts.push(&top_left);
-                            mesh_data.verts.push(&bottom_left);
-                            mesh_data.verts.push(&bottom_right);
+                    //         mesh_data.verts.push(&top_right);
+                    //         mesh_data.verts.push(&top_left);
+                    //         mesh_data.verts.push(&bottom_left);
+                    //         mesh_data.verts.push(&bottom_right);
 
-                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE,TILE_SIZE));
-                            mesh_data.uvs.push(&Vector2::new(0.,TILE_SIZE));
-                            mesh_data.uvs.push(&Vector2::new(0., 0.));
-                            mesh_data.uvs.push(&Vector2::new(TILE_SIZE, 0.));
+                    //         mesh_data.uvs.push(&Vector2::new(TILE_SIZE,TILE_SIZE));
+                    //         mesh_data.uvs.push(&Vector2::new(0.,TILE_SIZE));
+                    //         mesh_data.uvs.push(&Vector2::new(0., 0.));
+                    //         mesh_data.uvs.push(&Vector2::new(TILE_SIZE, 0.));
 
-                            mesh_data.uv2s.push(&Vector2::default());
-                            mesh_data.uv2s.push(&Vector2::default());
-                            mesh_data.uv2s.push(&Vector2::default());
-                            mesh_data.uv2s.push(&Vector2::default());
+                    //         mesh_data.uv2s.push(&Vector2::default());
+                    //         mesh_data.uv2s.push(&Vector2::default());
+                    //         mesh_data.uv2s.push(&Vector2::default());
+                    //         mesh_data.uv2s.push(&Vector2::default());
 
-                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                            mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                    //         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                    //         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                    //         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                    //         mesh_data.normals.push(&Vector3::new(0.,1.,0.));
 
-                            mesh_data.indices.push(offset+2);
-                            mesh_data.indices.push(offset);
-                            mesh_data.indices.push(offset+1);
+                    //         mesh_data.indices.push(offset+2);
+                    //         mesh_data.indices.push(offset);
+                    //         mesh_data.indices.push(offset+1);
 
-                            mesh_data.indices.push(offset+3);
-                            mesh_data.indices.push(offset);
-                            mesh_data.indices.push(offset+2);
+                    //         mesh_data.indices.push(offset+3);
+                    //         mesh_data.indices.push(offset);
+                    //         mesh_data.indices.push(offset+2);
 
-                            offset += 4;
-                        }
-                    } else { //if open_sides is not empty, draw a more complex face to account for the bevel
+                    //         offset += 4;
+                    //     }
+                    // } else { //if open_sides is not empty, draw a more complex face to account for the bevel
 
-                        let corners = [
-                            top_right, 
-                            top_left, 
-                            bottom_left, 
-                            bottom_right
-                        ];
+                    //     let corners = [
+                    //         top_right, 
+                    //         top_left, 
+                    //         bottom_left, 
+                    //         bottom_right
+                    //     ];
 
-                        let mut border_points: Vec<Vector3> = Vec::with_capacity(12);
-                        let mut face_points: Vec<Vector3> = Vec::with_capacity(12);
+                    //     let mut border_points: Vec<Vector3> = Vec::with_capacity(12);
+                    //     let mut face_points: Vec<Vector3> = Vec::with_capacity(12);
 
-                        let corners_len = corners.len();
-                        let mut i = 0;
-                        while i < corners_len {
+                    //     let corners_len = corners.len();
+                    //     let mut i = 0;
+                    //     while i < corners_len {
 
-                            let right = corners[i];
-                            let left = corners[(i + 1) % corners_len];
+                    //         let right = corners[i];
+                    //         let left = corners[(i + 1) % corners_len];
 
-                            let dir = get_direction_of_edge(right, left, center);
-                            let bevel = Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * BEVEL_SIZE / 2.;
+                    //         let dir = get_direction_of_edge(right, left, center);
+                    //         let bevel = Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * BEVEL_SIZE / 2.;
 
-                            let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-                            let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
+                    //         let right_dir = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                    //         let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
                             
-                            let left_dir = -right_dir;
+                    //         let left_dir = -right_dir;
 
-                            let mut scale_origin = center;
-                            let mut scale_size = 1.-BEVEL_SIZE * 2.;
-                            let corner_scale = scale_size * 1.2;
+                    //         let mut scale_origin = center;
+                    //         let mut scale_size = 1.-BEVEL_SIZE * 2.;
+                    //         let corner_scale = scale_size * 1.2;
 
-                            // Define top face points based on which sides are exposed or not.
-                            if open_sides.contains(&dir) {
+                    //         // Define top face points based on which sides are exposed or not.
+                    //         if open_sides.contains(&dir) {
 
-                                // godot_print!("prev_dir = {:?} dir = {:?} next_dir = {:?}", right_dir, dir, left_dir);
+                    //             // godot_print!("prev_dir = {:?} dir = {:?} next_dir = {:?}", right_dir, dir, left_dir);
                                 
-                                let mut adj: Vector3 = bevel;
-                                let mut corner: Option<Vector3> = None;
+                    //             let mut adj: Vector3 = bevel;
+                    //             let mut corner: Option<Vector3> = None;
 
-                                if !open_sides.contains(&right_dir) && !open_sides.contains(&left_dir) {
-                                    scale_size = 1.;
-                                    scale_origin = (left + right) / 2.;
-                                    adj = -bevel;
+                    //             if !open_sides.contains(&right_dir) && !open_sides.contains(&left_dir) {
+                    //                 scale_size = 1.;
+                    //                 scale_origin = (left + right) / 2.;
+                    //                 adj = -bevel;
 
-                                } else if !open_sides.contains(&right_dir) {
-                                    scale_origin = right;
-                                    scale_size = 1.-BEVEL_SIZE;
-                                    corner = Some(scale_from_origin(left, center, corner_scale));
-                                    adj = -bevel;
+                    //             } else if !open_sides.contains(&right_dir) {
+                    //                 scale_origin = right;
+                    //                 scale_size = 1.-BEVEL_SIZE;
+                    //                 corner = Some(scale_from_origin(left, center, corner_scale));
+                    //                 adj = -bevel;
 
-                                } else if !open_sides.contains(&left_dir) {
-                                    scale_origin = left;
-                                    scale_size = 1.-BEVEL_SIZE;
-                                    adj = -bevel;
+                    //             } else if !open_sides.contains(&left_dir) {
+                    //                 scale_origin = left;
+                    //                 scale_size = 1.-BEVEL_SIZE;
+                    //                 adj = -bevel;
 
-                                } else {
-                                    corner = Some(scale_from_origin(left, scale_origin, corner_scale));
-                                }
+                    //             } else {
+                    //                 corner = Some(scale_from_origin(left, scale_origin, corner_scale));
+                    //             }
 
-                                let mut scaled_right = scale_from_origin(right, scale_origin, scale_size);
-                                let mut scaled_left = scale_from_origin(left, scale_origin, scale_size);
+                    //             let mut scaled_right = scale_from_origin(right, scale_origin, scale_size);
+                    //             let mut scaled_left = scale_from_origin(left, scale_origin, scale_size);
 
-                                scaled_right += adj;
-                                scaled_left += adj;
+                    //             scaled_right += adj;
+                    //             scaled_left += adj;
 
-                                face_points.append(&mut vec![scaled_right, scaled_left]);
-                                if let Some(corner) = corner {
-                                    face_points.push(corner);
-                                }
+                    //             face_points.append(&mut vec![scaled_right, scaled_left]);
+                    //             if let Some(corner) = corner {
+                    //                 face_points.push(corner);
+                    //             }
 
-                            } else {
+                    //         } else {
 
-                                let right_diag = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-                                let right_diag = Point::new(right_diag.x.round() as i32, right_diag.y.round() as i32, right_diag.z.round() as i32);
+                    //             let right_diag = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                    //             let right_diag = Point::new(right_diag.x.round() as i32, right_diag.y.round() as i32, right_diag.z.round() as i32);
 
-                                let left_diag = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-                                let left_diag = Point::new(left_diag.x.round() as i32, left_diag.y.round() as i32, left_diag.z.round() as i32);
+                    //             let left_diag = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                    //             let left_diag = Point::new(left_diag.x.round() as i32, left_diag.y.round() as i32, left_diag.z.round() as i32);
 
-                                let mut adj: Option<Vector3> = None;
+                    //             let mut adj: Option<Vector3> = None;
 
-                                if !open_sides.contains(&left_dir) && !open_sides.contains(&right_dir) {
-                                    if !open_sides.contains(&right_diag) && !open_sides.contains(&left_diag) {
-                                        scale_size = 1.;
+                    //             if !open_sides.contains(&left_dir) && !open_sides.contains(&right_dir) {
+                    //                 if !open_sides.contains(&right_diag) && !open_sides.contains(&left_diag) {
+                    //                     scale_size = 1.;
 
-                                    } else if !open_sides.contains(&left_diag) {
-                                        scale_origin = left;
-                                        scale_size = 1.-BEVEL_SIZE / 2.;                                    
-                                    } else {
-                                        scale_origin = (right + left) / 2.;
-                                        scale_size = 1.-BEVEL_SIZE;
-                                    }
-                                } else if !open_sides.contains(&left_dir) {
-                                    if !open_sides.contains(&left_diag){
-                                        scale_origin = left;
-                                        scale_size = 1.-BEVEL_SIZE / 2.;
-                                    } else {
-                                        scale_origin = left;
-                                        adj = Some(Vector3::new(right_dir.x as f32, right_dir.y as f32, right_dir.z as f32) * BEVEL_SIZE / 2.);
-                                        scale_size = 1.-BEVEL_SIZE;
-                                    }
-                                } else {
-                                    scale_origin = (right + left) / 2.;
-                                    scale_size = 1.-BEVEL_SIZE;
-                                }
+                    //                 } else if !open_sides.contains(&left_diag) {
+                    //                     scale_origin = left;
+                    //                     scale_size = 1.-BEVEL_SIZE / 2.;                                    
+                    //                 } else {
+                    //                     scale_origin = (right + left) / 2.;
+                    //                     scale_size = 1.-BEVEL_SIZE;
+                    //                 }
+                    //             } else if !open_sides.contains(&left_dir) {
+                    //                 if !open_sides.contains(&left_diag){
+                    //                     scale_origin = left;
+                    //                     scale_size = 1.-BEVEL_SIZE / 2.;
+                    //                 } else {
+                    //                     scale_origin = left;
+                    //                     adj = Some(Vector3::new(right_dir.x as f32, right_dir.y as f32, right_dir.z as f32) * BEVEL_SIZE / 2.);
+                    //                     scale_size = 1.-BEVEL_SIZE;
+                    //                 }
+                    //             } else {
+                    //                 scale_origin = (right + left) / 2.;
+                    //                 scale_size = 1.-BEVEL_SIZE;
+                    //             }
 
-                                let mut scaled_right = scale_from_origin(right, scale_origin, scale_size);
-                                let mut scaled_left = scale_from_origin(left, scale_origin, scale_size);
+                    //             let mut scaled_right = scale_from_origin(right, scale_origin, scale_size);
+                    //             let mut scaled_left = scale_from_origin(left, scale_origin, scale_size);
 
-                                if let Some(adj) = adj {
-                                    scaled_right += adj;
-                                    scaled_left += adj;
-                                }
+                    //             if let Some(adj) = adj {
+                    //                 scaled_right += adj;
+                    //                 scaled_left += adj;
+                    //             }
 
-                                face_points.append(&mut vec![scaled_right, scaled_left]);
+                    //             face_points.append(&mut vec![scaled_right, scaled_left]);
 
-                            }
+                    //         }
 
-                            i += 1;
-                        }
+                    //         i += 1;
+                    //     }
 
-                        let mut face_points_final: Vec<Vector3> = Vec::with_capacity(12);
-                        //keep track of the indices of the face points so that we can use them again
-                        // in the bezel curve for the top face
-                        let mut face_point_indices: Vec<i32> = Vec::with_capacity(12);
+                    //     let mut face_points_final: Vec<Vector3> = Vec::with_capacity(12);
+                    //     //keep track of the indices of the face points so that we can use them again
+                    //     // in the bezel curve for the top face
+                    //     let mut face_point_indices: Vec<i32> = Vec::with_capacity(12);
 
-                        let face_points_len = face_points.len();
-                        let mut i = 0;
-                        while i < face_points_len {
+                    //     let face_points_len = face_points.len();
+                    //     let mut i = 0;
+                    //     while i < face_points_len {
 
-                            let right = face_points[i];
-                            let left = face_points[(i + 1) % face_points_len];
+                    //         let right = face_points[i];
+                    //         let left = face_points[(i + 1) % face_points_len];
 
-                            if (right - left).length() > std::f32::EPSILON {
+                    //         if (right - left).length() > std::f32::EPSILON {
 
-                                // godot_print!("right {:?}", right);
+                    //             // godot_print!("right {:?}", right);
 
-                                face_points_final.push(right);
-                            }
+                    //             face_points_final.push(right);
+                    //         }
 
-                            i += 1;
-                        }
+                    //         i += 1;
+                    //     }
 
-                        mesh_data.verts.push(&center);
-                        mesh_data.uvs.push(&Vector2::new(TILE_SIZE / 2., TILE_SIZE / 2.));
-                        mesh_data.uv2s.push(&Vector2::default());
-                        mesh_data.normals.push(&Vector3::new(0.,1.,0.));
-                        offset += 1;
+                    //     mesh_data.verts.push(&center);
+                    //     mesh_data.uvs.push(&Vector2::new(TILE_SIZE / 2., TILE_SIZE / 2.));
+                    //     mesh_data.uv2s.push(&Vector2::default());
+                    //     mesh_data.normals.push(&Vector3::new(0.,1.,0.));
+                    //     offset += 1;
 
-                        let face_points_final_len = face_points_final.len();
-                        let mut i = 0;
-                        let begin = offset;
-                        while i < face_points_final_len {
+                    //     let face_points_final_len = face_points_final.len();
+                    //     let mut i = 0;
+                    //     let begin = offset;
+                    //     while i < face_points_final_len {
 
-                            let right = face_points_final[i % face_points_final_len];
+                    //         let right = face_points_final[i % face_points_final_len];
 
-                            let u = (right.x - world_point.x).abs() * TILE_SIZE;
-                            let v = (right.z - world_point.z).abs() * TILE_SIZE;
+                    //         let u = (right.x - world_point.x).abs() * TILE_SIZE;
+                    //         let v = (right.z - world_point.z).abs() * TILE_SIZE;
 
-                            if draw_top {
-                                mesh_data.verts.push(&right);
-                                mesh_data.uvs.push(&Vector2::new(u, v));
-                                mesh_data.uv2s.push(&Vector2::default());
-                                mesh_data.normals.push(&Vector3::new(0., 1., 0.));
+                    //         if draw_top {
+                    //             mesh_data.verts.push(&right);
+                    //             mesh_data.uvs.push(&Vector2::new(u, v));
+                    //             mesh_data.uv2s.push(&Vector2::default());
+                    //             mesh_data.normals.push(&Vector3::new(0., 1., 0.));
 
-                                face_point_indices.push(begin + i as i32);
+                    //             face_point_indices.push(begin + i as i32);
 
-                                offset += 1;
+                    //             offset += 1;
 
-                                if i > 0 && i < face_points_final_len - 1 {
-                                    mesh_data.indices.push(begin);
-                                    mesh_data.indices.push(begin + i as i32);
-                                    mesh_data.indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
-                                }
-                            }
+                    //             if i > 0 && i < face_points_final_len - 1 {
+                    //                 mesh_data.indices.push(begin);
+                    //                 mesh_data.indices.push(begin + i as i32);
+                    //                 mesh_data.indices.push(begin + (i as i32 + 1) % face_points_final_len as i32);
+                    //             }
+                    //         }
 
-                            i+= 1;
-                        }
+                    //         i+= 1;
+                    //     }
 
-                        //defining the curve to the top face
-                        let mut i = 0;
-                        let begin = offset;
-                        while i < face_points_final_len {
+                    //     //defining the curve to the top face
+                    //     let mut i = 0;
+                    //     let begin = offset;
+                    //     while i < face_points_final_len {
 
-                            let right_index = i;
-                            let left_index = (i + 1) % face_points_final_len;
+                    //         let right_index = i;
+                    //         let left_index = (i + 1) % face_points_final_len;
 
-                            let right = face_points_final[right_index];
-                            let left = face_points_final[left_index];
+                    //         let right = face_points_final[right_index];
+                    //         let left = face_points_final[left_index];
 
-                            let dir = get_direction_of_edge(right, left, center);
+                    //         let dir = get_direction_of_edge(right, left, center);
 
-                            let right_rot = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2);
-                            let left_rot = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2);
-                            let right_dir = right_rot * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-                            let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
+                    //         let right_rot = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2);
+                    //         let left_rot = nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2);
+                    //         let right_dir = right_rot * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                    //         let right_dir = Point::new(right_dir.x as i32, right_dir.y as i32, right_dir.z as i32);
                             
-                            let left_dir = -right_dir;
+                    //         let left_dir = -right_dir;
 
-                            let right_diag= nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-                            let right_diag = Point::new(right_diag.x.round() as i32, right_diag.y.round() as i32, right_diag.z.round() as i32);    
+                    //         let right_diag= nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                    //         let right_diag = Point::new(right_diag.x.round() as i32, right_diag.y.round() as i32, right_diag.z.round() as i32);    
 
-                            let left_diag= nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
-                            let left_diag = Point::new(left_diag.x.round() as i32, left_diag.y.round() as i32, left_diag.z.round() as i32);
+                    //         let left_diag= nalgebra::Rotation3::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_4) * Vector3D::new(dir.x as f32, dir.y as f32, dir.z as f32);
+                    //         let left_diag = Point::new(left_diag.x.round() as i32, left_diag.y.round() as i32, left_diag.z.round() as i32);
 
-                            let mut scaled_right = scale_from_origin(right, center, 1./(1.-BEVEL_SIZE));
-                            let mut scaled_left = scale_from_origin(left, center, 1./(1.-BEVEL_SIZE));
+                    //         let mut scaled_right = scale_from_origin(right, center, 1./(1.-BEVEL_SIZE));
+                    //         let mut scaled_left = scale_from_origin(left, center, 1./(1.-BEVEL_SIZE));
 
-                            //change the origin of our scale for when certain sides are exposed or not
-                            if !open_sides.contains(&dir) && (open_sides.contains(&right_dir) || open_sides.contains(&right_diag)){
+                    //         //change the origin of our scale for when certain sides are exposed or not
+                    //         if !open_sides.contains(&dir) && (open_sides.contains(&right_dir) || open_sides.contains(&right_diag)){
 
-                                let middle = if right_dir.x.abs() > right_dir.z.abs() {
-                                    Vector3::new(right_dir.x as f32, right_dir.y as f32, right_dir.z as f32) * TILE_DIMENSIONS.x / 2.
-                                } else {
-                                    Vector3::new(right_dir.x as f32, right_dir.y as f32, right_dir.z as f32) * TILE_DIMENSIONS.z / 2.
-                                };
+                    //             let middle = if right_dir.x.abs() > right_dir.z.abs() {
+                    //                 Vector3::new(right_dir.x as f32, right_dir.y as f32, right_dir.z as f32) * TILE_DIMENSIONS.x / 2.
+                    //             } else {
+                    //                 Vector3::new(right_dir.x as f32, right_dir.y as f32, right_dir.z as f32) * TILE_DIMENSIONS.z / 2.
+                    //             };
 
-                                let middle = left_rot * Vector3D::new(middle.x, middle.y, middle.z);
+                    //             let middle = left_rot * Vector3D::new(middle.x, middle.y, middle.z);
 
-                                let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
+                    //             let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
 
-                                scaled_right = scale_from_origin(right, middle,  1./(1.-BEVEL_SIZE));
+                    //             scaled_right = scale_from_origin(right, middle,  1./(1.-BEVEL_SIZE));
 
-                            } else if open_sides.contains(&dir) && !open_sides.contains(&right_dir) {
-                                if (left-right).length() > 0.5 {
+                    //         } else if open_sides.contains(&dir) && !open_sides.contains(&right_dir) {
+                    //             if (left-right).length() > 0.5 {
 
-                                    let middle = if dir.x.abs() > dir.z.abs() {
-                                        Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.x / 2.
-                                    } else {
-                                        Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.z / 2.
-                                    };
+                    //                 let middle = if dir.x.abs() > dir.z.abs() {
+                    //                     Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.x / 2.
+                    //                 } else {
+                    //                     Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.z / 2.
+                    //                 };
 
-                                    let middle = right_rot * Vector3D::new(middle.x, middle.y, middle.z);
+                    //                 let middle = right_rot * Vector3D::new(middle.x, middle.y, middle.z);
 
-                                    let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
+                    //                 let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
 
-                                    scaled_right = scale_from_origin(right, middle, 1./(1.-BEVEL_SIZE));
+                    //                 scaled_right = scale_from_origin(right, middle, 1./(1.-BEVEL_SIZE));
 
-                                }
-                            }
+                    //             }
+                    //         }
 
-                            if open_sides.contains(&dir) && !open_sides.contains(&left_dir) {
-                                if (left-right).length() > 0.5 {
+                    //         if open_sides.contains(&dir) && !open_sides.contains(&left_dir) {
+                    //             if (left-right).length() > 0.5 {
 
-                                    let middle = if dir.x.abs() > dir.z.abs() {
-                                        Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.x / 2.
-                                    } else {
-                                        Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.z / 2.
-                                    };
+                    //                 let middle = if dir.x.abs() > dir.z.abs() {
+                    //                     Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.x / 2.
+                    //                 } else {
+                    //                     Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.z / 2.
+                    //                 };
 
-                                    let middle = left_rot * Vector3D::new(middle.x, middle.y, middle.z);
+                    //                 let middle = left_rot * Vector3D::new(middle.x, middle.y, middle.z);
 
-                                    let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
+                    //                 let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
 
-                                    scaled_left = scale_from_origin(left, middle,  1./(1.-BEVEL_SIZE));
-                                }
-                            }
+                    //                 scaled_left = scale_from_origin(left, middle,  1./(1.-BEVEL_SIZE));
+                    //             }
+                    //         }
 
-                            //draw the curves
-                            if draw_top {
+                    //         //draw the curves
+                    //         if draw_top {
 
-                                scaled_right.y -= BEVEL_SIZE / 2.;
-                                scaled_left.y -= BEVEL_SIZE / 2.;
+                    //             scaled_right.y -= BEVEL_SIZE / 2.;
+                    //             scaled_left.y -= BEVEL_SIZE / 2.;
 
-                                let u = (scaled_right.x - world_point.x).abs() * TILE_SIZE;
-                                let v = (scaled_right.z - world_point.z).abs() * TILE_SIZE;
+                    //             let u = (scaled_right.x - world_point.x).abs() * TILE_SIZE;
+                    //             let v = (scaled_right.z - world_point.z).abs() * TILE_SIZE;
 
-                                mesh_data.verts.push(&scaled_right);
-                                mesh_data.uvs.push(&Vector2::new(u, v));
-                                mesh_data.uv2s.push(&Vector2::default());
+                    //             mesh_data.verts.push(&scaled_right);
+                    //             mesh_data.uvs.push(&Vector2::new(u, v));
+                    //             mesh_data.uv2s.push(&Vector2::default());
 
-                                let mut normal = (scaled_right + scaled_left) / 2.;
-                                normal.y = center.y;
-                                normal = (normal - center).normalize();
+                    //             let mut normal = (scaled_right + scaled_left) / 2.;
+                    //             normal.y = center.y;
+                    //             normal = (normal - center).normalize();
 
-                                mesh_data.normals.push(&(normal).normalize());
+                    //             mesh_data.normals.push(&(normal).normalize());
 
-                                offset += 1;
+                    //             offset += 1;
 
-                                let face_right_index = face_point_indices[right_index];
-                                let face_left_index = face_point_indices[left_index]; 
+                    //             let face_right_index = face_point_indices[right_index];
+                    //             let face_left_index = face_point_indices[left_index]; 
 
-                                if open_sides.contains(&dir) || (!open_sides.contains(&right_dir) && open_sides.contains(&right_diag)) || (!open_sides.contains(&left_dir) && open_sides.contains(&left_diag)){
-                                    mesh_data.indices.push(face_left_index);
-                                    mesh_data.indices.push(face_right_index);
-                                    mesh_data.indices.push(begin + left_index as i32);
+                    //             if open_sides.contains(&dir) || (!open_sides.contains(&right_dir) && open_sides.contains(&right_diag)) || (!open_sides.contains(&left_dir) && open_sides.contains(&left_diag)){
+                    //                 mesh_data.indices.push(face_left_index);
+                    //                 mesh_data.indices.push(face_right_index);
+                    //                 mesh_data.indices.push(begin + left_index as i32);
 
-                                    mesh_data.indices.push(face_right_index);
-                                    mesh_data.indices.push(begin + right_index as i32);
-                                    mesh_data.indices.push(begin + left_index as i32);
-                                }
+                    //                 mesh_data.indices.push(face_right_index);
+                    //                 mesh_data.indices.push(begin + right_index as i32);
+                    //                 mesh_data.indices.push(begin + left_index as i32);
+                    //             }
 
-                            }
+                    //         }
 
-                            border_points.push(scaled_right);
-                            border_points.push(scaled_left);
+                    //         border_points.push(scaled_right);
+                    //         border_points.push(scaled_left);
                             
-                            i += 1;
-                        }
+                    //         i += 1;
+                    //     }
 
-                        //define the vertices for the walls
-                        let border_points_len = border_points.len();
+                    //     //define the vertices for the walls
+                    //     let border_points_len = border_points.len();
 
-                        if border_points_len > 0 {
-                            let bottom = map_coords_to_world(bottom).y;
+                    //     if border_points_len > 0 {
+                    //         let bottom = map_coords_to_world(bottom).y;
 
-                            let top = border_points[0].y;
-                            let height = top - bottom;
+                    //         let top = border_points[0].y;
+                    //         let height = top - bottom;
 
-                            let begin = offset;
-                            let indices_len = border_points_len as i32 * 2;
+                    //         let begin = offset;
+                    //         let indices_len = border_points_len as i32 * 2;
 
-                            center.y = 0.;
+                    //         center.y = 0.;
 
-                            //define the sides
-                            for i in 0..border_points_len {
+                    //         //define the sides
+                    //         for i in 0..border_points_len {
 
-                                let border_point = border_points.get(i).unwrap();
+                    //             let border_point = border_points.get(i).unwrap();
 
-                                //get the direction
-                                let next_i = (i+1) % border_points_len;
+                    //             //get the direction
+                    //             let next_i = (i+1) % border_points_len;
 
-                                let next_point = border_points.get(next_i).unwrap();
+                    //             let next_point = border_points.get(next_i).unwrap();
 
-                                let dir = get_direction_of_edge(*border_point, *next_point, center);
+                    //             let dir = get_direction_of_edge(*border_point, *next_point, center);
 
-                                //top
-                                mesh_data.verts.push(&border_point);
+                    //             //top
+                    //             mesh_data.verts.push(&border_point);
 
-                                //bottom
+                    //             //bottom
 
-                                let bottom_point = *border_point - Vector3::new(0., height, 0.);
-                                mesh_data.verts.push(&(bottom_point));
+                    //             let bottom_point = *border_point - Vector3::new(0., height, 0.);
+                    //             mesh_data.verts.push(&(bottom_point));
                                 
-                                //define the uvs for the walls on every other iteration 
-                                if i % 2 == 0 {
+                    //             //define the uvs for the walls on every other iteration 
+                    //             if i % 2 == 0 {
 
-                                    let diff = *next_point - *border_point;
+                    //                 let diff = *next_point - *border_point;
 
-                                    let mut normal_origin = (*next_point + *border_point) / 2.;
-                                    normal_origin.y = center.y;
-                                    normal_origin = (normal_origin - center).normalize();
+                    //                 let mut normal_origin = (*next_point + *border_point) / 2.;
+                    //                 normal_origin.y = center.y;
+                    //                 normal_origin = (normal_origin - center).normalize();
 
-                                    let mut normal_origin_bp = normal_origin;
-                                    normal_origin_bp.y = border_point.y;
-                                    let mut normal_origin_bot = normal_origin;
-                                    normal_origin_bot.y = bottom_point.y;
+                    //                 let mut normal_origin_bp = normal_origin;
+                    //                 normal_origin_bp.y = border_point.y;
+                    //                 let mut normal_origin_bot = normal_origin;
+                    //                 normal_origin_bot.y = bottom_point.y;
     
-                                    mesh_data.normals.push(&(normal_origin).normalize());
-                                    mesh_data.normals.push(&(normal_origin).normalize());
+                    //                 mesh_data.normals.push(&(normal_origin).normalize());
+                    //                 mesh_data.normals.push(&(normal_origin).normalize());
 
-                                    mesh_data.normals.push(&(normal_origin).normalize());
-                                    mesh_data.normals.push(&(normal_origin).normalize());
+                    //                 mesh_data.normals.push(&(normal_origin).normalize());
+                    //                 mesh_data.normals.push(&(normal_origin).normalize());
 
-                                    let mut u = 1.;
-                                    let mut next_u = 1.;
+                    //                 let mut u = 1.;
+                    //                 let mut next_u = 1.;
 
-                                    if dir.z.abs() > 0 {
+                    //                 if dir.z.abs() > 0 {
 
-                                        u = world_point.x * TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
+                    //                     u = world_point.x * TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
 
-                                        next_u = world_point.x * TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
+                    //                     next_u = world_point.x * TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
 
-                                        if diff.x > 0. {
+                    //                     if diff.x > 0. {
 
-                                            u = -u;
-                                            next_u = -next_u;
+                    //                         u = -u;
+                    //                         next_u = -next_u;
 
-                                        }
+                    //                     }
 
-                                    } else if dir.x.abs() > 0 {
-                                        u = world_point.z * TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
+                    //                 } else if dir.x.abs() > 0 {
+                    //                     u = world_point.z * TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
 
-                                        next_u = world_point.z * TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
+                    //                     next_u = world_point.z * TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
 
-                                        if diff.z > 0. {
+                    //                     if diff.z > 0. {
 
-                                            u = -u;
-                                            next_u = -next_u;
+                    //                         u = -u;
+                    //                         next_u = -next_u;
 
-                                        }
-                                    }
+                    //                     }
+                    //                 }
                                     
-                                    let vert_offset = if bottom < START_REPEAT_BELOW_HEIGHT  {
-                                        (bottom / REPEAT_AMOUNT_BELOW).floor() * REPEAT_AMOUNT_BELOW * TILE_SIZE
-                                    } else if bottom - START_REPEAT_ABOVE_HEIGHT >= START_REPEAT_BELOW_HEIGHT {
-                                        ((((bottom - START_REPEAT_ABOVE_HEIGHT) / REPEAT_AMOUNT_ABOVE).floor() * REPEAT_AMOUNT_ABOVE) - REPEAT_AMOUNT_BELOW) * TILE_SIZE
-                                    } else {
-                                        - REPEAT_AMOUNT_BELOW * TILE_SIZE
-                                    }; //height * TILE_SIZE;
+                    //                 let vert_offset = if bottom < START_REPEAT_BELOW_HEIGHT  {
+                    //                     (bottom / REPEAT_AMOUNT_BELOW).floor() * REPEAT_AMOUNT_BELOW * TILE_SIZE
+                    //                 } else if bottom - START_REPEAT_ABOVE_HEIGHT >= START_REPEAT_BELOW_HEIGHT {
+                    //                     ((((bottom - START_REPEAT_ABOVE_HEIGHT) / REPEAT_AMOUNT_ABOVE).floor() * REPEAT_AMOUNT_ABOVE) - REPEAT_AMOUNT_BELOW) * TILE_SIZE
+                    //                 } else {
+                    //                     - REPEAT_AMOUNT_BELOW * TILE_SIZE
+                    //                 }; //height * TILE_SIZE;
 
-                                    mesh_data.uvs.push(&Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE + vert_offset)); //bottom of face
-                                    mesh_data.uvs.push(&Vector2::new(u,-1.-bottom * TILE_SIZE + vert_offset)); //top of face
+                    //                 mesh_data.uvs.push(&Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE + vert_offset)); //bottom of face
+                    //                 mesh_data.uvs.push(&Vector2::new(u,-1.-bottom * TILE_SIZE + vert_offset)); //top of face
 
-                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE + vert_offset)); //bottom of face
-                                    mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE + vert_offset)); //top of face
+                    //                 mesh_data.uvs.push(&Vector2::new(next_u,-1.-height * TILE_SIZE - bottom * TILE_SIZE + vert_offset)); //bottom of face
+                    //                 mesh_data.uvs.push(&Vector2::new(next_u,-1.-bottom * TILE_SIZE + vert_offset)); //top of face
 
-                                    //define the uvs for the grass overhang textures
-                                    if map_coords_to_world(point).y + std::f32::EPSILON >= true_top - 1. {
+                    //                 //define the uvs for the grass overhang textures
+                    //                 if map_coords_to_world(point).y + std::f32::EPSILON >= true_top - 1. {
 
-                                        if dir.z.abs() > 0 {
+                    //                     if dir.z.abs() > 0 {
 
-                                            u = TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
+                    //                         u = TILE_SIZE + (border_point.x - world_point.x).abs() * TILE_SIZE;
     
-                                            next_u = TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
+                    //                         next_u = TILE_SIZE + (next_point.x - world_point.x).abs() * TILE_SIZE ;
     
-                                            if diff.x > 0. {
+                    //                         if diff.x > 0. {
     
-                                                u = -u;
-                                                next_u = -next_u;
+                    //                             u = -u;
+                    //                             next_u = -next_u;
     
-                                            }
+                    //                         }
     
-                                        } else if dir.x.abs() > 0 {
-                                            u = TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
+                    //                     } else if dir.x.abs() > 0 {
+                    //                         u = TILE_SIZE + (border_point.z - world_point.z).abs() * TILE_SIZE;
     
-                                            next_u = TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
+                    //                         next_u = TILE_SIZE + (next_point.z - world_point.z).abs() * TILE_SIZE ;
     
-                                            if diff.z > 0. {
+                    //                         if diff.z > 0. {
     
-                                                u = -u;
-                                                next_u = -next_u;
+                    //                             u = -u;
+                    //                             next_u = -next_u;
     
-                                            }
-                                        }
+                    //                         }
+                    //                     }
 
-                                        if u < 0. {
-                                            u = (1. - u) % 1.;
-                                        }
+                    //                     if u < 0. {
+                    //                         u = (1. - u) % 1.;
+                    //                     }
 
-                                        if next_u < 0. {
-                                            next_u = (1. - next_u) % 1.;
-                                        }
+                    //                     if next_u < 0. {
+                    //                         next_u = (1. - next_u) % 1.;
+                    //                     }
 
-                                        let top_v = TILE_SIZE * (true_top - top);
-                                        let bottom_v = TILE_SIZE * (true_top - bottom);
+                    //                     let top_v = TILE_SIZE * (true_top - top);
+                    //                     let bottom_v = TILE_SIZE * (true_top - bottom);
 
-                                        mesh_data.uv2s.push(&Vector2::new(u, top_v));
-                                        mesh_data.uv2s.push(&Vector2::new(u, bottom_v));
+                    //                     mesh_data.uv2s.push(&Vector2::new(u, top_v));
+                    //                     mesh_data.uv2s.push(&Vector2::new(u, bottom_v));
 
-                                        mesh_data.uv2s.push(&Vector2::new(next_u, top_v));
-                                        mesh_data.uv2s.push(&Vector2::new(next_u, bottom_v));
+                    //                     mesh_data.uv2s.push(&Vector2::new(next_u, top_v));
+                    //                     mesh_data.uv2s.push(&Vector2::new(next_u, bottom_v));
 
-                                    } else {
-                                        mesh_data.uv2s.push(&Vector2::default());
-                                        mesh_data.uv2s.push(&Vector2::default());
+                    //                 } else {
+                    //                     mesh_data.uv2s.push(&Vector2::default());
+                    //                     mesh_data.uv2s.push(&Vector2::default());
                                         
-                                        mesh_data.uv2s.push(&Vector2::default());
-                                        mesh_data.uv2s.push(&Vector2::default());
-                                    }
+                    //                     mesh_data.uv2s.push(&Vector2::default());
+                    //                     mesh_data.uv2s.push(&Vector2::default());
+                    //                 }
 
-                                } 
+                    //             } 
 
-                                //if there are only 2 border points, only draw from the first index to avoid drawing both sides since the index will loop around
-                                if border_points_len > 2 || i < border_points_len-1 {
-                                    //only add indices for points that aren't overlapping
-                                    if (*next_point - *border_point).length() > std::f32::EPSILON {
+                    //             //if there are only 2 border points, only draw from the first index to avoid drawing both sides since the index will loop around
+                    //             if border_points_len > 2 || i < border_points_len-1 {
+                    //                 //only add indices for points that aren't overlapping
+                    //                 if (*next_point - *border_point).length() > std::f32::EPSILON {
 
-                                        if open_sides.contains(&dir) {
+                    //                     if open_sides.contains(&dir) {
 
-                                            let j = offset - begin;
+                    //                         let j = offset - begin;
 
-                                            mesh_data.indices.push(j % indices_len + begin);
-                                            mesh_data.indices.push((j+1) % indices_len + begin);
-                                            mesh_data.indices.push((j+2) % indices_len + begin);
+                    //                         mesh_data.indices.push(j % indices_len + begin);
+                    //                         mesh_data.indices.push((j+1) % indices_len + begin);
+                    //                         mesh_data.indices.push((j+2) % indices_len + begin);
 
-                                            mesh_data.indices.push((j+2) % indices_len + begin);
-                                            mesh_data.indices.push((j+1) % indices_len + begin);
-                                            mesh_data.indices.push((j+3) % indices_len + begin);
+                    //                         mesh_data.indices.push((j+2) % indices_len + begin);
+                    //                         mesh_data.indices.push((j+1) % indices_len + begin);
+                    //                         mesh_data.indices.push((j+3) % indices_len + begin);
 
-                                        } else {
-                                            // godot_print!("{:?} is not drawing {:?}", point, dir);
-                                        }
-                                    } else {
-                                        // godot_print!("Skipped some points because they were too close");
-                                    }
-                                }
+                    //                     } else {
+                    //                         // godot_print!("{:?} is not drawing {:?}", point, dir);
+                    //                     }
+                    //                 } else {
+                    //                     // godot_print!("Skipped some points because they were too close");
+                    //                 }
+                    //             }
 
-                                offset += 2;
+                    //             offset += 2;
 
-                            }
-                        }
+                    //         }
+                    //     }
 
-                    }
+                    // }
 
-                }
+                });
+
+                checked.lock().unwrap().extend(checked_rx.into_iter());
             });
 
-            let mut to_changed: Vec<Entity> = Vec::new();
-            let mut to_change: Vec<Entity> = Vec::new();
+            println!("Took {:?} milliseconds to complete", now.elapsed().as_millis());
 
+        });
+
+        let mut to_changed: Vec<Entity> = Vec::new();
+        let mut to_change: HashMap<Entity, ManuallyChange> = HashMap::new();
+
+        unsafe {
             for (entity, (map_data,change)) in map_query.iter_entities_unchecked(world) {
                 to_changed.push(entity);
 
                 //only manually change neighbors if it is a direct change
-                if change.0 == ChangeType::Direct {
+                if let ChangeType::Direct(aabb) = change.0 {
                     for dir in &all_dirs {
                         
                         let neighbor_chunk_pt = map_data.get_chunk_point() + dir;
@@ -797,23 +906,31 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         let neighbor_chunk_query = <Read<MapChunkData>>::query()
                             .filter(tag_value(&neighbor_chunk_pt));
 
-                        for (entity, _) in neighbor_chunk_query.iter_entities_unchecked(world) {
-                            
-                            to_change.push(entity);
+                        for (entity, map_data) in neighbor_chunk_query.iter_entities(world) {
+                            let mut map_aabb = map_data.octree.get_aabb();
+                            map_aabb.dimensions += Point::new(2,2,2);
+
+                            //only update if it's adjacent to the changes
+                            if map_aabb.intersects_bounds(aabb) {
+                                to_change.insert(entity, ManuallyChange(ChangeType::Indirect(aabb)));
+                            }
                         }
                     }
                 }
             }
+        }
 
-            for entity in &*to_change {
-                world.add_tag(*entity, ManuallyChange(ChangeType::Indirect)).unwrap();
-            }
-
-            for entity in &*to_changed {
-                world.remove_tag::<ManuallyChange>(*entity).unwrap();
+        for (entity, change) in &to_change {
+            //only add the indirect change if it is not already being manually changed
+            if let None = world.get_tag::<ManuallyChange>(*entity) {
+                world.add_tag(*entity, *change).unwrap();
             }
         }
 
+        for entity in &*to_changed {
+            world.remove_tag::<ManuallyChange>(*entity).unwrap();
+        }
+        
     })
 } 
 
@@ -855,6 +972,20 @@ fn get_true_top(pt: Point, world: &legion::world::World,map_data: &MapChunkData,
     true_top
 }
 
+/// Expands the changed range to include positions on the border of the change, and gets the intersection with aabb to ensure it is within the bounds of the map data's aabb
+fn get_aabb_change_in_range(change: AABB, aabb: AABB) -> AABB {
+    let mut expand_aabb = change;
+    expand_aabb.dimensions += Point::new(
+        2*num::signum(expand_aabb.dimensions.x),
+        2*num::signum(expand_aabb.dimensions.y),
+        2*num::signum(expand_aabb.dimensions.z)
+    );
+
+    let in_range = expand_aabb.get_intersection(aabb);
+                        
+    in_range
+}
+
 pub fn scale_from_origin(pt: Vector3, origin: Vector3, scale_amount: f32) -> Vector3 {
     let mut pt = pt;
     pt -= origin;
@@ -875,6 +1006,7 @@ pub fn get_open_sides(neighbor_dirs: &[Point; 8], world: &legion::world::World, 
         let neighbor = point + *dir;
 
         if checked.contains(&neighbor) {
+            // println!("Checked contains {:?}", neighbor);
             return {}
         }
 

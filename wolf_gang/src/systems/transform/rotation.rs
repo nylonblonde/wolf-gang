@@ -1,4 +1,7 @@
-use gdnative::{godot_print, Basis, Vector3, Spatial};
+use gdnative::prelude::*;
+use gdnative::api::{
+    Spatial,
+};
 
 use legion::prelude::*;
 
@@ -43,11 +46,11 @@ pub fn create_system_local() -> Box<dyn Runnable> {
     .build_thread_local(move |_, world, _, query| {
 
         for (rotation, mut direction, node_name) in query.iter_mut(&mut *world) {
-            let spatial_node : Option<Spatial> = {
+            let spatial_node : Option<Ref<Spatial>> = {
                 unsafe {
-                    match node::get_node(crate::OWNER_NODE.as_ref().unwrap(), node_name.0.clone()) {
+                    match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0.clone()) {
                         Some(r) => {
-                            r.cast()
+                            Some(r.assume_safe().cast::<Spatial>().unwrap().as_ref().assume_shared())
                         },
                         None => {
                             godot_print!("Can't find {:?}", node_name.0);                            
@@ -60,8 +63,8 @@ pub fn create_system_local() -> Box<dyn Runnable> {
             };
 
             match spatial_node {
-                Some(mut r) => { 
-
+                Some(r) => {
+                    
                     direction.right = rotation.value * Vector3D::x();
                     direction.up = rotation.value * Vector3D::y();
                     direction.forward = rotation.value * Vector3D::z();
@@ -99,7 +102,9 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                     z_axis = (z_axis - x_axis * (x_axis.dot(z_axis)) - y_axis * y_axis.dot(z_axis)).normalize();
 
                     unsafe {
-                        let mut transform = r.get_transform();
+                        let spatial = r.assume_safe();
+
+                        let mut transform = spatial.transform();
                         transform.basis = Basis{
                             elements: [
                                 x_axis,
@@ -108,7 +113,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                             ]
                         };
                         
-                        r.set_transform(transform);
+                        spatial.set_transform(transform);
                     }
 
                 },

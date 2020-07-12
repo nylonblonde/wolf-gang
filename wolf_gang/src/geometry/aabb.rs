@@ -83,6 +83,28 @@ impl<F: Signed + Scalar + Num + NumCast + Ord + Copy + Clone> AABB<F> {
         max
     }
 
+    pub fn get_intersection(&self, other: AABB<F>) -> AABB<F> {
+        let min = self.get_min();
+        let max = self.get_max();
+
+        let other_min = other.get_min();
+        let other_max = other.get_max();
+
+        let intersect_min = Vector3::<F>::new(
+            std::cmp::max(min.x, other_min.x),
+            std::cmp::max(min.y, other_min.y),
+            std::cmp::max(min.z, other_min.z)
+        );
+
+        let intersect_max = Vector3::<F>::new(
+            std::cmp::min(max.x, other_max.x),
+            std::cmp::min(max.y, other_max.y),
+            std::cmp::min(max.z, other_max.z)
+        );
+
+        AABB::from_extents(intersect_min, intersect_max)
+    }
+
     pub fn intersects_bounds(&self, other: AABB<F>) -> bool{
         let min = self.get_min();
         let max = self.get_max();
@@ -92,8 +114,7 @@ impl<F: Signed + Scalar + Num + NumCast + Ord + Copy + Clone> AABB<F> {
 
         min.x <= other_max.x && max.x >= other_min.x
         && min.y <= other_max.y && max.y >= other_min.y
-        && min.z <= other_max.z && max.z >= other_min.z
-        
+        && min.z <= other_max.z && max.z >= other_min.z   
     }
 
     pub fn contains_point(&self, point: Vector3<F>) -> bool {

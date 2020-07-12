@@ -1,4 +1,9 @@
-use gdnative::*;
+use gdnative::prelude::*;
+
+use gdnative::api::{
+    ConfirmationDialog,
+    MenuButton,
+};
 
 #[derive(NativeClass)]
 #[inherit(ConfirmationDialog)]
@@ -12,46 +17,46 @@ pub struct FileConfirmation {
 impl FileConfirmation {
     
     /// The "constructor" of the class.
-    fn _init(_: ConfirmationDialog) -> Self {
+    fn new(_: &ConfirmationDialog) -> Self {
 
         FileConfirmation{
         }
         
     }
 
-    unsafe fn disconnect_signal(mut emitter: ConfirmationDialog, target: ConfirmationDialog, signal: GodotString) {
+    unsafe fn disconnect_signal(mut emitter: &ConfirmationDialog, target: &ConfirmationDialog, signal: &'static str) {
 
         let mut connections = target.get_incoming_connections();
 
         for i in 0..connections.len() {
-            let connection = connections.get_val(i);
+            let connection = connections.get(i);
 
             let dict = connection.to_dictionary();
 
-            let incoming_signal = dict.get(&GodotString::from("signal_name").to_variant()).to_godot_string();
+            let incoming_signal = dict.get("signal_name".to_variant()).to_godot_string();
 
-            if incoming_signal == signal {
-                let incoming_method = dict.get(&GodotString::from("method_name").to_variant()).to_godot_string();
+            if incoming_signal == GodotString::from(signal) {
+                let incoming_method = dict.get("method_name".to_variant()).to_godot_string();
 
-                emitter.disconnect(incoming_signal, Some(target.to_object()), incoming_method);
+                emitter.disconnect(incoming_signal, target.assume_shared(), incoming_method);
             }
         }
     }
 
     /// Confirmation for ConfirmationDialog that will popup when pressing New when there are unsaved changes
     #[export]
-    fn new_confirmation_handler(&mut self, mut confirmation_dialog: ConfirmationDialog) {
+    fn new_confirmation_handler(&mut self, mut confirmation_dialog: &ConfirmationDialog) {
 
         unsafe { 
 
-            let signal = GodotString::from("confirmed");
-            let method = GodotString::from("new_confirmation_ok_handler");
+            let signal = "confirmed";
+            let method = "new_confirmation_ok_handler";
 
             let mut emitter = confirmation_dialog;
 
-            Self::disconnect_signal(emitter, confirmation_dialog, signal.clone());
+            Self::disconnect_signal(emitter, confirmation_dialog, signal);
 
-            emitter.connect(signal, Some(confirmation_dialog.to_object()), method, VariantArray::new(), 0).unwrap();
+            emitter.connect(signal, confirmation_dialog.assume_shared(), method, VariantArray::new_shared(), 0).unwrap();
 
             confirmation_dialog.popup_centered(Vector2::new(0., 0.)); 
         
@@ -60,24 +65,24 @@ impl FileConfirmation {
 
     /// Confirmation for ConfirmationDialog that will popup when opening a file when there are unsaved changes
     #[export]
-    fn open_confirmation_handler(&mut self, mut confirmation_dialog: ConfirmationDialog) {
+    fn open_confirmation_handler(&mut self, mut confirmation_dialog: &ConfirmationDialog) {
         unsafe { 
 
-            let signal = GodotString::from("confirmed");
-            let method = GodotString::from("open_confirmation_ok_handler");
+            let signal = "confirmed";
+            let method = "open_confirmation_ok_handler";
 
             let mut emitter = confirmation_dialog;
 
-            Self::disconnect_signal(emitter, confirmation_dialog, signal.clone());
+            Self::disconnect_signal(emitter, confirmation_dialog, signal);
 
-            emitter.connect(signal, Some(confirmation_dialog.to_object()), method, VariantArray::new(), 0).unwrap();
+            emitter.connect(signal, confirmation_dialog.assume_shared(), method, VariantArray::new_shared(), 0).unwrap();
 
             confirmation_dialog.popup_centered(Vector2::new(0., 0.)); 
         }
     }
 
     #[export]
-    fn new_confirmation_ok_handler(&mut self, _: ConfirmationDialog) {
+    fn new_confirmation_ok_handler(&mut self, _: &ConfirmationDialog) {
 
         let mut game = crate::GAME_UNIVERSE.lock().unwrap();
         let game = &mut *game;
@@ -99,13 +104,13 @@ impl FileConfirmation {
     }
 
     #[export]
-    fn open_confirmation_ok_handler(&mut self, confirmation_dialog: ConfirmationDialog) {
+    fn open_confirmation_ok_handler(&mut self, confirmation_dialog: &ConfirmationDialog) {
         unsafe {
-            let mut menu_button: MenuButton = confirmation_dialog.get_parent()
+            let mut menu_button: &MenuButton = &confirmation_dialog.get_parent()
                 .expect("Couldn't get MenuButton which should be the parent of the ConfirmationDialog")
-                .cast::<MenuButton>().unwrap();
+                .assume_safe().cast::<MenuButton>().unwrap();
 
-            menu_button.emit_signal(GodotString::from("save_load_popup"), &[Variant::from_i64(0)]);
+            menu_button.emit_signal("save_load_popup", &[Variant::from_i64(0)]);
         }
 
     }

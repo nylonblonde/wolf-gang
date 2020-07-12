@@ -1,4 +1,9 @@
-use gdnative::*;
+use gdnative::prelude::*;
+use gdnative::api::{
+    File,
+    GlobalConstants,
+    InputMap
+};
 use legion::prelude::*;
 use ron::ser::{PrettyConfig};
 use serde::{Deserialize, Serialize};
@@ -276,7 +281,7 @@ impl InputConfig {
                                         {
                                             let mut input_event_key = InputEventKey::new();
                                             input_event_key.set_scancode(r.code);
-                                            Some(input_event_key.to_input_event_with_modifiers().to_input_event())
+                                            input_event_key
                                         }
                                     );
                                 }

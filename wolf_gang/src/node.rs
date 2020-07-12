@@ -1,11 +1,11 @@
-use gdnative::*;
+use gdnative::prelude::*;
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq)]
 pub struct NodeName(pub String);
 
 pub struct NodeCache {
-    pub cache: HashMap<String, Node>
+    pub cache: HashMap<String, Ref<Node, Shared>>
 }
 
 static mut NODE_CACHE: Option<NodeCache> = None;
@@ -13,9 +13,11 @@ static mut NODE_CACHE: Option<NodeCache> = None;
 /// Add the node to the owner and set the NodeName. Returns an option so that we can
 /// avoid putting whole blocks of code in unsafe by just mutably assigning. Creates a NodeCache if one hasn't
 /// been created and adds the node to it.
-pub unsafe fn add_node(node: &mut Node) -> Option<NodeName> {
+/// 
+/// References being passed into this function are assumed to be unique, which is okay, as they have usually just been created.
+pub unsafe fn add_node(node: Ref<Node, Unique>) -> Option<NodeName> {
 
-    let owner = crate::OWNER_NODE.as_mut().unwrap();
+    let owner = crate::OWNER_NODE.as_mut().unwrap().assume_safe();
 
     //Disable all processing since we're not using it anyway. Maybe it makes it faster? Who knows
     node.set_physics_process(false);
@@ -26,9 +28,11 @@ pub unsafe fn add_node(node: &mut Node) -> Option<NodeName> {
     node.set_process_unhandled_input(false);
     node.set_process_unhandled_key_input(false);
 
-    owner.add_child(Some(*node), true); 
+    let shared_node = node.into_shared();
 
-    let string = node.get_name().to_string();
+    owner.add_child(shared_node, true); 
+    //We can generally assume this is a unique reference as it is has just been created and is now being added.
+    let string = shared_node.assume_unique().name().to_string();
 
     // godot_print!("{}", string.clone());
 
@@ -37,7 +41,7 @@ pub unsafe fn add_node(node: &mut Node) -> Option<NodeName> {
     }
 
     let node_cache = NODE_CACHE.as_mut().unwrap();
-    node_cache.cache.insert(string.clone(), *node);
+    node_cache.cache.insert(string.clone(), shared_node);
 
     Some(NodeName(string))
 }
@@ -49,14 +53,13 @@ pub unsafe fn remove_node(name: String) {
 
         if let Some(node) = node_cache.cache.get(&name) {
 
-            match node.get_parent() {
+            match node.assume_safe().get_parent() {
                 Some(mut parent) => {
-                    parent.remove_child(Some(*node));
+                    parent.assume_safe().remove_child(node);
                 },
                 None => panic!("{:?} has no parent")
             }
 
-            node.free();
             node_cache.cache.remove(&name);
         }
 
@@ -70,7 +73,7 @@ unsafe fn create_node_cache() {
 }
 
 /// Retrieves the node from cache if possible, otherwise uses the gdnative bindings to find it.
-pub unsafe fn get_node(node: &Node, name: String) -> Option<Node> {
+pub unsafe fn get_node(node: &Node, name: String) -> Option<Ref<Node, Shared>> {
 
     if NODE_CACHE.is_none() {
         create_node_cache();
@@ -78,9 +81,9 @@ pub unsafe fn get_node(node: &Node, name: String) -> Option<Node> {
 
     let node_cache = NODE_CACHE.as_mut().unwrap();
 
-    match node_cache.cache.get_key_value(&name) {
+    match node_cache.cache.get(&name) {
         Some(r) => {
-            return Some(*r.1)
+            return Some(*r)
         },
         None => {
             let result = node.get_node(NodePath::from_str(&name));
@@ -94,7 +97,7 @@ pub unsafe fn get_node(node: &Node, name: String) -> Option<Node> {
     }
 }
 
-pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node) -> Option<T> {
+pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node) -> Option<Ref<T>> {
 
     let mut children = node.get_children();
 
@@ -102,7 +105,7 @@ pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node) -> Option<T> {
 
     for i in 0..len {
         
-        let child = children.get_val(i);
+        let child = children.get(i);
 
         if let Some(child) = child.try_to_object::<T>() {
             return Some(child)

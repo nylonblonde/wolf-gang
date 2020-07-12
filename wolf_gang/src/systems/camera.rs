@@ -1,5 +1,9 @@
 use std::collections::HashMap;
-use gdnative::*;
+use gdnative::prelude::*;
+
+use gdnative::api::{
+    Camera,
+};
 
 use legion::prelude::*;
 
@@ -43,21 +47,22 @@ const SPEED : f32 = 4.;
 
 pub fn initialize_camera(world: &mut legion::world::World) -> String {
     
-    let mut camera: Camera = Camera::new();
+    //into_shared to avoid cloning
+    let camera: Ref<Camera> = Camera::new().into_shared();
 
+    // This is okay as we have literally just created this
     let node_name = unsafe { 
-        node::add_node(&mut camera)
+        node::add_node(camera.assume_safe().upcast::<Node>().as_ref().assume_unique())
     };
 
     unsafe {
-        camera.make_current();
+        camera.assume_safe().make_current();
     }
 
     let node_name = node_name.unwrap();
 
     world.insert((node_name.clone(),), vec![
         (
-            
             Position::default(),
             FocalAngle(-45.0f32.to_radians(),225.0f32.to_radians(), 0.0),
             Rotation::default(),

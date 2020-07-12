@@ -70,6 +70,7 @@ pub struct Octree <N: Scalar, T: PointData<N>>{
 impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone, T: PointData<N> + Hash + Eq + PartialEq + Debug + Sync + Send> Octree<N, T> {
 
     pub fn new(aabb: AABB<N>, max_elements: usize) -> Octree<N, T> {
+        #[cfg(debug_assertions)]
         println!("Creating new Octree with a min of {:?} and a max of {:?}", aabb.get_min(), aabb.get_max());
 
         Octree {

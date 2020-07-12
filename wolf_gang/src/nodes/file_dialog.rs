@@ -1,4 +1,10 @@
-use gdnative::*;
+use gdnative::prelude::*;
+use gdnative::api::{
+    ConfirmationDialog,
+    Directory,
+    FileDialog,
+};
+
 use crate::{
     node,
     game_state::{StateMachine},
@@ -13,7 +19,7 @@ use crate::{
 #[register_with(Self::register_signals)]
 #[user_data(user_data::LocalCellData<SaveLoadDialog>)]
 pub struct SaveLoadDialog {
-    confirm_dialog: Option<ConfirmationDialog>,
+    confirm_dialog: Option<Ref<ConfirmationDialog>>,
 }
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
@@ -22,19 +28,19 @@ pub struct SaveLoadDialog {
 impl SaveLoadDialog {
     
     /// The "constructor" of the class.
-    fn _init(mut file_dialog: FileDialog) -> Self {
+    fn new(mut file_dialog: &FileDialog) -> Self {
 
         let self_dialog = file_dialog;
 
         unsafe {
 
             //I am truly sorry for this lol
-            match file_dialog.connect(GodotString::from("popup_hide"), Some(self_dialog.to_object()), GodotString::from("hide_handler"), VariantArray::new(), 0)
-                .map(|_| { file_dialog.connect(GodotString::from("file_selected"), Some(self_dialog.to_object()), GodotString::from("file_selection_handler"), VariantArray::new(), 0) })
+            match file_dialog.connect("popup_hide", self_dialog.assume_shared(), "hide_handler", VariantArray::new_shared(), 0)
+                .map(|_| { file_dialog.connect("file_selected", self_dialog.assume_shared(), "file_selection_handler", VariantArray::new_shared(), 0) })
                 .map(|_| { 
                     match file_dialog.get_line_edit() {
                         Some(mut line_edit) => 
-                            line_edit.connect(GodotString::from("text_changed"), Some(self_dialog.to_object()), GodotString::from("line_edit_changed_handler"), VariantArray::new(), 0),
+                            line_edit.assume_safe().connect("text_changed", self_dialog.assume_shared(), "line_edit_changed_handler", VariantArray::new_shared(), 0),
                         None => panic!("{:?}", "Couldn't retrieve LineEdit from FileDialog")
                     }
                 }) {
@@ -63,22 +69,22 @@ impl SaveLoadDialog {
         }
     }
 
-    fn register_signals(builder: &init::ClassBuilder<Self>) {
-        builder.add_signal(init::Signal {
+    fn register_signals(builder: &ClassBuilder<Self>) {
+        builder.add_signal(Signal {
             name: "confirmation_popup",
             args: &[]
         });
     }
 
     #[export]
-    fn _ready(&mut self, mut file_dialog: FileDialog) {
+    fn _ready(&mut self, mut file_dialog: &FileDialog) {
         unsafe {
             match file_dialog.get_parent() {
                 Some(parent) => {
-                    match node::get_child_by_type::<ConfirmationDialog>(&parent) {
+                    match node::get_child_by_type::<ConfirmationDialog>(parent.assume_safe().as_ref()) {
                         Some(confirm_dialog) => {
 
-                            match file_dialog.connect(GodotString::from("confirmation_popup"), Some(confirm_dialog.to_object()), GodotString::from("open_confirmation_handler"), VariantArray::new(), 0) {
+                            match file_dialog.connect("confirmation_popup", confirm_dialog, "open_confirmation_handler", VariantArray::new_shared(), 0) {
                                 Ok(_) => {
                                     self.confirm_dialog = Some(confirm_dialog)
                                 },
@@ -96,7 +102,7 @@ impl SaveLoadDialog {
 
     #[export]
     /// Tells the FileDialog whether to open as Open or Save dialogs
-    fn save_load_handler(&mut self, mut file_dialog: FileDialog, type_flag: i64) {
+    fn save_load_handler(&mut self, mut file_dialog: &FileDialog, type_flag: i64) {
 
         unsafe { 
 
@@ -116,7 +122,7 @@ impl SaveLoadDialog {
             //Update the Ok button in case Line Edit is blank
             match file_dialog.get_line_edit() {
                 Some(line_edit) => {
-                    self.line_edit_changed_handler(file_dialog, line_edit.get_text());
+                    self.line_edit_changed_handler(file_dialog, line_edit.assume_safe().as_ref().text());
                 },
                 None => panic!("Couldn't get LineEdit from FileDialog")
             }
@@ -129,7 +135,7 @@ impl SaveLoadDialog {
     } 
 
     #[export]
-    fn hide_handler(&mut self, _: FileDialog) {
+    fn hide_handler(&mut self, _: &FileDialog) {
         crate::STATE_MACHINE.with(|s| {
             let state_machine: &mut StateMachine = &mut s.borrow_mut();
             state_machine.set_state_active("MapEditor", true);
@@ -138,15 +144,15 @@ impl SaveLoadDialog {
 
     ///Checks to see whether or not the text field is blank, then disables the confirmation button if it is
     #[export]
-    fn line_edit_changed_handler(&mut self, mut file_dialog: FileDialog, new_text: GodotString) {
+    fn line_edit_changed_handler(&mut self, mut file_dialog: &FileDialog, new_text: GodotString) {
 
         unsafe {    
             match file_dialog.get_ok() {
                 Some(mut ok_button) => {
                     if new_text.is_empty() {
-                        ok_button.set_disabled(true);
+                        ok_button.assume_safe().as_ref().set_disabled(true);
                     } else {
-                        ok_button.set_disabled(false);
+                        ok_button.assume_safe().as_ref().set_disabled(false);
                     }
                 },
                 None => panic!("Couldn't get Ok button for FileDialog")
@@ -155,7 +161,7 @@ impl SaveLoadDialog {
     }
 
     #[export]
-    fn file_selection_handler(&mut self, file_dialog: FileDialog, mut path: GodotString) {
+    fn file_selection_handler(&mut self, file_dialog: &FileDialog, mut path: GodotString) {
 
         let mut game = crate::GAME_UNIVERSE.lock().unwrap();
         let game = &mut *game;
@@ -168,8 +174,8 @@ impl SaveLoadDialog {
         };
 
         unsafe {
-            match file_dialog.get_mode() {
-                FileDialogMode::ModeOpenFile => {
+            match file_dialog.mode() {
+                MODE_OPEN_FILE => {
 
                     godot_print!("Opening...");
 
@@ -182,7 +188,7 @@ impl SaveLoadDialog {
                                 editor_state.free_func()(world, resources);
                                 editor_state.initialize_func()(world, resources);
 
-                                doc = Document::from_file(path).unwrap();
+                                let doc = Document::from_file(path).unwrap();
 
                                 doc.populate_world(world, resources);
 
@@ -196,7 +202,7 @@ impl SaveLoadDialog {
                     });
 
                 },
-                FileDialogMode::ModeSaveFile => {
+                MODE_SAVE_FILE => {
 
                     godot_print!("Saving...");
 

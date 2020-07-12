@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::collections::HashMap;
 use legion::prelude::*;
 use crate::{
@@ -204,8 +203,8 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
         *current_step = history::CurrentHistoricalStep(target_step.0 as u32 + 1);
     }
 
-    for (entity, _) in entities {
-        world.add_tag(entity, super::ManuallyChange(super::ChangeType::Direct)).unwrap();
+    for (entity, change) in entities {
+        world.add_tag(entity, super::ManuallyChange(super::ChangeType::Direct(change.aabb))).unwrap();
     }
 
 }

@@ -2,11 +2,15 @@ use crate::collections::octree;
 use crate::systems::level_map;
 
 use legion::prelude::*;
-use gdnative::*;
+
+use gdnative::prelude::*;
+use gdnative::api::{
+    File,
+};
+
 use bincode;
 
 use serde::{Serialize, Deserialize};
-use std::marker::PhantomData;
 
 type Octree = octree::Octree<i32, level_map::TileData>;
 
@@ -57,7 +61,7 @@ impl Document {
 
                     godot_print!("inserting map chunk");
 
-                    map.insert_mapchunk_with_octree(octree.clone(), world, true);
+                    map.insert_mapchunk_with_octree(octree, world, true);
                 }
 
             },

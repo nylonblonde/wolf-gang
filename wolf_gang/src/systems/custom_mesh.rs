@@ -1,15 +1,10 @@
 
 use std::collections::HashMap;
-use gdnative::{
+use gdnative::prelude::*;
+use gdnative::api::{
     GeometryInstance,
-    godot_print, 
-    GodotString, 
     ImmediateGeometry,
-    Int32Array, 
     Mesh,
-    ResourceLoader, 
-    Vector2Array, 
-    Vector3Array
 };
 
 use crate::node;
@@ -64,9 +59,9 @@ pub fn create_tag_system() -> Box<dyn Schedulable> {
         .build(move |commands, world, _, query|{
             for (entity, _) in query.iter_entities(&mut *world) {
                 commands.exec_mut(move |world: &mut World| {
-                    let mut immediate_geometry = ImmediateGeometry::new();
+                    let immediate_geometry = ImmediateGeometry::new();
 
-                    let node_name = unsafe { node::add_node(&mut immediate_geometry) }.unwrap();
+                    let node_name = unsafe { node::add_node(immediate_geometry.upcast()) }.unwrap();
                     match world.add_tag(entity, node_name){
                         Ok(_) => {},
                         Err(_) => godot_print!("Couldn't add tag!")
@@ -84,7 +79,7 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
         )
         .build_thread_local(move |_, world, _, query|{
 
-            let mut entities: HashMap<Entity, ImmediateGeometry> = HashMap::new();
+            let mut entities: HashMap<Entity, &ImmediateGeometry> = HashMap::new();
 
             for (entity, (mesh_data, mesh_name)) in query.iter_entities(&mut *world) {
 
@@ -94,10 +89,10 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
                 let normals = &mesh_data.normals;
                 let indices = &mesh_data.indices;
                 
-                let immediate_geometry: Option<ImmediateGeometry> = unsafe { 
-                    match node::get_node(crate::OWNER_NODE.as_ref().unwrap(), mesh_name.0.clone()) {
+                let immediate_geometry: Option<Ref<ImmediateGeometry>> = unsafe { 
+                    match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), mesh_name.0.clone()) {
                         Some(r) => {
-                            Some(r.cast().unwrap())
+                            Some(r.assume_safe().cast::<ImmediateGeometry>().unwrap().assume_shared())
                         },
                         None => {
                             godot_print!("Couldn't find mesh instance");
@@ -111,13 +106,14 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
                     continue;
                 }
 
-                let mut immediate_geometry = immediate_geometry.unwrap();
-        
-                entities.insert(entity, immediate_geometry);
-
                 unsafe {
+
+                    let immediate_geometry = immediate_geometry.unwrap().assume_safe();
+            
+                    entities.insert(entity, immediate_geometry.as_ref());
+
                     immediate_geometry.clear();
-                    immediate_geometry.begin(Mesh::PRIMITIVE_TRIANGLES, None);
+                    immediate_geometry.begin(Mesh::PRIMITIVE_TRIANGLES, Null::null());
                     
                     let uv2s_len = uv2s.len();
 
@@ -141,25 +137,23 @@ pub fn create_draw_system_local() -> Box<dyn Runnable> {
             for (entity, immediate_geometry) in entities {
                 match world.get_component::<Material>(entity) {
                     Some(r) => {
-                        unsafe {
-                            let resource = ResourceLoader::godot_singleton().load(GodotString::from_str(match r.name {
+                        let resource = ResourceLoader::godot_singleton().load(GodotString::from_str(match r.name {
+                            Some(r) => r,
+                            None => { 
+                                //TODO: make it so it grabs a default material if no name value is set.
+                                panic!("Material name returned None");
+                            }
+                        }), GodotString::from_str("Material"), false);
+            
+                        immediate_geometry.upcast::<GeometryInstance>().set_material_override(match resource {
                                 Some(r) => r,
-                                None => { 
-                                    //TODO: make it so it grabs a default material if no name value is set.
-                                    panic!("Material name returned None");
+                                None => {
+                                    //TODO: Same thing, gotta get a default material if none is found
+                                    panic!("Resource {:?} does not exist", r.name);
                                 }
-                            }), GodotString::from_str("Material"), false);
-                
-                            immediate_geometry.cast::<GeometryInstance>().unwrap().set_material_override(Some(match resource {
-                                    Some(r) => r,
-                                    None => {
-                                        //TODO: Same thing, gotta get a default material if none is found
-                                        panic!("Resource {:?} does not exist", r.name);
-                                    }
-                                }
-                                .cast::<gdnative::Material>().unwrap())
-                            );
-                        }
+                            }
+                            .cast::<gdnative::api::Material>().unwrap()
+                        );
                     }, 
                     None => {
                         godot_print!("No material found");

@@ -1,4 +1,7 @@
-use gdnative::{godot_print, Vector3, Spatial};
+use gdnative::prelude::*;
+use gdnative::api::{
+    Spatial,
+};
 
 use legion::prelude::*;
 
@@ -26,11 +29,11 @@ pub fn create_system_local() -> Box<dyn Runnable> {
         for (position, node_name) in query.iter(&mut *world) {
             // godot_print!("Move {:?}", node_name.name);
 
-            let spatial_node : Option<Spatial> = {
+            let spatial_node : Option<Ref<Spatial>> = {
                     unsafe {
-                        match node::get_node(crate::OWNER_NODE.as_ref().unwrap(), node_name.0.clone()) {
+                        match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0.clone()) {
                             Some(r) => {
-                                r.cast()
+                                Some(r.assume_safe().cast::<Spatial>().unwrap().as_ref().assume_shared())
                             },
                             None => {
                                 godot_print!("Can't find {:?}", node_name.0);                            
@@ -44,7 +47,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
 
             match spatial_node {
                 Some(mut r) => { 
-                    unsafe { r.set_translation(position.value); } }
+                    unsafe { r.assume_safe().set_translation(position.value); } }
                 None => {}
             }
         

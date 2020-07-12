@@ -4,7 +4,6 @@ pub mod document;
 
 // use gdnative::godot_print;
 use std::collections::HashSet;
-use std::marker::PhantomData;
 use std::collections::HashMap;
 use legion::prelude::*;
 use serde::{Serialize, Deserialize};
@@ -26,10 +25,12 @@ type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
 
 
+///ChangeType stores the range of the changes so that we can determine whether or not adjacent MapChunks actually need to change, and for Indirect changes,
+/// the range of the original change for making comparisons
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ChangeType {
-    Direct,
-    Indirect
+    Direct(AABB),
+    Indirect(AABB)
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -147,7 +148,7 @@ impl Map {
 
             if map_data.octree.query_range(aabb).into_iter().collect::<HashSet<TileData>>().symmetric_difference(&original.octree.query_range(aabb).into_iter().collect::<HashSet<TileData>>()).count() > 0 {
                 world.add_component(*entity, map_data.clone()).unwrap();
-                world.add_tag(*entity, ManuallyChange(ChangeType::Direct)).unwrap();
+                world.add_tag(*entity, ManuallyChange(ChangeType::Direct(aabb))).unwrap();
 
                 historically_significant.insert(*entity, map_data);
             }
@@ -204,7 +205,7 @@ impl Map {
                 println!("Creating a new map chunk at {:?}", pt);
 
                 let (entity, map_data) = self.insert_mapchunk_with_octree(
-                    Octree::new(AABB::new(
+                    &Octree::new(AABB::new(
                         Point::new(
                             pt.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
                             pt.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
@@ -261,9 +262,9 @@ impl Map {
 
             if map_data.octree.query_range(aabb).into_iter().collect::<HashSet<TileData>>().symmetric_difference(&original.octree.query_range(aabb).into_iter().collect::<HashSet<TileData>>()).count() > 0 {
                 let map_data = map_data.clone();
-
+                
                 world.add_component(*entity, map_data.clone()).unwrap();
-                world.add_tag(*entity, ManuallyChange(ChangeType::Direct)).unwrap();
+                world.add_tag(*entity, ManuallyChange(ChangeType::Direct(aabb))).unwrap();
 
                 historically_significant.insert(*entity, map_data);
             }
@@ -275,9 +276,9 @@ impl Map {
     }
 
     /// Inserts a new mapchunk with the octree data into world
-    pub fn insert_mapchunk_with_octree(self, octree: Octree<i32, TileData>, world: &mut World, changed: bool) -> (Entity, MapChunkData) {
+    pub fn insert_mapchunk_with_octree(self, octree: &Octree<i32, TileData>, world: &mut World, changed: bool) -> (Entity, MapChunkData) {
         let map_data = MapChunkData{
-            octree,
+            octree: octree.clone(),
         };
 
         let chunk_pt = map_data.get_chunk_point();
@@ -292,7 +293,7 @@ impl Map {
         ])[0], map_data);
 
         if changed {
-            world.add_tag(entity, ManuallyChange(ChangeType::Direct)).unwrap();
+            world.add_tag(entity, ManuallyChange(ChangeType::Direct(octree.get_aabb()))).unwrap();
         }
 
         (entity, map_data)

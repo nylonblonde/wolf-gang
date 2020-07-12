@@ -1,12 +1,5 @@
-use gdnative::{
-    godot_print,
-    ImmediateGeometry, 
-    Int32Array, 
-    Vector2, 
-    Vector2Array, 
-    Vector3, 
-    Vector3Array
-};
+use gdnative::prelude::*;
+use gdnative::api::ImmediateGeometry;
 use legion::prelude::*;
 use nalgebra::Rotation3;
 use num::Float;
@@ -69,10 +62,10 @@ pub struct RelativeCamera(pub String);
 
 pub fn initialize_selection_box(world: &mut World, camera_name: String) {
 
-    let mut mesh: ImmediateGeometry = ImmediateGeometry::new();
+    let mut mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
 
     let node_name = unsafe { 
-        node::add_node(&mut mesh)
+        node::add_node(mesh.upcast())
     }.unwrap();
 
     world.insert((node_name.clone(),), 
@@ -545,8 +538,8 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                             for (pt, u) in pts.iter().zip(uv.iter()) {
 
-                                uvs.push(&Vector2::new(u.x, u.y));
-                                verts.push(&Vector3::new(pt.x, pt.y, pt.z));
+                                uvs.push(Vector2::new(u.x, u.y));
+                                verts.push(Vector3::new(pt.x, pt.y, pt.z));
                             }
 
                             let pts_len = pts.len();
@@ -561,12 +554,12 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 pts.push(rotated_pt);
                                 uv.push(u);
 
-                                uvs.push(&Vector2::new(u.x, u.y));
-                                verts.push(&Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
+                                uvs.push(Vector2::new(u.x, u.y));
+                                verts.push(Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
                             }
 
                             for _ in 0..pts.len() {
-                                normals.push(&Vector3::new(0.0, 1.0, 0.0));
+                                normals.push(Vector3::new(0.0, 1.0, 0.0));
                             }
 
                             for (pt, u) in pts.iter().zip(uv.iter()) {
@@ -575,9 +568,9 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 let rot = Rotation3::new(Vector3D::x() * std::f32::consts::PI);
                                 let rotated_pt = rot.transform_vector(&new_pt) + true_center;
 
-                                uvs.push(&Vector2::new(u.x, u.y));
-                                verts.push(&Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
-                                normals.push(&Vector3::new(0.0,-1.0,0.0));
+                                uvs.push(Vector2::new(u.x, u.y));
+                                verts.push(Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
+                                normals.push(Vector3::new(0.0,-1.0,0.0));
                             }
 
                         },
@@ -623,8 +616,8 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                             for (pt, u) in pts.iter().zip(uv.iter()) {
 
-                                uvs.push(&Vector2::new(u.x, u.y));
-                                verts.push(&Vector3::new(pt.x, pt.y, pt.z));
+                                uvs.push(Vector2::new(u.x, u.y));
+                                verts.push(Vector3::new(pt.x, pt.y, pt.z));
                             }
 
                             let pts_len = pts.len();
@@ -639,12 +632,12 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 pts.push(rotated_pt);
                                 uv.push(u);
 
-                                uvs.push(&Vector2::new(u.x, u.y));
-                                verts.push(&Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
+                                uvs.push(Vector2::new(u.x, u.y));
+                                verts.push(Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
                             }
 
                             for _ in 0..pts.len() {
-                                normals.push(&Vector3::new(1.0, 0.0, 0.0));
+                                normals.push(Vector3::new(1.0, 0.0, 0.0));
                             }
 
                             for (pt, u) in pts.iter().zip(uv.iter()) {
@@ -653,9 +646,9 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 let rot = Rotation3::new(Vector3D::y() * std::f32::consts::PI);
                                 let rotated_pt = rot.transform_vector(&new_pt) + true_center;
 
-                                uvs.push(&Vector2::new(u.x, u.y));
-                                verts.push(&Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
-                                normals.push(&Vector3::new(-1.0,0.0,0.0));
+                                uvs.push(Vector2::new(u.x, u.y));
+                                verts.push(Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
+                                normals.push(Vector3::new(-1.0,0.0,0.0));
                             }
 
                         }
@@ -700,8 +693,8 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                             for (pt, u) in pts.iter().zip(uv.iter()) {
 
-                                uvs.push(&Vector2::new(u.x, u.y));
-                                verts.push(&Vector3::new(pt.x, pt.y, pt.z));
+                                uvs.push(Vector2::new(u.x, u.y));
+                                verts.push(Vector3::new(pt.x, pt.y, pt.z));
                             }
 
                             let pts_len = pts.len();
@@ -716,12 +709,12 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 pts.push(rotated_pt);
                                 uv.push(u);
 
-                                uvs.push(&Vector2::new(u.x, u.y));
-                                verts.push(&Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
+                                uvs.push(Vector2::new(u.x, u.y));
+                                verts.push(Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
                             }
 
                             for _ in 0..pts.len() {
-                                normals.push(&Vector3::new(0.0, 0.0, 1.0));
+                                normals.push(Vector3::new(0.0, 0.0, 1.0));
                             }
 
                             for (pt, u) in pts.iter().zip(uv.iter()) {
@@ -730,9 +723,9 @@ pub fn create_system() -> Box<dyn Schedulable> {
                                 let rot = Rotation3::new(Vector3D::y() * std::f32::consts::PI);
                                 let rotated_pt = rot.transform_vector(&new_pt) + true_center;
 
-                                uvs.push(&Vector2::new(u.x, u.y));
-                                verts.push(&Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
-                                normals.push(&Vector3::new(0.0,0.0,-1.0));
+                                uvs.push(Vector2::new(u.x, u.y));
+                                verts.push(Vector3::new(rotated_pt.x, rotated_pt.y, rotated_pt.z));
+                                normals.push(Vector3::new(0.0,0.0,-1.0));
                             }
                         },
                         _ => {}
@@ -756,10 +749,10 @@ pub fn create_system() -> Box<dyn Schedulable> {
 
                     }
 
-                    mesh_data.verts.push_array(&verts);
-                    mesh_data.normals.push_array(&normals);
-                    mesh_data.uvs.push_array(&uvs);
-                    mesh_data.indices.push_array(&indices);
+                    mesh_data.verts.append(&verts);
+                    mesh_data.normals.append(&normals);
+                    mesh_data.uvs.append(&uvs);
+                    mesh_data.indices.append(&indices);
 
                     //increase the offset for the next loop by the number of verts in the face
                     offset += verts.len() as i32;

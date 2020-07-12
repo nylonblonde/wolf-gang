@@ -1,4 +1,8 @@
-use gdnative::*;
+use gdnative::prelude::*;
+use gdnative::api::{
+    MenuButton,
+    PopupMenu,
+};
 
 use legion::prelude::*;
 
@@ -15,7 +19,7 @@ use crate::{
 #[inherit(MenuButton)]
 #[user_data(user_data::LocalCellData<EditMenu>)]
 pub struct EditMenu {
-    popup_menu: PopupMenu
+    popup_menu: Ref<PopupMenu>
 }
 
 // __One__ `impl` block can have the `#[methods]` attribute, which will generate
@@ -24,7 +28,7 @@ pub struct EditMenu {
 impl EditMenu {
     
     /// The "constructor" of the class.
-    fn _init(menu_button: MenuButton) -> Self {
+    fn new(menu_button: &MenuButton) -> Self {
 
         let popup_menu = utils::get_popup_menu(menu_button);
 
@@ -34,11 +38,11 @@ impl EditMenu {
     }
     
     #[export]
-    fn _pressed(&mut self, _: MenuButton) {
+    fn _pressed(&mut self, _: &MenuButton) {
 
         unsafe {
-            self.popup_menu.set_item_disabled(0, true);
-            self.popup_menu.set_item_disabled(1, true);
+            self.popup_menu.assume_safe().set_item_disabled(0, true);
+            self.popup_menu.assume_safe().set_item_disabled(1, true);
         }
         
         let mut game = GAME_UNIVERSE.lock().unwrap();
@@ -58,7 +62,7 @@ impl EditMenu {
         //if the current step is greater than zero, we can undo
         if current_step.0 > 1 {
             unsafe {
-                self.popup_menu.set_item_disabled(0, false);
+                self.popup_menu.assume_safe().set_item_disabled(0, false);
             }
         }
 
@@ -69,7 +73,7 @@ impl EditMenu {
 
                 if change.step_changed_at.0 >= current_step.0 {
                     unsafe {
-                        self.popup_menu.set_item_disabled(1, false);
+                        self.popup_menu.assume_safe().set_item_disabled(1, false);
                     }
                     break;
                 }
@@ -78,7 +82,7 @@ impl EditMenu {
     }
 
     #[export]
-    fn item_handler(&mut self, _: MenuButton, id: i64) {
+    fn item_handler(&mut self, _: &MenuButton, id: i64) {
 
         let mut game = GAME_UNIVERSE.lock().unwrap();
         let game = &mut *game;

@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use gdnative::*;
+use gdnative::prelude::*;
 
 #[macro_use]
 extern crate lazy_static;
@@ -28,7 +28,7 @@ mod nodes;
 #[cfg(test)]
 mod tests;
 
-static mut OWNER_NODE: Option<Node> = None;
+static mut OWNER_NODE: Option<Ref<Node>> = None;
 
 lazy_static! {
     static ref GAME_UNIVERSE: Mutex<GameUniverse> = Mutex::new( 
@@ -80,9 +80,9 @@ pub struct WolfGang {
 impl WolfGang {
     
     /// The "constructor" of the class.
-    fn _init(owner: Node) -> Self {
+    fn new(owner: &Node) -> Self {
 
-        unsafe { OWNER_NODE = Some(owner); }
+        unsafe { OWNER_NODE = Some(owner.assume_shared()); }
 
         WolfGang{}
     }
@@ -92,7 +92,7 @@ impl WolfGang {
     // Instead they are"attached" to the parent object, called the "owner".
     // The owner is passed to every single exposed method.
     #[export]
-    fn _ready(&mut self, _owner: Node) {
+    fn _ready(&mut self, _owner: &Node) {
 
         godot_print!("hello, world.");
         
@@ -147,7 +147,7 @@ impl WolfGang {
     }
 
     #[export]
-    fn _process(&mut self, _owner: Node, delta: f64) {
+    fn _process(&mut self, _owner: &Node, delta: f64) {
 
         let mut game = GAME_UNIVERSE.lock().unwrap();
 
@@ -175,7 +175,7 @@ impl WolfGang {
 }
 
 // Function that registers all exposed classes to Godot
-fn init(handle: gdnative::init::InitHandle) {
+fn init(handle: InitHandle) {
     handle.add_class::<WolfGang>();
     handle.add_class::<nodes::edit_menu::EditMenu>();
     handle.add_class::<nodes::file_menu::FileMenu>();
@@ -183,7 +183,9 @@ fn init(handle: gdnative::init::InitHandle) {
     handle.add_class::<nodes::file_confirmation::FileConfirmation>();
 }
 
-// macros that create the entry-points of the dynamic library.
-godot_gdnative_init!();
-godot_nativescript_init!(init);
-godot_gdnative_terminate!();
+godot_init!(init);
+
+// // macros that create the entry-points of the dynamic library.
+// godot_gdnative_init!();
+// godot_nativescript_init!(init);
+// godot_gdnative_terminate!();
