@@ -154,7 +154,7 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
 
     let next_step = current_step.0 as i32 + amount - 1;
 
-    if next_step < -1 {
+    if next_step < 0 {
         return
     }
 
@@ -162,7 +162,7 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
 
     let map_query = <(Write<MapChunkData>, Read<MapChunkHistory>)>::query();
 
-    let mut entities: HashMap<Entity, MapChunkChange> = HashMap::new();
+    let mut entities: HashMap<Entity, (MapChunkChange, AABB)> = HashMap::new();
 
     for (entity, (mut map_chunk, map_history)) in map_query.iter_entities_mut(world) {
 
@@ -172,11 +172,20 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
 
         for i in 0..len {
 
-            let change = &map_history.clone().steps[i];
+            let steps = &map_history.clone().steps;
+
+            let change = &steps[i];
+
+            let aabb = if amount < 0 {
+                steps[(i as i32 - amount) as usize].aabb
+            } else {
+                change.aabb
+            };
 
             if change.step_changed_at == target_step {
                 *map_chunk = change.map_chunk_data.clone();
-                entities.insert(entity, change.clone());
+                
+                entities.insert(entity, (change.clone(), aabb));
                 break;
 
             } else if change.step_changed_at.0 > target_step.0 { //if the next change is past the target step, move to the previous in the list
@@ -185,7 +194,7 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
                 
                 if previous_chunk != *map_chunk {
                     *map_chunk = previous_chunk;
-                    entities.insert(entity, change.clone());
+                    entities.insert(entity, (change.clone(), aabb));
                 }
                 break;
             }
@@ -193,7 +202,7 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
     }
 
     if let Some((mut selection_box, mut coord_pos)) = <(Write<selection_box::SelectionBox>, Write<super::CoordPos>)>::query().iter_mut(world).next() {
-        if let Some((_, change)) = entities.clone().into_iter().next() {
+        if let Some((_, (change, _))) = entities.clone().into_iter().next() {
             selection_box.aabb = change.aabb;
             *coord_pos = change.coord_pos;
         }
@@ -203,8 +212,8 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
         *current_step = history::CurrentHistoricalStep(target_step.0 as u32 + 1);
     }
 
-    for (entity, change) in entities {
-        world.add_tag(entity, super::ManuallyChange(super::ChangeType::Direct(change.aabb))).unwrap();
+    for (entity, (_, aabb)) in entities {
+        world.add_tag(entity, super::ManuallyChange(super::ChangeType::Direct(aabb))).unwrap();
     }
 
 }
