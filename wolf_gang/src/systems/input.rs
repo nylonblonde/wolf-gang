@@ -580,8 +580,10 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                     // if action == &Action("move_forward".to_string()) {
                     //     godot_print!("{}", action.0);
                     // }
+                    godot_print!("{}", action.0);
+
                     insert_data.insert(action.clone(), InputActionComponent{ 
-                        strength: inputs.get_action_strength(GodotString::from(action.0.clone())), 
+                        strength: inputs.get_action_strength(&action.0), 
                         repeater: 0. 
                     });
                 }

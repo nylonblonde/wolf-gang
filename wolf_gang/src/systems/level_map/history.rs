@@ -203,7 +203,7 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
 
     if let Some((mut selection_box, mut coord_pos)) = <(Write<selection_box::SelectionBox>, Write<super::CoordPos>)>::query().iter_mut(world).next() {
         if let Some((_, (change, _))) = entities.clone().into_iter().next() {
-            selection_box.aabb = change.aabb;
+            selection_box.aabb.dimensions = change.aabb.dimensions;
             *coord_pos = change.coord_pos;
         }
     }
