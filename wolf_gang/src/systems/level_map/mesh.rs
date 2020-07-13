@@ -155,7 +155,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             let mut true_top: Option<Vector3D> = None;
 
                             let mut draw_top: bool = true;
-                            let top_piece = false;
 
                             let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
 
@@ -185,7 +184,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                             let tt = super::map_coords_to_world(get_true_top(point, world, &map_data, &checked));
                                             true_top = Some(tt);
 
-                                            //FIXME: This is clearly not working how we want it to
                                             let diff = tt.y - 1. - map_coords_to_world(point_above).y;
 
                                             //if approx zero
@@ -235,8 +233,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                             if let None = true_top {
                                 true_top = Some(super::map_coords_to_world(get_true_top(point, world, &map_data, &checked)));
                             }
-
-                            godot_print!("Top is {:?}", point);
 
                             let mut bottom = point;                    
                             let mut draw_bottom: bool = true;
@@ -299,8 +295,6 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     None => break
                                 }
                             }
-
-                            godot_print!("Bottom is {:?}", bottom);
 
                             // draw_top = true;
 
@@ -913,8 +907,14 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         .filter(tag_value(&neighbor_chunk_pt));
 
                     for (entity, map_data) in neighbor_chunk_query.iter_entities(world) {
-                        let mut map_aabb = map_data.octree.get_aabb();
-                        map_aabb.dimensions += Point::new(2,2,2);
+                        let map_aabb = map_data.octree.get_aabb();
+
+                        let min = aabb.get_min();
+                        let max = aabb.get_max();
+
+                        let aabb = AABB::from_extents(Point::new(min.x-1, min.y-map_aabb.dimensions.y/2, min.z-1), Point::new(max.x+1, max.y, max.z+1));
+                        // grab a region below to ensure updates to lower adjacent chunks happen (for the edge lip texture, for instance)
+                        // grab adjacent horizontal spaces because we'd want to update edges that become connected or disconnected
 
                         //only update if it's adjacent to the changes
                         if map_aabb.intersects_bounds(aabb) {
