@@ -4,6 +4,8 @@ pub struct GameState {
     name: &'static str,
     pub schedule: Schedule,
     active: bool,
+    _init: Box<dyn FnMut(&mut World, &mut Resources)>,
+    _free: Box<dyn FnMut(&mut World, &mut Resources)>
 }
 
 impl GameState{
@@ -25,6 +27,15 @@ impl GameState{
     }
 }
 
+impl GameStateTraits for GameState {
+    fn initialize_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)> {
+        &mut self._init
+    }
+    fn free_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)> {
+        &mut self._free
+    }
+}
+
 pub trait GameStateTraits: NewState + AsMut<GameState> + AsRef<GameState> {
     fn initialize_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)>;
     fn free_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)>;
@@ -40,6 +51,8 @@ impl NewState for GameState {
             name,
             schedule,
             active,
+            _init: Box::new(|_,_|{}),
+            _free: Box::new(|_,_|{})
         }
     }
 }

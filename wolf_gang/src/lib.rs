@@ -20,6 +20,7 @@ mod node;
 mod history;
 mod editor;
 mod game_state;
+mod networking;
 
 use game_state::{GameState, NewState};
 
@@ -105,12 +106,19 @@ impl WolfGang {
         resources.insert(Time{
             delta: 0.
         });
-        resources.insert(systems::udp::ClientSocket::new("127.0.0.1:12345"));
-        resources.insert(systems::udp::ServerSocket::new("127.0.0.1:12346"));
+        
         systems::input::initialize_input_config(world, systems::input::CONFIG_PATH);
 
         STATE_MACHINE.with(|s| {
             let mut state_machine = s.borrow_mut();
+            state_machine.add_state(
+                networking::Networking::new("Networking", 
+                    Schedule::builder()
+                        .add_system(systems::udp::create_message_receiving_system())
+                        .build(),
+                    true),
+                world, resources
+            );
             state_machine.add_state(
                 editor::Editor::new("MapEditor", 
                     Schedule::builder()
