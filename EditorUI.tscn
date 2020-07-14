@@ -1,14 +1,18 @@
-[gd_scene load_steps=5 format=2]
+[gd_scene load_steps=6 format=2]
 
 [ext_resource path="res://EditMenu.gdns" type="Script" id=1]
 [ext_resource path="res://FileMenu.gdns" type="Script" id=2]
 [ext_resource path="res://SaveLoadDialog.gdns" type="Script" id=3]
 [ext_resource path="res://FileConfirmation.gdns" type="Script" id=4]
+[ext_resource path="res://ConnectMenu.gdns" type="Script" id=5]
 
 [node name="EditorUI" type="Control"]
 anchor_right = 1.0
 anchor_bottom = 1.0
-margin_bottom = 6.10352e-05
+margin_left = 4.0
+margin_top = -1.0
+margin_right = 4.0
+margin_bottom = -0.999939
 __meta__ = {
 "_edit_use_anchors_": false
 }
@@ -75,3 +79,51 @@ text = "Connect"
 flat = false
 items = [ "Join", null, 0, false, false, 0, 0, null, "", false, "Host", null, 0, false, false, 1, 0, null, "", false ]
 switch_on_hover = true
+script = ExtResource( 5 )
+
+[node name="ConfirmationDialog" type="ConfirmationDialog" parent="HBoxContainer/Connect"]
+visible = true
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+margin_left = -97.0
+margin_top = -16.0
+margin_right = 103.0
+margin_bottom = 79.0
+window_title = ""
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Control" type="Control" parent="HBoxContainer/Connect/ConfirmationDialog"]
+margin_left = 8.0
+margin_top = 8.0
+margin_right = 192.0
+margin_bottom = 59.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer/Connect/ConfirmationDialog/Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+size_flags_horizontal = 0
+size_flags_vertical = 0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Label" type="Label" parent="HBoxContainer/Connect/ConfirmationDialog/Control/VBoxContainer"]
+margin_right = 184.0
+margin_bottom = 14.0
+size_flags_vertical = 0
+text = "Ip Address:"
+
+[node name="LineEdit" type="LineEdit" parent="HBoxContainer/Connect/ConfirmationDialog/Control/VBoxContainer"]
+margin_top = 18.0
+margin_right = 184.0
+margin_bottom = 42.0
+text = "255.255.255.255:5432"
+__meta__ = {
+"_edit_use_anchors_": false
+}
