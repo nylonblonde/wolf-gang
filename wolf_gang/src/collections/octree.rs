@@ -276,6 +276,39 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
         }
     }
 
+    /// Removes the element which matches item exactly
+    pub fn remove_item(&mut self, item: &T) {
+        if let Paternity::ChildFree = self.paternity {
+            if self.elements.len() == 0 {
+                return;
+            }
+        }
+
+        let (tx, rx) = mpsc::channel::<T>();
+
+        self.elements.par_iter().for_each_with(tx, |tx, element| {
+
+            if element == item {
+                tx.send(*element).unwrap();
+            }
+            
+        });
+
+        let to_remove: Vec<T> = rx.into_iter().collect();
+        self.elements = self.elements.clone().into_iter()
+            .filter(|element| !to_remove.contains(element))
+            .collect();
+
+        if let Paternity::ProudParent = self.paternity {
+
+            self.children.par_iter_mut().for_each(|child|{
+                child.remove_item(item);
+            });
+
+        }
+
+    }
+
     /// Removes all elements which fit inside range, silently avoiding positions that do not fit inside the octree
     pub fn remove_range(&mut self, range: AABB<N>) {
 

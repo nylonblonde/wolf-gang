@@ -1,5 +1,6 @@
 #![feature(cmp_min_max_by)]
 #![feature(inner_deref)]
+#![feature(ip)]
 
 #![allow(dead_code)]
 
@@ -106,7 +107,7 @@ impl WolfGang {
         resources.insert(Time{
             delta: 0.
         });
-        
+
         systems::input::initialize_input_config(world, systems::input::CONFIG_PATH);
 
         STATE_MACHINE.with(|s| {
@@ -114,7 +115,7 @@ impl WolfGang {
             state_machine.add_state(
                 networking::Networking::new("Networking", 
                     Schedule::builder()
-                        .add_system(systems::udp::create_message_receiving_system())
+                        .add_system(systems::networking::create_message_pooling_system())
                         .build(),
                     true),
                 world, resources
@@ -157,9 +158,9 @@ impl WolfGang {
     #[export]
     fn _process(&mut self, _owner: &Node, delta: f64) {
 
-        let mut game = GAME_UNIVERSE.lock().unwrap();
+        let mut game_lock = GAME_UNIVERSE.lock().unwrap();
 
-        let game = &mut *game;
+        let game = &mut *game_lock;
 
         let mut resources = &mut game.resources;
 

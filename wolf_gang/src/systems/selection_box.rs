@@ -282,12 +282,8 @@ pub fn create_tile_tool_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
 
     Box::new(move |world: &mut World, resources: &mut Resources|{
 
-        let map = resources.get_mut::<level_map::Map>();
-        let mut current_step = resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
-
-        if map.is_none() { godot_print!("Couldn't get map resource!"); return }
-
-        let map = map.unwrap();
+        let map = resources.get_mut::<level_map::Map>().expect("Couldn't get map resource!");
+        // let mut current_step = resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
 
         let selection_box_query = <(Read<SelectionBox>, Read<level_map::CoordPos>)>::query();
 
@@ -320,11 +316,11 @@ pub fn create_tile_tool_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
         }
 
         if let Some(r) = to_insert {
-            map.insert(world, &mut *current_step, level_map::TileData::new(Point::zeros()), r);
+            map.insert(world, level_map::TileData::new(Point::zeros()), r);
         }
 
         if let Some(r) = to_remove {
-            map.remove(world, &mut *current_step, r);
+            // map.remove(world, resources, r);
         }
 
     })
