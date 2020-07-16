@@ -1,3 +1,5 @@
+//TODO: redo history based off of messages? That way you could undo/redo changes to the size of the selection_box. This current incarnation feels very janky and keeps being prone to weird edge cases
+
 use std::collections::HashMap;
 use legion::prelude::*;
 use crate::{
@@ -176,8 +178,9 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
 
             let change = &steps[i];
 
-            let aabb = if amount < 0 {
-                steps[(i as i32 - amount) as usize].aabb
+            //this can only get the most recent aabb of the current chunk if the chunk if at the beginning of its history.
+            let aabb = if amount < 0 && i + 1 < len {
+                steps[(i as i32 + 1) as usize].aabb
             } else {
                 change.aabb
             };

@@ -39,7 +39,8 @@ type Point = nalgebra::Vector3<i32>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum  DataType {
-    MapInput(crate::systems::level_map::MapInput)
+    MapInsert(crate::systems::level_map::MapInsert),
+    MapRemove(crate::systems::level_map::MapRemove)
 }
 
 #[derive(Debug, Clone)]
@@ -157,7 +158,7 @@ impl NewState for Networking {
 
                 let server_addr = resources.get_mut_or_default::<ServerAddr>().unwrap().0;
 
-                let config = Config{
+                let mut config = Config{
                     connection_init_threshold: std::time::Duration::from_millis(1000),
                     ..Default::default()
                 };
@@ -215,22 +216,25 @@ impl NewState for Networking {
                                     break 'server;
                                 },
                                 _ => {
-                                    println!("Not getting any messages");
                                 }
                             }
                         }
 
-                        for data in data_vec {
-                            match data {
-                                DataType::MapInput(r) => {
-                                    println!("Got the map input");
-                                    let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-                                    let game = &mut *game_lock;
+                        if data_vec.len() > 0 {
+                            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
+                            let game = &mut *game_lock;
 
-                                    let resources = &mut game.resources;
-                                    let world = &mut game.world;
+                            let resources = &mut game.resources;
+                            let world = &mut game.world;
 
-                                    r.execute(world, resources);
+                            for data in data_vec {
+                                match data {
+                                    DataType::MapInsert(r) => {
+                                        r.execute(world, resources);
+                                    },
+                                    DataType::MapRemove(r) => {
+                                        r.execute(world, resources);
+                                    }
                                 }
                             }
                         }
@@ -246,14 +250,15 @@ impl NewState for Networking {
                 let addr = client_addr.0;
                 let ip = addr.ip();
 
-                let mut client = Client::new(config);
-
                 if !ip.is_global() {
+
+                    config.send_rate = 1000;
+                    let mut client = Client::new(config);
 
                     std::thread::spawn(move || {
                         client.connect(addr).expect("Couldn't connect to local address!");
                         'client: loop {
-                            if !client_process(&mut client, false) {
+                            if !client_process(&mut client, true) {
                                 break 'client;
                             }
                         }
@@ -261,6 +266,8 @@ impl NewState for Networking {
                     });
 
                 } else {
+
+                    let mut client = Client::new(config);
 
                     std::thread::spawn(move ||{
 

@@ -15,8 +15,6 @@ pub fn create_message_pooling_system() -> Box<dyn Schedulable> {
 
             for (entity, message_sender) in query.iter_entities(world) {
                 
-                println!("Sending message to pool");
-
                 message_pool.messages.push((*message_sender).clone());
                 commands.delete(entity);
             }

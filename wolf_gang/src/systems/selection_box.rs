@@ -320,7 +320,7 @@ pub fn create_tile_tool_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
         }
 
         if let Some(r) = to_remove {
-            // map.remove(world, resources, r);
+            map.remove(world, r);
         }
 
     })
