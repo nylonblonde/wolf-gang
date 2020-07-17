@@ -15,7 +15,11 @@ use crate::{
             PointData
         }
     },
-    networking::{MessageSender, DataType}
+    networking::{
+        MessageSender, 
+        MessageType, 
+        DataType
+    }
 };
 
 #[cfg(not(test))]
@@ -68,50 +72,13 @@ pub fn map_coords_to_world(map_coord: Point) -> nalgebra::Vector3<f32> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// Message Type for sending and receiving changes to the map from the client. Changes are stored in an Octree, and mapchunks are updated accordingly.
-pub struct MapInsert {
-    aabb: AABB,
-    tile_data: TileData
+pub struct MapInput {
+    octree: Octree<i32, TileData>
 }
 
-impl MapInsert {
-    pub fn execute(&self, world: &mut legion::world::World, resources: &mut Resources) {
-
-        let aabb = self.aabb;
-        let tile_data = self.tile_data;
-        
-        //Creare an octree from aabb with data from TileData
-        let mut octree: Octree<i32, TileData> = Octree::new(aabb, octree::DEFAULT_MAX);
-
-        let min = aabb.get_min();
-
-        let dimensions = aabb.dimensions.abs();
-
-        let volume = dimensions.x * dimensions.y * dimensions.z;
-
-        for i in 0..volume {
-            let x = min.x + i % dimensions.x;
-            let y = min.y + (i / dimensions.x) % dimensions.y;
-            let z = min.z + i / (dimensions.x * dimensions.y);
-
-            octree.insert(TileData{
-                point: Point::new(x,y,z),
-                ..tile_data
-            }).unwrap();
-        }
-
-        change_map(world, resources, octree);
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MapRemove {
-    aabb: AABB,
-}
-
-impl MapRemove {
-    pub fn execute(&self, world: &mut legion::world::World, resources: &mut Resources) {
-        change_map(world, resources, Octree::new(self.aabb, octree::DEFAULT_MAX));
+impl MapInput {
+    pub fn execute(self, world: &mut legion::world::World, resources: &mut Resources) {
+        change_map(world, resources, self.octree);
     }
 }
 
@@ -255,13 +222,14 @@ impl Map {
     }
 
     pub fn remove(&self, world: &mut legion::world::World, aabb: AABB) {
+
         world.insert((), vec![
             (
-                MessageSender{
-                    data_type: DataType::MapRemove(MapRemove{
-                        aabb,
+                MessageSender {
+                    data_type: DataType::MapInput(MapInput {
+                        octree: Octree::new(aabb, octree::DEFAULT_MAX)
                     }),
-                    message_kind: cobalt::MessageKind::Ordered
+                    message_type: MessageType::Ordered
                 },
             )
         ]);
@@ -269,14 +237,32 @@ impl Map {
 
     pub fn insert(&self, world: &mut legion::world::World, tile_data: TileData, aabb: AABB) {
 
+        let mut octree = Octree::new(aabb, octree::DEFAULT_MAX);
+
+        let min = aabb.get_min();
+
+        let dimensions = aabb.dimensions.abs();
+
+        let volume = dimensions.x * dimensions.y * dimensions.z;
+
+        for i in 0..volume {
+            let x = min.x + i % dimensions.x;
+            let y = min.y + (i / dimensions.x) % dimensions.y;
+            let z = min.z + i / (dimensions.x * dimensions.y);
+
+            octree.insert(TileData{
+                point: Point::new(x,y,z),
+                ..tile_data
+            }).unwrap();
+        }
+
         world.insert((), vec![
             (
-                MessageSender{
-                    data_type: DataType::MapInsert(MapInsert{
-                        aabb,
-                        tile_data
+                MessageSender {
+                    data_type: DataType::MapInput(MapInput {
+                        octree
                     }),
-                    message_kind: cobalt::MessageKind::Ordered
+                    message_type: MessageType::Ordered
                 },
             )
         ]);

@@ -77,7 +77,7 @@ margin_right = 143.0
 margin_bottom = 20.0
 text = "Connect"
 flat = false
-items = [ "Join", null, 0, false, false, 0, 0, null, "", false, "Host", null, 0, false, false, 1, 0, null, "", false ]
+items = [ "Join", null, 0, false, false, 0, 0, null, "", false, "Host", null, 0, false, false, 1, 0, null, "", false, "Disconnect", null, 0, false, false, 2, 0, null, "", false ]
 switch_on_hover = true
 script = ExtResource( 5 )
 

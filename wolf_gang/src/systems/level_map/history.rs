@@ -1,4 +1,5 @@
 //TODO: redo history based off of messages? That way you could undo/redo changes to the size of the selection_box. This current incarnation feels very janky and keeps being prone to weird edge cases
+// Messages received should check that they came from this client so that only YOUR undo/redo history is saved
 
 use std::collections::HashMap;
 use legion::prelude::*;
@@ -164,58 +165,93 @@ pub fn move_to_step(world: &mut World, current_step: &mut history::CurrentHistor
 
     let map_query = <(Write<MapChunkData>, Read<MapChunkHistory>)>::query();
 
-    let mut entities: HashMap<Entity, (MapChunkChange, AABB)> = HashMap::new();
+    //Stores the entity, the changes, and the aabb of the selection box when the change occurred
+    let mut accepted_changes: HashMap<Entity, (MapChunkChange, AABB)> = HashMap::new();
 
-    for (entity, (mut map_chunk, map_history)) in map_query.iter_entities_mut(world) {
+    //Clone away any values we don't need to be mutable so that we can recursively check against it in a safe way and to spare further queries
+    let mut map_histories: Vec<MapChunkHistory> = Vec::new();
+    let mut entities: Vec<Entity> = Vec::new();
+    let mut map_chunks = Vec::new();
+    for (entity, (map_chunk, map_history)) in map_query.iter_entities_mut(world) {
+        map_chunks.push(map_chunk);
+        entities.push(entity);
+        map_histories.push((*map_history).clone());
+    }
 
-        godot_print!("map_history_len = {}", map_history.steps.len());
+    for (entity, mut map_chunk) in entities.into_iter().zip(map_chunks) {
 
-        let len = map_history.steps.len();
+        // godot_print!("map_history_len = {}", map_history.steps.len());
 
-        for i in 0..len {
+        for map_history in &map_histories {
+            let selection_aabb: Option<AABB> = None;
+            
+            let steps = &map_history.steps;
+            let len = steps.len();
+            //go through and get the change at target_step
+            for i in 0..len {
+                if steps[i].step_changed_at == target_step {
 
-            let steps = &map_history.clone().steps;
-
-            let change = &steps[i];
-
-            //this can only get the most recent aabb of the current chunk if the chunk if at the beginning of its history.
-            let aabb = if amount < 0 && i + 1 < len {
-                steps[(i as i32 + 1) as usize].aabb
-            } else {
-                change.aabb
-            };
-
-            if change.step_changed_at == target_step {
-                *map_chunk = change.map_chunk_data.clone();
-                
-                entities.insert(entity, (change.clone(), aabb));
-                break;
-
-            } else if change.step_changed_at.0 > target_step.0 { //if the next change is past the target step, move to the previous in the list
-
-                let previous_chunk = map_history.steps[i-1].map_chunk_data.clone();
-                
-                if previous_chunk != *map_chunk {
-                    *map_chunk = previous_chunk;
-                    entities.insert(entity, (change.clone(), aabb));
                 }
-                break;
             }
         }
+
+        // let len = map_history.steps.len();
+
+        // for i in 0..len {
+
+        //     let steps = &map_history.clone().steps;
+
+        //     let change = &steps[i];
+
+        //     //this can only get the most recent aabb of the current chunk if the chunk if at the beginning of its history.
+        //     let aabb = if amount < 0 {
+        //         if i + 1 < len { 
+        //             steps[(i as i32 + 1) as usize].aabb
+        //         } else {
+        //             //get the step at i+1 in whichever history holds it
+        //             let aabb = change.aabb;
+        //             for (_, map_history) in map_histories {
+        //                 if map_history.steps.len() < i + 1 {
+
+        //                 }
+        //             }
+        //             todo!("This needs to check for the appropriate step in all chunks")
+        //         }
+        //     } else {
+        //         change.aabb
+        //     };
+
+        //     if change.step_changed_at == target_step {
+        //         *map_chunk = change.map_chunk_data.clone();
+                
+        //         entities.insert(entity, (change.clone(), aabb));
+        //         break;
+
+        //     } else if change.step_changed_at.0 > target_step.0 { //if the next change is past the target step, move to the previous in the list
+
+        //         let previous_chunk = map_history.steps[i-1].map_chunk_data.clone();
+                
+        //         if previous_chunk != *map_chunk {
+        //             *map_chunk = previous_chunk;
+        //             entities.insert(entity, (change.clone(), aabb));
+        //         }
+        //         break;
+        //     }
+        // }
     }
 
     if let Some((mut selection_box, mut coord_pos)) = <(Write<selection_box::SelectionBox>, Write<super::CoordPos>)>::query().iter_mut(world).next() {
-        if let Some((_, (change, _))) = entities.clone().into_iter().next() {
+        if let Some((_, (change, _))) = accepted_changes.clone().into_iter().next() {
             selection_box.aabb.dimensions = change.aabb.dimensions;
             *coord_pos = change.coord_pos;
         }
     }
 
-    if entities.len() > 0 {
+    if accepted_changes.len() > 0 {
         *current_step = history::CurrentHistoricalStep(target_step.0 as u32 + 1);
     }
 
-    for (entity, (_, aabb)) in entities {
+    for (entity, (_, aabb)) in accepted_changes {
         world.add_tag(entity, super::ManuallyChange(super::ChangeType::Direct(aabb))).unwrap();
     }
 

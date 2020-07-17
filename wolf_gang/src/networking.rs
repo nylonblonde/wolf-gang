@@ -29,7 +29,7 @@ impl Default for ClientAddr {
 
 impl Default for ServerAddr {
     fn default() -> Self {
-        Self("0.0.0.0:1234".parse().unwrap())
+        Self("127.0.0.1:1234".parse().unwrap())
     }
 }
 
@@ -39,14 +39,44 @@ type Point = nalgebra::Vector3<i32>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum  DataType {
-    MapInsert(crate::systems::level_map::MapInsert),
-    MapRemove(crate::systems::level_map::MapRemove)
+    MessageFragment(MessageFragment),
+    MapInput(crate::systems::level_map::MapInput)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageFragment {
+    //UUID of MessageFragment held collection
+    uuid: u128,
+    //size of each fragment - need this because slices at the end may be shorter
+    size: usize,
+    //how many pieces the message has been split into
+    pieces: usize,
+    payload: Vec<u8>
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+//Have to do this because cobalt::MessageKind doesn't implement serialize, deserialize. 
+pub enum MessageType {
+    Instant,
+    Reliable,
+    Ordered,
+}
+
+impl MessageType {
+    /// Returns the related cobalt::MessageKind
+    fn as_kind(&self) -> MessageKind {
+        match self {
+            Self::Instant => MessageKind::Instant,
+            Self::Ordered => MessageKind::Ordered,
+            Self::Reliable => MessageKind::Reliable
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageSender {
     pub data_type: DataType,
-    pub message_kind: MessageKind
+    pub message_type: MessageType
 }
 
 pub struct MessagePool {
@@ -68,75 +98,6 @@ impl GameStateTraits for Networking {
     fn free_func(&mut self) -> &mut Box<(dyn FnMut(&mut World, &mut Resources))> { 
         &mut self.free_func
     }
-}
-
-fn client_process(client: &mut Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier>, send_wait: bool) -> bool {
-    // Accept incoming connections and fetch their events
-    while let Ok(event) = client.receive() {
-        // Handle events (e.g. Connection, Messages, etc.)
-        match event {
-            ClientEvent::Connection => {
-                let conn = client.connection().unwrap();
-                println!(
-                    "[Client] Connection established ({}, {}ms rtt).",
-                    conn.peer_addr(),
-                    conn.rtt()
-                );
-
-            },
-            ClientEvent::Message(message) => {
-                let conn = client.connection().unwrap();
-                println!(
-                    "[Client] Message from server ({}, {}ms rtt): {:?}",
-                    conn.peer_addr(),
-                    conn.rtt(),
-                    message
-                );
-
-            },
-            ClientEvent::ConnectionClosed(_) | ClientEvent::ConnectionLost(_) => {
-                let conn = client.connection().unwrap();
-                println!(
-                    "[Client] ({}, {}ms rtt) disconnected.",
-                    conn.peer_addr(),
-                    conn.rtt()
-                );
-                return false
-            },
-            _ => {}
-        }
-    }
-
-    if let Ok(conn) = client.connection() {
-
-        let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-        let game = &mut *game_lock;
-
-        let resources = &mut game.resources;
-
-        let mut message_pool = resources.get_mut::<MessagePool>().unwrap();
-
-        if message_pool.messages.len() > 0 {
-            for message_sender in &message_pool.messages {
-                conn.send(message_sender.message_kind, serialize(&message_sender.data_type).unwrap().to_vec());
-            }
-            println!("Sending the message to the listener");
-
-            message_pool.messages.drain(..);
-        }
-    }
-
-    // Send all outgoing messages.
-    //
-    // Also auto delay the current thread to achieve the configured tick rate.
-    match client.send(send_wait) {
-        Ok(_) => {},
-        Err(err) => {
-            println!("{:?}", err);
-        }
-    }
-
-    true
 }
 
 impl NewState for Networking {
@@ -171,8 +132,6 @@ impl NewState for Networking {
 
                     'server: loop {
 
-                        let mut data_vec: Vec<DataType> = Vec::new();
-
                         while let Ok(event) = match server.accept_receive() {
                             Ok(r) => Ok(r),
                             Err(err) => {
@@ -202,7 +161,12 @@ impl NewState for Networking {
                                         message
                                     );
 
-                                    data_vec.push(deserialize(&message).unwrap());
+                                    let message: MessageSender = deserialize(&message).unwrap();
+
+                                    // Send a message to all connected clients
+                                    for (_, conn) in server.connections() {
+                                        conn.send(message.message_type.as_kind(), serialize(&message.data_type).unwrap().to_vec());
+                                    }
             
                                 },
                                 ServerEvent::ConnectionClosed(id, _) | ServerEvent::ConnectionLost(id, _) => {
@@ -220,25 +184,6 @@ impl NewState for Networking {
                             }
                         }
 
-                        if data_vec.len() > 0 {
-                            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-                            let game = &mut *game_lock;
-
-                            let resources = &mut game.resources;
-                            let world = &mut game.world;
-
-                            for data in data_vec {
-                                match data {
-                                    DataType::MapInsert(r) => {
-                                        r.execute(world, resources);
-                                    },
-                                    DataType::MapRemove(r) => {
-                                        r.execute(world, resources);
-                                    }
-                                }
-                            }
-                        }
-
                         if let Ok(_) = server.send(true) {}
                     }
 
@@ -251,38 +196,119 @@ impl NewState for Networking {
                 let ip = addr.ip();
 
                 if !ip.is_global() {
-
                     config.send_rate = 1000;
-                    let mut client = Client::new(config);
-
-                    std::thread::spawn(move || {
-                        client.connect(addr).expect("Couldn't connect to local address!");
-                        'client: loop {
-                            if !client_process(&mut client, true) {
-                                break 'client;
-                            }
-                        }
-                        client.disconnect().ok();
-                    });
-
-                } else {
-
-                    let mut client = Client::new(config);
-
-                    std::thread::spawn(move ||{
-
-                        client.connect(addr).expect("Couldn't connect to global address!");
-
-                        'client: loop {
-                            if !client_process(&mut client, true) {
-                                break 'client;
-                            }
-                        }
-                        client.disconnect().ok();
-                    });
                 }
-                
 
+                let mut client: Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier> = Client::new(config);
+
+                std::thread::spawn(move ||{
+
+                    let mut message_fragments: HashMap::<u128, Vec<MessageFragment>> = HashMap::new();
+
+                    client.connect(addr).expect("Couldn't connect to global address!");
+
+                    'client: loop {
+                        // Accept incoming connections and fetch their events
+                        while let Ok(event) = client.receive() {
+                            // Handle events (e.g. Connection, Messages, etc.)
+                            match event {
+                                ClientEvent::Connection => {
+                                    let conn = client.connection().unwrap();
+                                    println!(
+                                        "[Client] Connection established ({}, {}ms rtt).",
+                                        conn.peer_addr(),
+                                        conn.rtt()
+                                    );
+
+                                },
+                                ClientEvent::Message(message) => {
+                                    let conn = client.connection().unwrap();
+                                    println!(
+                                        "[Client] Message from server ({}, {}ms rtt): {:?}",
+                                        conn.peer_addr(),
+                                        conn.rtt(),
+                                        message
+                                    );
+
+                                    let data: DataType = deserialize(&message).unwrap();
+
+                                    client_handle_data(data, &mut message_fragments);
+
+                                },
+                                ClientEvent::ConnectionClosed(_) | ClientEvent::ConnectionLost(_) => {
+                                    let conn = client.connection().unwrap();
+                                    println!(
+                                        "[Client] ({}, {}ms rtt) disconnected.",
+                                        conn.peer_addr(),
+                                        conn.rtt()
+                                    );
+                                    break 'client
+                                },
+                                _ => {}
+                            }
+                        }
+
+                        let config = client.config();
+
+                        if let Ok(conn) = client.connection() {
+
+                            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
+                            let game = &mut *game_lock;
+
+                            let resources = &mut game.resources;
+
+                            let mut message_pool = resources.get_mut::<MessagePool>().unwrap();
+
+                            if message_pool.messages.len() > 0 {
+                                for message_sender in &message_pool.messages {
+
+                                    let payload = serialize(&message_sender).unwrap().to_vec();
+                                    let size = config.packet_max_size - std::mem::size_of::<MessageSender>();
+
+                                    //fragment the payload if it is too large to send
+                                    if payload.len() > size {
+                                        println!("[Client] payload is too large to send");
+
+                                        let pieces = (payload.len() as f32 / size as f32).ceil() as usize;
+                                        let uuid = uuid::Builder::from_slice(&payload[0..16]).unwrap().build().as_u128();
+
+                                        for i in 0..pieces {
+
+                                            let start = i * size;
+                                            let end = std::cmp::min(payload.len(), start+size);
+
+                                            conn.send(MessageKind::Ordered, serialize(&MessageSender{
+                                                data_type: DataType::MessageFragment(MessageFragment{
+                                                    uuid,
+                                                    pieces,
+                                                    size,
+                                                    payload: payload[start..end].to_vec()
+                                                }),
+                                                message_type: MessageType::Ordered
+                                            }).unwrap().to_vec());
+                                        }
+
+                                    } else {
+                                        conn.send(message_sender.message_type.as_kind(), payload);
+                                    }
+                                }
+                                message_pool.messages.drain(..);
+                            }
+                        }
+
+                        // Send all outgoing messages.
+                        //
+                        // Also auto delay the current thread to achieve the configured tick rate.
+                        match client.send(true) {
+                            Ok(_) => {},
+                            Err(err) => {
+                                println!("{:?}", err);
+                            }
+                        }
+                    }
+
+                    client.disconnect().ok();
+                });
                 
             }),
         }
@@ -300,5 +326,60 @@ impl AsRef<GameState> for Networking {
 
     fn as_ref(&self) -> &GameState { 
         &self.game_state
+    }
+}
+
+///Handles data for the client side, updates the fragment hashmap if dealing with fragmented data
+fn client_handle_data(data: DataType, message_fragments: &mut HashMap<u128, Vec<MessageFragment>>) {
+    match data {
+        DataType::MessageFragment(r) => {
+            println!("[Client] Received fragment");
+
+            match message_fragments.get_mut(&r.uuid) {
+                Some(frag_vec) => {
+                    let size = r.size;
+                    let pieces = r.pieces;
+                    let uuid = r.uuid;
+                    frag_vec.push(r);
+
+                    //If we've received all of the pieces
+                    if frag_vec.len() == pieces {
+
+                        //reconstruct the fragmented data
+                        let mut payload: Vec<u8> = Vec::with_capacity(size * frag_vec.len());
+
+                        for frag in frag_vec {
+                            payload.extend(frag.payload.iter());
+                        }
+
+                        //Once we're done, remove the key from message fragments
+                        message_fragments.remove(&uuid);
+
+                        //if it is able to succesfully reconstruct the data, handle that data
+                        match deserialize::<DataType>(&payload) {
+                            Ok(data) => {
+                                println!("[Client] Succesfully reconstructed data from fragments");
+                                client_handle_data(data, message_fragments);
+                            },
+                            Err(_) => println!("[Client] Unable to reconstruct data from fragments")
+                        }
+
+                    }
+                },
+                None => {
+                    message_fragments.insert(r.uuid, vec![r]);
+                }
+            }
+        },
+        DataType::MapInput(r) => {
+
+            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
+            let game = &mut *game_lock;
+
+            let resources = &mut game.resources;
+            let world = &mut game.world;
+
+            r.execute(world, resources)
+        }
     }
 }
