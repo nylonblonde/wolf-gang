@@ -2,10 +2,12 @@ pub mod mesh;
 pub mod history;
 pub mod document;
 
+use std::sync::mpsc;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use legion::prelude::*;
 use serde::{Serialize, Deserialize};
+use rayon::prelude::*;
 
 use crate::{ 
     collections::{
@@ -245,16 +247,22 @@ impl Map {
 
         let volume = dimensions.x * dimensions.y * dimensions.z;
 
-        for i in 0..volume {
+        let (tx, rx) = mpsc::channel::<TileData>();
+
+        (0..volume).into_par_iter().for_each_with(tx, move |tx, i| {
             let x = min.x + i % dimensions.x;
             let y = min.y + (i / dimensions.x) % dimensions.y;
             let z = min.z + i / (dimensions.x * dimensions.y);
 
-            octree.insert(TileData{
+            tx.send(TileData {
                 point: Point::new(x,y,z),
                 ..tile_data
             }).unwrap();
-        }
+        });
+
+        rx.into_iter().for_each(|x| {
+            octree.insert(x).unwrap()
+        });
 
         world.insert((), vec![
             (

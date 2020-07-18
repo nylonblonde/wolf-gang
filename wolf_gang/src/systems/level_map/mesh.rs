@@ -30,6 +30,32 @@ pub const START_REPEAT_BELOW_HEIGHT: f32 = 0.;
 pub const REPEAT_AMOUNT_ABOVE: f32 = 4.;
 pub const REPEAT_AMOUNT_BELOW: f32 = 4.;
 
+lazy_static!{
+    pub static ref NEIGHBOR_DIRS: [Point; 8] = [
+            Point::x(),
+            -Point::x(),
+            Point::z(),
+            -Point::z(),
+            Point::x()+Point::z(),
+            -Point::x()+Point::z(),
+            -Point::x()-Point::z(),
+            Point::x()-Point::z()
+        ];
+        
+    pub static ref ALL_DIRS: [Point; 10] = [
+            Point::x(),
+            -Point::x(),
+            Point::z(),
+            -Point::z(),
+            Point::x()+Point::z(),
+            -Point::x()+Point::z(),
+            -Point::x()-Point::z(),
+            Point::x()-Point::z(),
+            Point::y(),
+            -Point::y()
+        ];
+}
+
 /// Adds additional required components
 pub fn create_add_components_system() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
     
@@ -69,30 +95,6 @@ pub fn create_add_components_system() -> Box<dyn FnMut(&mut legion::world::World
 pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)>  {
     let map_query = <(Read<MapChunkData>, Tagged<ManuallyChange>)>::query();
     let write_mesh_query = <(Write<MapMeshData>, Write<custom_mesh::MeshData>, Tagged<ManuallyChange>)>::query();
-    
-    let neighbor_dirs = [
-        Point::x(),
-        -Point::x(),
-        Point::z(),
-        -Point::z(),
-        Point::x()+Point::z(),
-        -Point::x()+Point::z(),
-        -Point::x()-Point::z(),
-        Point::x()-Point::z()
-    ];
-
-    let all_dirs = [
-        Point::x(),
-        -Point::x(),
-        Point::z(),
-        -Point::z(),
-        Point::x()+Point::z(),
-        -Point::x()+Point::z(),
-        -Point::x()-Point::z(),
-        Point::x()-Point::z(),
-        Point::y(),
-        -Point::y()
-    ];
 
     Box::new(move |world, _| {
 
@@ -100,7 +102,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
         let mut change_vec: Vec<ManuallyChange> = Vec::new();
         let mut entities: Vec<Entity> = Vec::new();
 
-        for (entity, (map_data, change)) in map_query.iter_entities_mut(world) {
+        for (entity, (map_data, change)) in map_query.iter_entities(world) {
             map_data_vec.push((*map_data).clone());
             change_vec.push(change.clone());
             entities.push(entity);
@@ -108,7 +110,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
         let (map_mesh_tx, map_mesh_rx) = mpsc::channel::<(Entity, HashMap<usize, VertexData>)>();
 
-        entities.clone().into_par_iter().zip(map_data_vec.clone().into_par_iter().zip(change_vec.clone().into_par_iter())).for_each_with(map_mesh_tx, |map_mesh_tx, (entity, (map_data, change))| {
+        entities.par_iter().zip(map_data_vec.par_iter().zip(change_vec.par_iter())).for_each_with(map_mesh_tx, |map_mesh_tx, (entity, (map_data, change))| {
 
             let now = std::time::Instant::now();
 
@@ -156,14 +158,14 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                             let mut draw_top: bool = true;
 
-                            let point_sides = get_open_sides(&neighbor_dirs, world, &map_data, point, &checked);
+                            let point_sides = get_open_sides(world, &map_data, point, &checked);
 
                             let point_above = point + Point::y();
 
                             //If this tile does not match any of the conditions that would make it a top facing tile
                             if let false = match map_data.octree.query_point(point_above) {
                                 Some(_) => {
-                                    let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
+                                    let curr_sides = get_open_sides(world, &map_data, point_above, &checked);
 
                                     if curr_sides.symmetric_difference(&point_sides).count() > 0 {
                                         //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
@@ -206,7 +208,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                     if let Some(map_data) = chunk_point_above_query.iter(world).next() {
                                         if let Some(_) = map_data.octree.query_point(point_above) {
 
-                                            let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_above, &checked);
+                                            let curr_sides = get_open_sides(world, &map_data, point_above, &checked);
 
                                             if curr_sides.symmetric_difference(&point_sides).count() > 0 {
                                                 //if there are more point_sides than curr_sides, ie: if more sides are covered as we go up
@@ -245,7 +247,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 match map_data.octree.query_point(point_below) {
                                     Some(_) => {
 
-                                        let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
+                                        let curr_sides = get_open_sides(world, &map_data, point_below, &checked);
                                         
                                         if curr_sides.symmetric_difference(&point_sides).count() > 0 {
 
@@ -280,7 +282,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                         if let Some(map_data) = chunk_point_below_query.iter(world).next() {
 
                                             if let Some(_) = map_data.octree.query_point(point_below) {
-                                                let curr_sides = get_open_sides(&neighbor_dirs, world, &map_data, point_below, &checked);
+                                                let curr_sides = get_open_sides(world, &map_data, point_below, &checked);
                                                                                         
                                                 if curr_sides.symmetric_difference(&point_sides).count() > 0 {
 
@@ -362,8 +364,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                 let mut face_points: Vec<Vector3> = Vec::with_capacity(12);
 
                                 let corners_len = corners.len();
-                                let mut i = 0;
-                                while i < corners_len {
+                                for i in 0..corners_len {
 
                                     let right = corners[i];
                                     let left = corners[(i + 1) % corners_len];
@@ -414,7 +415,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                         scaled_right += adj;
                                         scaled_left += adj;
 
-                                        face_points.append(&mut vec![scaled_right, scaled_left]);
+                                        face_points.extend(&[scaled_right, scaled_left]);
                                         if let Some(corner) = corner {
                                             face_points.push(corner);
                                         }
@@ -462,11 +463,9 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                             scaled_left += adj;
                                         }
 
-                                        face_points.append(&mut vec![scaled_right, scaled_left]);
+                                        face_points.extend(&[scaled_right, scaled_left]);
 
                                     }
-
-                                    i += 1;
                                 }
 
                                 let mut face_points_final: Vec<Vector3> = Vec::with_capacity(12);
@@ -861,7 +860,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                 checked.lock().unwrap().extend(checked_rx.into_iter());
             }); //end of iterating through rows
 
-            map_mesh_tx.send((entity, vert_data_rx.into_iter().collect())).unwrap();
+            map_mesh_tx.send((*entity, vert_data_rx.into_iter().collect())).unwrap();
 
             #[cfg(debug_assertions)]
             println!("Took {:?} milliseconds to complete", now.elapsed().as_millis());
@@ -893,13 +892,13 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
             }
         });
 
-        let mut to_change: HashMap<Entity, ManuallyChange> = HashMap::new();
+        let (to_change_tx, to_change_rx) = mpsc::channel::<(Entity, ManuallyChange)>();
 
-        map_data_vec.into_iter().zip(change_vec.into_iter()).for_each(|(map_data, change)| {
+        map_data_vec.into_par_iter().zip(change_vec.into_par_iter()).for_each_with(to_change_tx, |to_change_tx, (map_data, change)| {
 
             //only manually change neighbors if it is a direct change
             if let ChangeType::Direct(aabb) = change.0 {
-                for dir in &all_dirs {
+                for dir in ALL_DIRS.into_iter() {
                     
                     let neighbor_chunk_pt = map_data.get_chunk_point() + dir;
 
@@ -918,14 +917,14 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
 
                         //only update if it's adjacent to the changes
                         if map_aabb.intersects_bounds(aabb) {
-                            to_change.insert(entity, ManuallyChange(ChangeType::Indirect(aabb)));
+                            to_change_tx.send((entity, ManuallyChange(ChangeType::Indirect(aabb)))).unwrap();
                         }
                     }
                 }
             }
         });
 
-        to_change.into_iter().for_each(|(entity, change)| {
+        to_change_rx.into_iter().for_each(|(entity, change)| {
             //only add the indirect change if it is not already being manually changed
             if let None = world.get_tag::<ManuallyChange>(entity) {
                 world.add_tag(entity, change).unwrap();
@@ -998,7 +997,7 @@ pub fn scale_from_origin(pt: Vector3, origin: Vector3, scale_amount: f32) -> Vec
     pt + origin
 } 
 
-pub fn get_open_sides(neighbor_dirs: &[Point; 8], world: &legion::world::World, map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
+pub fn get_open_sides(world: &legion::world::World, map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
     // let mut open_sides: HashSet<Point> = HashSet::new();
     let chunk_max = map_data.octree.get_aabb().get_max();
     let chunk_min = map_data.octree.get_aabb().get_min();
@@ -1006,7 +1005,7 @@ pub fn get_open_sides(neighbor_dirs: &[Point; 8], world: &legion::world::World, 
     let (tx, rx) = mpsc::channel::<Point>();
 
     // for dir in neighbor_dirs {
-    neighbor_dirs.par_iter().for_each_with(tx, |tx, dir| {
+    NEIGHBOR_DIRS.par_iter().for_each_with(tx, |tx, dir| {
 
         let neighbor = point + *dir;
 

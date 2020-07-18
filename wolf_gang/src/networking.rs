@@ -120,9 +120,22 @@ impl NewState for Networking {
                 let server_addr = resources.get_mut_or_default::<ServerAddr>().unwrap().0;
 
                 let mut config = Config{
+                    message_quota_ordered: 80.,
+                    message_quota_instant: 5.,
+                    message_quota_reliable: 15.,
+                    connection_drop_threshold: std::time::Duration::from_secs(15),
                     connection_init_threshold: std::time::Duration::from_millis(1000),
                     ..Default::default()
                 };
+
+                let client_addr = resources.get_or_default::<ClientAddr>().unwrap();
+
+                let addr = client_addr.0;
+                let ip = addr.ip();
+
+                if !ip.is_global() {
+                    config.send_rate = 1000;
+                }
 
                 std::thread::spawn(move || {
                     let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(
@@ -154,11 +167,10 @@ impl NewState for Networking {
                                 ServerEvent::Message(id, message) => {
                                     let conn = server.connection(&id).unwrap();
                                     println!(
-                                        "[Server] Message from client {} ({}, {}ms rtt): {:?}",
+                                        "[Server] Message from client {} ({}, {}ms rtt)",
                                         id.0,
                                         conn.peer_addr(),
                                         conn.rtt(),
-                                        message
                                     );
 
                                     let message: MessageSender = deserialize(&message).unwrap();
@@ -179,8 +191,25 @@ impl NewState for Networking {
                                     );
                                     break 'server;
                                 },
-                                _ => {
+                                ServerEvent::PacketLost(id, _) => {
+                                    let conn = server.connection(&id).unwrap();
+                                    println!(
+                                        "[Server] Packet dropped {} ({}, {}ms rtt)",
+                                        id.0,
+                                        conn.peer_addr(),
+                                        conn.rtt(),
+                                    );
+                                },
+                                ServerEvent::ConnectionCongestionStateChanged(id, _) => {
+                                    let conn = server.connection(&id).unwrap();
+                                    println!(
+                                        "[Server] Congestion State Changed {} ({}, {}ms rtt)",
+                                        id.0,
+                                        conn.peer_addr(),
+                                        conn.rtt()
+                                    );
                                 }
+                                _ => {}
                             }
                         }
 
@@ -189,15 +218,6 @@ impl NewState for Networking {
 
                     server.shutdown().unwrap();
                 });
-            
-                let client_addr = resources.get_or_default::<ClientAddr>().unwrap();
-
-                let addr = client_addr.0;
-                let ip = addr.ip();
-
-                if !ip.is_global() {
-                    config.send_rate = 1000;
-                }
 
                 let mut client: Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier> = Client::new(config);
 
@@ -224,10 +244,9 @@ impl NewState for Networking {
                                 ClientEvent::Message(message) => {
                                     let conn = client.connection().unwrap();
                                     println!(
-                                        "[Client] Message from server ({}, {}ms rtt): {:?}",
+                                        "[Client] Message from server ({}, {}ms rtt)",
                                         conn.peer_addr(),
                                         conn.rtt(),
-                                        message
                                     );
 
                                     let data: DataType = deserialize(&message).unwrap();
@@ -244,6 +263,14 @@ impl NewState for Networking {
                                     );
                                     break 'client
                                 },
+                                ClientEvent::PacketLost(_) => {
+                                    let conn = client.connection().unwrap();
+                                    println!(
+                                        "[Client] ({}, {}ms rtt) Packet lost",
+                                        conn.peer_addr(),
+                                        conn.rtt(),
+                                    );
+                                }
                                 _ => {}
                             }
                         }
@@ -372,6 +399,7 @@ fn client_handle_data(data: DataType, message_fragments: &mut HashMap<u128, Vec<
             }
         },
         DataType::MapInput(r) => {
+
 
             let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
             let game = &mut *game_lock;
