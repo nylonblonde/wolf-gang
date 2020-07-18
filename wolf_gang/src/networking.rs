@@ -16,7 +16,12 @@ use cobalt::{
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+use snap::raw::{Decoder, Encoder};
+
 use bincode::{deserialize, serialize};
+
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 pub struct ClientAddr(pub SocketAddr);
 pub struct ServerAddr(pub SocketAddr);
@@ -47,6 +52,8 @@ pub enum  DataType {
 pub struct MessageFragment {
     //UUID of MessageFragment held collection
     uuid: u128,
+    //id position of the fragment
+    id: usize,
     //size of each fragment - need this because slices at the end may be shorter
     size: usize,
     //how many pieces the message has been split into
@@ -123,6 +130,7 @@ impl NewState for Networking {
                     message_quota_ordered: 80.,
                     message_quota_instant: 5.,
                     message_quota_reliable: 15.,
+                    packet_drop_threshold: std::time::Duration::from_secs(3),
                     connection_drop_threshold: std::time::Duration::from_secs(15),
                     connection_init_threshold: std::time::Duration::from_millis(1000),
                     ..Default::default()
@@ -138,6 +146,9 @@ impl NewState for Networking {
                 }
 
                 std::thread::spawn(move || {
+                    let mut encoder = Encoder::new();
+                    let mut decoder = Decoder::new();
+
                     let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(
                         config.clone()
                     );
@@ -173,11 +184,13 @@ impl NewState for Networking {
                                         conn.rtt(),
                                     );
 
-                                    let message: MessageSender = deserialize(&message).unwrap();
+                                    let decompressed = decoder.decompress_vec(&message).unwrap();
+                                    let message: MessageSender = deserialize(&decompressed).unwrap();
+                                    let payload = encoder.compress_vec(&serialize(&message).unwrap()).unwrap();
 
                                     // Send a message to all connected clients
                                     for (_, conn) in server.connections() {
-                                        conn.send(message.message_type.as_kind(), serialize(&message.data_type).unwrap().to_vec());
+                                        conn.send(message.message_type.as_kind(), payload.clone());
                                     }
             
                                 },
@@ -224,6 +237,8 @@ impl NewState for Networking {
                 std::thread::spawn(move ||{
 
                     let mut message_fragments: HashMap::<u128, Vec<MessageFragment>> = HashMap::new();
+                    let mut encoder = Encoder::new();
+                    let mut decoder = Rc::new(Decoder::new());
 
                     client.connect(addr).expect("Couldn't connect to global address!");
 
@@ -249,10 +264,12 @@ impl NewState for Networking {
                                         conn.rtt(),
                                     );
 
-                                    let data: DataType = deserialize(&message).unwrap();
+                                    let decoder = Rc::get_mut(&mut decoder).unwrap();
 
-                                    client_handle_data(data, &mut message_fragments);
+                                    let payload = decoder.decompress_vec(&message).unwrap();
+                                    let data: DataType = deserialize(&payload).unwrap();
 
+                                    client_handle_data(data, decoder, &mut message_fragments);
                                 },
                                 ClientEvent::ConnectionClosed(_) | ClientEvent::ConnectionLost(_) => {
                                     let conn = client.connection().unwrap();
@@ -269,6 +286,14 @@ impl NewState for Networking {
                                         "[Client] ({}, {}ms rtt) Packet lost",
                                         conn.peer_addr(),
                                         conn.rtt(),
+                                    );
+                                },
+                                ClientEvent::ConnectionCongestionStateChanged(_) => {
+                                    let conn = client.connection().unwrap();
+                                    println!(
+                                        "[Client] Congestion State Changed ({}, {}ms rtt)",
+                                        conn.peer_addr(),
+                                        conn.rtt()
                                     );
                                 }
                                 _ => {}
@@ -287,10 +312,13 @@ impl NewState for Networking {
                             let mut message_pool = resources.get_mut::<MessagePool>().unwrap();
 
                             if message_pool.messages.len() > 0 {
+
                                 for message_sender in &message_pool.messages {
 
-                                    let payload = serialize(&message_sender).unwrap().to_vec();
+                                    let message = serialize(&message_sender).unwrap().to_vec();
                                     let size = config.packet_max_size - std::mem::size_of::<MessageSender>();
+
+                                    let payload = encoder.compress_vec(&message).unwrap();
 
                                     //fragment the payload if it is too large to send
                                     if payload.len() > size {
@@ -304,15 +332,19 @@ impl NewState for Networking {
                                             let start = i * size;
                                             let end = std::cmp::min(payload.len(), start+size);
 
-                                            conn.send(MessageKind::Ordered, serialize(&MessageSender{
-                                                data_type: DataType::MessageFragment(MessageFragment{
-                                                    uuid,
-                                                    pieces,
-                                                    size,
-                                                    payload: payload[start..end].to_vec()
-                                                }),
-                                                message_type: MessageType::Ordered
-                                            }).unwrap().to_vec());
+                                            conn.send(MessageKind::Reliable, encoder.compress_vec(
+                                                &serialize(&MessageSender{
+                                                    data_type: DataType::MessageFragment(MessageFragment{
+                                                        uuid,
+                                                        id: i,
+                                                        pieces,
+                                                        size,
+                                                        payload: payload[start..end].to_vec()
+                                                    }),
+                                                    message_type: MessageType::Reliable
+                                                })
+                                                .unwrap().to_vec()
+                                            ).unwrap());
                                         }
 
                                     } else {
@@ -357,13 +389,16 @@ impl AsRef<GameState> for Networking {
 }
 
 ///Handles data for the client side, updates the fragment hashmap if dealing with fragmented data
-fn client_handle_data(data: DataType, message_fragments: &mut HashMap<u128, Vec<MessageFragment>>) {
+fn client_handle_data(data: DataType, decoder: &mut Decoder, message_fragments: &mut HashMap<u128, Vec<MessageFragment>>) {
     match data {
         DataType::MessageFragment(r) => {
             println!("[Client] Received fragment");
 
             match message_fragments.get_mut(&r.uuid) {
                 Some(frag_vec) => {
+
+                    frag_vec.sort_by(|a, b| a.id.cmp(&b.id));
+
                     let size = r.size;
                     let pieces = r.pieces;
                     let uuid = r.uuid;
@@ -373,22 +408,30 @@ fn client_handle_data(data: DataType, message_fragments: &mut HashMap<u128, Vec<
                     if frag_vec.len() == pieces {
 
                         //reconstruct the fragmented data
-                        let mut payload: Vec<u8> = Vec::with_capacity(size * frag_vec.len());
+                        let mut combined: Vec<u8> = Vec::with_capacity(size * frag_vec.len());
 
                         for frag in frag_vec {
-                            payload.extend(frag.payload.iter());
+                            combined.extend(frag.payload.iter());
                         }
 
                         //Once we're done, remove the key from message fragments
                         message_fragments.remove(&uuid);
 
-                        //if it is able to succesfully reconstruct the data, handle that data
-                        match deserialize::<DataType>(&payload) {
-                            Ok(data) => {
-                                println!("[Client] Succesfully reconstructed data from fragments");
-                                client_handle_data(data, message_fragments);
+                        match decoder.decompress_vec(&combined) {
+
+                            Ok(payload) => {
+
+                                //if it is able to succesfully reconstruct the data, handle that data
+                                match deserialize::<DataType>(&payload) {
+                                    Ok(data) => {
+                                        println!("[Client] Succesfully reconstructed data from fragments");
+                                        client_handle_data(data, decoder, message_fragments);
+                                    },
+                                    Err(_) => println!("[Client] Unable to reconstruct data from fragments")
+                                }
                             },
-                            Err(_) => println!("[Client] Unable to reconstruct data from fragments")
+
+                            Err(err) => println!("[Client] Failed to decompress fragments' payload with error: {:?}", err)
                         }
 
                     }
