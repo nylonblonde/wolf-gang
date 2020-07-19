@@ -77,7 +77,7 @@ margin_right = 143.0
 margin_bottom = 20.0
 text = "Connect"
 flat = false
-items = [ "Join", null, 0, false, false, 0, 0, null, "", false, "Host", null, 0, false, false, 1, 0, null, "", false, "Disconnect", null, 0, false, false, 2, 0, null, "", false ]
+items = [ "Join", null, 0, false, false, 0, 0, null, "", false, "Host", null, 0, false, false, 1, 0, null, "", false, "", null, 0, false, false, 2, 0, null, "", true, "Disconnect", null, 0, false, false, 3, 0, null, "", false ]
 switch_on_hover = true
 script = ExtResource( 5 )
 
@@ -91,7 +91,7 @@ margin_left = -97.0
 margin_top = -16.0
 margin_right = 103.0
 margin_bottom = 79.0
-window_title = ""
+window_title = "Join Online Game"
 __meta__ = {
 "_edit_use_anchors_": false
 }

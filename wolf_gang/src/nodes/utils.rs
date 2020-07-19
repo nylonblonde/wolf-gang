@@ -21,7 +21,7 @@ pub fn get_popup_menu(menu_button: &MenuButton) -> Ref<PopupMenu> {
             }
         },
         None => {
-            panic!("edit_menu could not retrieve its PopupMenu");
+            panic!("Menu could not retrieve its PopupMenu");
         }
     }
 }

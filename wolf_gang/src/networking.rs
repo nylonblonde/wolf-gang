@@ -20,6 +20,7 @@ use snap::raw::{Decoder, Encoder};
 
 use bincode::{deserialize, serialize};
 
+use std::sync::mpsc;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -117,7 +118,9 @@ impl NewState for Networking {
                 schedule,
                 active
             ),
-            free_func: Box::new(move |_,_|{}),
+            free_func: Box::new(move |_,_|{
+                
+            }),
             init_func: Box::new(move |_, resources|{
                 
                 resources.insert(MessagePool{
@@ -156,14 +159,7 @@ impl NewState for Networking {
 
                     'server: loop {
 
-                        while let Ok(event) = match server.accept_receive() {
-                            Ok(r) => Ok(r),
-                            Err(err) => {
-                                
-                                // println!("{:?}", err);
-                                Err(err)
-                            }
-                        } {
+                        while let Ok(event) = server.accept_receive() {
                             match event {
                                 ServerEvent::Connection(id) => {
                                     let conn = server.connection(&id).unwrap();
@@ -202,7 +198,10 @@ impl NewState for Networking {
                                         conn.peer_addr(),
                                         conn.rtt()
                                     );
-                                    break 'server;
+                                    if server.connections().len() == 0 {
+                                        println!("[Server] Closing out server as there are no more connections");
+                                        break 'server;
+                                    }
                                 },
                                 ServerEvent::PacketLost(id, _) => {
                                     let conn = server.connection(&id).unwrap();
@@ -269,7 +268,18 @@ impl NewState for Networking {
                                     let payload = decoder.decompress_vec(&message).unwrap();
                                     let data: DataType = deserialize(&payload).unwrap();
 
-                                    client_handle_data(data, decoder, &mut message_fragments);
+                                    // if let data = DataType::ManuallyDisconnect {
+                                    //     break 'client;
+                                    // }
+
+                                    // if let data = DataType::MessageFragment {
+                                    //     client_handle_fragments(data, &mut message_fragments);
+                                    // }
+
+                                    match data {
+                                        DataType::MessageFragment(frag) => client_handle_fragments(frag, decoder, &mut message_fragments),
+                                        _=> client_handle_data(data)
+                                    }
                                 },
                                 ClientEvent::ConnectionClosed(_) | ClientEvent::ConnectionLost(_) => {
                                     let conn = client.connection().unwrap();
@@ -388,61 +398,63 @@ impl AsRef<GameState> for Networking {
     }
 }
 
-///Handles data for the client side, updates the fragment hashmap if dealing with fragmented data
-fn client_handle_data(data: DataType, decoder: &mut Decoder, message_fragments: &mut HashMap<u128, Vec<MessageFragment>>) {
-    match data {
-        DataType::MessageFragment(r) => {
-            println!("[Client] Received fragment");
+fn client_handle_fragments(fragment: MessageFragment, decoder: &mut Decoder, message_fragments: &mut HashMap<u128, Vec<MessageFragment>>) {
 
-            match message_fragments.get_mut(&r.uuid) {
-                Some(frag_vec) => {
+    match message_fragments.get_mut(&fragment.uuid) {
+        Some(frag_vec) => {
 
-                    frag_vec.sort_by(|a, b| a.id.cmp(&b.id));
+            frag_vec.sort_by(|a, b| a.id.cmp(&b.id));
 
-                    let size = r.size;
-                    let pieces = r.pieces;
-                    let uuid = r.uuid;
-                    frag_vec.push(r);
+            let MessageFragment {
+                size,
+                pieces,
+                uuid,
+                ..
+            } = fragment;
 
-                    //If we've received all of the pieces
-                    if frag_vec.len() == pieces {
+            frag_vec.push(fragment);
 
-                        //reconstruct the fragmented data
-                        let mut combined: Vec<u8> = Vec::with_capacity(size * frag_vec.len());
+            //If we've received all of the pieces
+            if frag_vec.len() == pieces {
 
-                        for frag in frag_vec {
-                            combined.extend(frag.payload.iter());
-                        }
+                //reconstruct the fragmented data
+                let mut combined: Vec<u8> = Vec::with_capacity(size * frag_vec.len());
 
-                        //Once we're done, remove the key from message fragments
-                        message_fragments.remove(&uuid);
-
-                        match decoder.decompress_vec(&combined) {
-
-                            Ok(payload) => {
-
-                                //if it is able to succesfully reconstruct the data, handle that data
-                                match deserialize::<DataType>(&payload) {
-                                    Ok(data) => {
-                                        println!("[Client] Succesfully reconstructed data from fragments");
-                                        client_handle_data(data, decoder, message_fragments);
-                                    },
-                                    Err(_) => println!("[Client] Unable to reconstruct data from fragments")
-                                }
-                            },
-
-                            Err(err) => println!("[Client] Failed to decompress fragments' payload with error: {:?}", err)
-                        }
-
-                    }
-                },
-                None => {
-                    message_fragments.insert(r.uuid, vec![r]);
+                for frag in frag_vec {
+                    combined.extend(frag.payload.iter());
                 }
+
+                //Once we're done, remove the key from message fragments
+                message_fragments.remove(&uuid);
+
+                match decoder.decompress_vec(&combined) {
+
+                    Ok(payload) => {
+
+                        //if it is able to succesfully reconstruct the data, handle that data
+                        match deserialize::<DataType>(&payload) {
+                            Ok(data) => {
+                                println!("[Client] Succesfully reconstructed data from fragments");
+                                client_handle_data(data);
+                            },
+                            Err(_) => println!("[Client] Unable to reconstruct data from fragments")
+                        }
+                    },
+
+                    Err(err) => println!("[Client] Failed to decompress fragments' payload with error: {:?}", err)
+                }
+
             }
         },
-        DataType::MapInput(r) => {
+        None => {
+            message_fragments.insert(fragment.uuid, vec![fragment]);
+        }
+    }
+}
 
+fn client_handle_data(data: DataType) {
+    match data {
+        DataType::MapInput(r) => {
 
             let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
             let game = &mut *game_lock;
@@ -451,6 +463,7 @@ fn client_handle_data(data: DataType, decoder: &mut Decoder, message_fragments: 
             let world = &mut game.world;
 
             r.execute(world, resources)
-        }
+        },
+        _ => {},
     }
 }
