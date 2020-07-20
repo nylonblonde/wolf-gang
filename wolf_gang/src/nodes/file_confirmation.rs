@@ -95,8 +95,8 @@ impl FileConfirmation {
 
             match state_machine.get_state_mut("MapEditor") {
                 Some(editor_state) => {
-                    editor_state.free_func()(world, resources);
-                    editor_state.initialize_func()(world, resources);
+                    editor_state.free(world, resources);
+                    editor_state.initialize(world, resources);
                 },
                 None => panic!("Couldn't get the MapEditor state")
             }

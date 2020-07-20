@@ -17,18 +17,27 @@ use std::{
 
 pub struct Editor {
     game_state: GameState,
-    initialize: Box<dyn FnMut(&mut World, &mut Resources)>,
-    free: Box<dyn FnMut(&mut World, &mut Resources)>,
-    camera: Rc<RefCell<String>>,
-    // map: level_map::Map,
+    camera: String,
+    map: level_map::Map,
 }
 
 impl GameStateTraits for Editor {
-    fn initialize_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)> {
-        &mut self.initialize
+    fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
+        self.camera = camera::initialize_camera(world);
+        selection_box::initialize_selection_box(world, self.camera.clone());
+
+        resources.insert(self.map);    
+        resources.insert(history::CurrentHistoricalStep::default());
+        resources.insert(level_map::document::Document::default());
     }
-    fn free_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)> {
-        &mut self.free
+    fn free(&mut self, world: &mut World, resources: &mut Resources) {
+        resources.remove::<level_map::document::Document>();
+        resources.remove::<history::CurrentHistoricalStep>();
+
+        camera::free_camera(world, &self.camera);
+
+        selection_box::free_all(world);
+        self.map.free(world);
     }
 }
 
@@ -47,36 +56,10 @@ impl AsRef<GameState> for Editor {
 impl NewState for Editor {
     fn new(name: &'static str, schedule: Schedule, active: bool) -> Self {
 
-        let camera = Rc::new(RefCell::new(String::default()));
-        let map = level_map::Map::default();
-
-        let camera_for_init = Rc::clone(&camera);
-        let mut camera_for_free = Rc::clone(&camera);
-
         Self {
-            camera: Rc::clone(&camera),
+            camera: String::default(),
             game_state: GameState::new(name, schedule, active),
-            initialize: Box::new(move |world, resources| {
-
-                let camera_str = camera::initialize_camera(world);
-                camera_for_init.replace(camera_str.clone());
-
-                selection_box::initialize_selection_box(world, camera_str);
-    
-                resources.insert(map);    
-                resources.insert(history::CurrentHistoricalStep::default());
-                resources.insert(level_map::document::Document::default());
-            }),
-            free: Box::new(move |world, resources| {
-                
-                resources.remove::<level_map::document::Document>();
-                resources.remove::<history::CurrentHistoricalStep>();
-
-                camera::free_camera(world, &Rc::make_mut(&mut camera_for_free).borrow_mut());
-
-                selection_box::free_all(world);
-                map.free(world);
-            })
+            map: level_map::Map::default()
         }
     }
 }

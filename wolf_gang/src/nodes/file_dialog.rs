@@ -186,8 +186,8 @@ impl SaveLoadDialog {
                         match state_machine.get_state_mut("MapEditor") {
                             Some(editor_state) => {
 
-                                editor_state.free_func()(world, resources);
-                                editor_state.initialize_func()(world, resources);
+                                editor_state.free(world, resources);
+                                editor_state.initialize(world, resources);
 
                                 let doc = Document::from_file(path).unwrap();
 

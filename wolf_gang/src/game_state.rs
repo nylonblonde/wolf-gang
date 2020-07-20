@@ -4,8 +4,6 @@ pub struct GameState {
     name: &'static str,
     pub schedule: Schedule,
     active: bool,
-    _init: Box<dyn FnMut(&mut World, &mut Resources)>,
-    _free: Box<dyn FnMut(&mut World, &mut Resources)>
 }
 
 impl GameState{
@@ -26,19 +24,11 @@ impl GameState{
         self.name
     }
 }
-
-impl GameStateTraits for GameState {
-    fn initialize_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)> {
-        &mut self._init
-    }
-    fn free_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)> {
-        &mut self._free
-    }
-}
-
 pub trait GameStateTraits: NewState + AsMut<GameState> + AsRef<GameState> {
-    fn initialize_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)>;
-    fn free_func(&mut self) -> &mut Box<dyn FnMut(&mut World, &mut Resources)>;
+    fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
+    }
+    fn free(&mut self, world: &mut World, resources: &mut Resources) {
+    }
 }
 
 pub trait NewState {
@@ -51,8 +41,6 @@ impl NewState for GameState {
             name,
             schedule,
             active,
-            _init: Box::new(|_,_|{}),
-            _free: Box::new(|_,_|{})
         }
     }
 }
@@ -83,7 +71,7 @@ impl StateMachine {
 
     pub fn add_state(&mut self, mut game_state: impl GameStateTraits + 'static, world: &mut legion::world::World, resources: &mut Resources) -> &Box<dyn GameStateTraits> {
 
-        game_state.initialize_func()(world, resources);
+        game_state.initialize(world, resources);
 
         self.states.push(Box::new(game_state));
 

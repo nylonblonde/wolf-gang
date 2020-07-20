@@ -157,8 +157,8 @@ impl FileMenu {
                         let state: &mut (dyn GameStateTraits) = state.borrow_mut();
 
                         //clear the world of related entities and free related nodes before re-initializing
-                        state.free_func()(world, resources);
-                        state.initialize_func()(world, resources);
+                        state.free(world, resources);
+                        state.initialize(world, resources);
                     }
                     
                 });

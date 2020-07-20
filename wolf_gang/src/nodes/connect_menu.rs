@@ -1,6 +1,7 @@
 use crate::{
     node,
     nodes::utils,
+    networking,
 };
 
 use gdnative::prelude::*;
@@ -64,7 +65,22 @@ impl ConnectMenu {
     fn join_item_handler(&mut self, _: &MenuButton, id: i64) {
         match id {
             0 => { //Local
-                
+                crate::STATE_MACHINE.with(|s| {
+                    let state_machine = &mut *s.borrow_mut();
+
+                    let network_state = state_machine.get_state_mut("Networking").expect("Failed to get the Networking state");
+
+                    let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
+                    let game = &mut *game_lock;
+                    let world = &mut game.world;
+                    let resources = &mut game.resources;
+
+                    network_state.free(world, resources);
+
+                    resources.insert(networking::ClientAddr("255.255.255.255:1234".parse().unwrap()));
+
+                    network_state.initialize(world, resources);
+                })
             },
             1 => { //Online
                 if let Some(confirmation) = self.confirmation {
@@ -79,7 +95,23 @@ impl ConnectMenu {
     fn host_item_handler(&mut self, _: &MenuButton, id: i64) {
         match id {
             0 => { //Local
+                crate::STATE_MACHINE.with(|s| {
+                    let state_machine = &mut *s.borrow_mut();
 
+                    let network_state = state_machine.get_state_mut("Networking").expect("Failed to get the Networking state");
+
+                    let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
+                    let game = &mut *game_lock;
+                    let world = &mut game.world;
+                    let resources = &mut game.resources;
+
+                    network_state.free(world, resources);
+
+                    resources.insert(networking::ClientAddr("255.255.255.255:1234".parse().unwrap()));
+                    resources.insert(networking::ServerAddr("255.255.255.255:1234".parse().unwrap()));
+
+                    network_state.initialize(world, resources);
+                })
             },
             1 => { //Online
 
