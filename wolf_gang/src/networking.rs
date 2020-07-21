@@ -11,21 +11,25 @@ use cobalt::{
     NoopPacketModifier, 
     Server, 
     ServerEvent, 
-    UdpSocket,
+    Socket,
+    // UdpSocket,
 };
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{
+    io::{Error, ErrorKind},
+    net,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::{
+        mpsc,
+        mpsc::TryRecvError,
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering} 
+    }
+};
 
 use snap::raw::{Decoder, Encoder};
 
 use bincode::{deserialize, serialize};
-
-use std::sync::{
-    mpsc,
-    mpsc::TryRecvError,
-    Arc, Condvar, Mutex,
-    atomic::{AtomicBool, Ordering} 
-};
 
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -37,13 +41,13 @@ pub struct ServerAddr(pub SocketAddr);
 
 impl Default for ClientAddr {
     fn default() -> Self {
-        Self("127.0.0.1:1234".parse().unwrap())
+        Self("0.0.0.0:12345".parse().unwrap())
     }
 }
 
 impl Default for ServerAddr {
     fn default() -> Self {
-        Self("127.0.0.1:1234".parse().unwrap())
+        Self("0.0.0.0:12345".parse().unwrap())
     }
 }
 
@@ -99,6 +103,103 @@ pub struct MessagePool {
     pub messages: Vec<MessageSender>
 }
 
+#[derive(Debug)]
+pub struct UdpSocket {
+    socket: std::net::UdpSocket,
+    buffer: Vec<u8>,
+    multicast_addr: Option<SocketAddr>
+}
+
+impl UdpSocket {
+
+    /// Literally just self.socket.broadcast()
+    fn can_broadcast(&self) -> bool {
+        self.socket.broadcast().unwrap()
+    }
+
+    /// Literally just self.socket.set_broadcast
+    fn set_broadcast(&mut self, can_broadcast: bool) {
+        self.socket.set_broadcast(can_broadcast).unwrap();
+    }
+
+    fn join_multicast(&mut self, addr: &IpAddr, interface: &IpAddr) {
+        match (addr, interface) {
+            (IpAddr::V4(addr), IpAddr::V4(interface)) => {
+                self.socket.join_multicast_v4(addr, interface).unwrap();
+            },
+            _ => {
+                todo!("Support for ipv6")
+            }
+        }
+    }
+
+    /// Connects clients to multicast for sending
+    fn connect_multicast(&mut self, addr: &SocketAddr) -> Result<(), Error> {
+        match self.multicast_addr {
+            None => {
+                self.multicast_addr = Some(*addr);
+                Ok(())
+            },
+            Some(_) => {
+                Err(Error::new(ErrorKind::AlreadyExists, ""))
+            }
+        }
+    }
+
+}
+
+// From the cobalt source Copyright (c) 2015-2017 Ivo Wetzel
+// Redefined just because I more access to the net::UdpSocket
+impl Socket for UdpSocket {
+    /// Tries to create a new UDP socket by binding to the specified address.
+    fn new<T: net::ToSocketAddrs>(address: T, max_packet_size: usize) -> Result<Self, Error> {
+
+        // Create the send socket
+        let socket = net::UdpSocket::bind(address)?;
+
+        // Switch into non-blocking mode
+        socket.set_nonblocking(true)?;
+
+        // Allocate receival buffer
+        let buffer: Vec<u8> = std::iter::repeat(0).take(max_packet_size).collect();
+
+        Ok(UdpSocket {
+            socket: socket,
+            buffer: buffer,
+            multicast_addr: None
+        })
+
+    }
+
+    /// Attempts to return a incoming packet on this socket without blocking.
+    fn try_recv(&mut self) -> Result<(net::SocketAddr, Vec<u8>), TryRecvError> {
+
+        if let Ok((len, src)) = self.socket.recv_from(&mut self.buffer) {
+            Ok((src, self.buffer[..len].to_vec()))
+
+        } else {
+            Err(TryRecvError::Empty)
+        }
+    }
+
+    /// Send data on the socket to the given address. On success, returns the
+    /// number of bytes written.
+    fn send_to(&mut self, data: &[u8], addr: net::SocketAddr) -> Result<usize, Error> {
+        match self.multicast_addr {
+            Some(multicast_addr) => {
+                println!("Sending via multicast");
+                self.socket.send_to(data, multicast_addr)
+            },
+            None => self.socket.send_to(data, addr)
+        }
+    }
+
+    /// Returns the socket address of the underlying `net::UdpSocket`.
+    fn local_addr(&self) -> Result<net::SocketAddr, Error> {
+        self.socket.local_addr()
+    }
+}
+
 pub struct Networking {
     game_state: GameState,
     server_quit_tx: mpsc::Sender<()>,
@@ -134,19 +235,45 @@ impl GameStateTraits for Networking {
             config.send_rate = 1000;
         }
 
+        //Set up the server
+        let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone());
+        server.listen(server_addr).expect("Failed to bind to socket.");
+        server.socket().unwrap().join_multicast(&IpAddr::V4(Ipv4Addr::new(234,2,2,2)), &IpAddr::V4(Ipv4Addr::new(0,0,0,0)));
+        println!("[Server] Listening at {:?}...", server.socket().unwrap().local_addr().unwrap());
+
+        let multicast_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(234,2,2,2)), 12345);
+
+        // let server_addr = match net::UdpSocket::bind("0.0.0.0:0") {
+        //     Ok(socket) => {
+        //         if let Err(_) = socket.connect(multicast_addr) {
+        //             None
+        //         } else {
+        //             match socket.peer_addr() {
+        //                 Ok(local_addr) => Some(local_addr),
+        //                 Err(_) => None,
+        //             }
+        //         }
+        //     },
+        //     Err(_) => None,
+        // };
+
+        // println!("{:?}", server_addr);
+
+        //Set up the client
+        let mut client: Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier> = Client::new(config);
+
+        //Client can only connect succesfully if we connect to the specific host IP address, not multicast. Not ideal
+        client.connect(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 25)), 12345)).expect("Couldn't connect to global address!");
+        client.socket().unwrap().connect_multicast(&multicast_addr).unwrap();        
+
+        println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
+
         let quitter = self.server_quit_rx.clone();
         let running_pair = self.server_running.clone();
 
         std::thread::spawn(move || {
             let mut encoder = Encoder::new();
             let mut decoder = Decoder::new();
-            
-            let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(
-                config.clone()
-            );
-            server.listen(server_addr).expect("Failed to bind to socket.");
-
-            println!("[Server] Listening at {:?}...", server_addr);
 
             let (lock, cvar) = &*running_pair;
             let mut running = lock.lock().unwrap();
@@ -174,7 +301,6 @@ impl GameStateTraits for Networking {
                                 conn.peer_addr(),
                                 conn.rtt()
                             );
-    
                         },
                         ServerEvent::Message(id, message) => {
                             let conn = server.connection(&id).unwrap();
@@ -248,11 +374,6 @@ impl GameStateTraits for Networking {
             let mut encoder = Encoder::new();
             let mut decoder = Rc::new(Decoder::new());
 
-            let mut client: Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier> = Client::new(config);
-            client.connect(addr).expect("Couldn't connect to global address!");
-
-            println!("[Client] Connecting to {:?}...", server_addr);
-
             let (lock, cvar) = &*running_pair;
             let mut running = lock.lock().unwrap();
 
@@ -271,6 +392,7 @@ impl GameStateTraits for Networking {
 
                 // Accept incoming connections and fetch their events
                 while let Ok(event) = client.receive() {
+                    println!("{:?}", event);
                     // Handle events (e.g. Connection, Messages, etc.)
                     match event {
                         ClientEvent::Connection => {
@@ -332,6 +454,7 @@ impl GameStateTraits for Networking {
                 let config = client.config();
 
                 if let Ok(conn) = client.connection() {
+                    // println!("{:?} {:?}", conn.peer_addr(), conn.local_addr());
 
                     let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
                     let game = &mut *game_lock;
