@@ -12,18 +12,16 @@ use cobalt::{
     Server, 
     ServerEvent, 
     Socket,
-    // UdpSocket,
 };
 
 use std::{
     io::{Error, ErrorKind},
     net,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs},
     sync::{
         mpsc,
         mpsc::TryRecvError,
         Arc, Condvar, Mutex,
-        atomic::{AtomicBool, Ordering} 
     }
 };
 
@@ -34,21 +32,58 @@ use bincode::{deserialize, serialize};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-// static KILL_NETWORK_THREAD: AtomicBool = AtomicBool::new(false); 
+// pub struct ClientAddr(pub SocketAddr);
+// pub struct ServerAddr(pub SocketAddr);
 
-pub struct ClientAddr(pub SocketAddr);
-pub struct ServerAddr(pub SocketAddr);
+const MULTICAST_ADDR_V4: &'static str = "234.2.2.2:12345";
+const LOOPBACK_ADDR_V4: &'static str = "127.0.0.1:12345";
 
-impl Default for ClientAddr {
-    fn default() -> Self {
-        Self("0.0.0.0:12345".parse().unwrap())
+#[derive(Debug, Copy, Clone)]
+pub enum Scope{
+    Online,
+    Multicast,
+    Loopback
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Connection {
+    conn_type: ConnectionType,
+    scope: Scope,
+    state: ConnectionState
+}
+
+impl Connection {
+    pub fn new(conn_type: ConnectionType, scope: Scope) -> Connection {
+        Connection {
+            conn_type,
+            scope,
+            ..Default::default()
+        }
     }
 }
 
-impl Default for ServerAddr {
-    fn default() -> Self {
-        Self("0.0.0.0:12345".parse().unwrap())
+impl Default for Connection {
+    fn default() -> Connection {
+        Connection {
+            conn_type: ConnectionType::Host,
+            scope: Scope::Loopback,
+            state: ConnectionState::NotConnected
+        }
     }
+}
+
+
+#[derive(Debug, Copy, Clone)]
+pub enum ConnectionType {
+    Join,
+    Host,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ConnectionState {
+    NotConnected,
+    AttemptingConnection,
+    Connected
 }
 
 use serde_derive::{Deserialize, Serialize};
@@ -134,10 +169,10 @@ impl UdpSocket {
     }
 
     /// Connects clients to multicast for sending
-    fn connect_multicast(&mut self, addr: &SocketAddr) -> Result<(), Error> {
+    fn connect_multicast(&mut self, addr: SocketAddr) -> Result<(), Error> {
         match self.multicast_addr {
             None => {
-                self.multicast_addr = Some(*addr);
+                self.multicast_addr = Some(addr);
                 Ok(())
             },
             Some(_) => {
@@ -175,6 +210,13 @@ impl Socket for UdpSocket {
     fn try_recv(&mut self) -> Result<(net::SocketAddr, Vec<u8>), TryRecvError> {
 
         if let Ok((len, src)) = self.socket.recv_from(&mut self.buffer) {
+
+            //Ip requests are sent as 8008
+            if self.buffer[0..4] == [8,0,0,8] {
+                println!("Got the IP request");
+
+                self.send_to(&[], src).unwrap();
+            }
             Ok((src, self.buffer[..len].to_vec()))
 
         } else {
@@ -187,7 +229,7 @@ impl Socket for UdpSocket {
     fn send_to(&mut self, data: &[u8], addr: net::SocketAddr) -> Result<usize, Error> {
         match self.multicast_addr {
             Some(multicast_addr) => {
-                println!("Sending via multicast");
+                // println!("Sending via multicast");
                 self.socket.send_to(data, multicast_addr)
             },
             None => self.socket.send_to(data, addr)
@@ -213,162 +255,198 @@ pub struct Networking {
 impl GameStateTraits for Networking {
 
     fn initialize(&mut self, _: &mut World, resources: &mut Resources) {
+
         resources.insert(MessagePool{
             messages: Vec::new()
         });
 
-        let server_addr = resources.get_mut_or_default::<ServerAddr>().unwrap().0;
+        let connection = *resources.get_or_default::<Connection>().unwrap();
 
         let mut config = Config{
             packet_drop_threshold: std::time::Duration::from_secs(30),
             connection_drop_threshold: std::time::Duration::from_secs(15),
-            connection_init_threshold: std::time::Duration::from_millis(1000),
+            connection_init_threshold: std::time::Duration::from_secs(15),
             ..Default::default()
         };
 
-        let client_addr = resources.get_or_default::<ClientAddr>().unwrap();
-
-        let addr = client_addr.0;
-        let ip = addr.ip();
-
-        if !ip.is_global() {
-            config.send_rate = 1000;
+        if let Scope::Loopback = connection.scope {
+            config.packet_max_size = 6000;
         }
 
-        //Set up the server
-        let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone());
-        server.listen(server_addr).expect("Failed to bind to socket.");
-        server.socket().unwrap().join_multicast(&IpAddr::V4(Ipv4Addr::new(234,2,2,2)), &IpAddr::V4(Ipv4Addr::new(0,0,0,0)));
-        println!("[Server] Listening at {:?}...", server.socket().unwrap().local_addr().unwrap());
+        if let ConnectionType::Host = connection.conn_type {
+            //Set up the server
+            let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone());
 
-        let multicast_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(234,2,2,2)), 12345);
+            let server_addr = match connection.scope {
+                Scope::Loopback => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345)),
+                Scope::Multicast => SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0,0,0,0)), 12345),
+                Scope::Online => todo!("Get global ip somehow")
+            };
 
-        // let server_addr = match net::UdpSocket::bind("0.0.0.0:0") {
-        //     Ok(socket) => {
-        //         if let Err(_) = socket.connect(multicast_addr) {
-        //             None
-        //         } else {
-        //             match socket.peer_addr() {
-        //                 Ok(local_addr) => Some(local_addr),
-        //                 Err(_) => None,
-        //             }
-        //         }
-        //     },
-        //     Err(_) => None,
-        // };
+            server.listen(server_addr).expect("Failed to bind to socket.");
+            if let Scope::Multicast = connection.scope {
+                server.socket().unwrap().join_multicast(&MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap().ip(), &IpAddr::V4(Ipv4Addr::new(0,0,0,0)))
+            }
+            println!("[Server] Listening at {:?}...", server.socket().unwrap().local_addr().unwrap());
 
-        // println!("{:?}", server_addr);
+            let quitter = self.server_quit_rx.clone();
+            let running_pair = self.server_running.clone();
 
-        //Set up the client
-        let mut client: Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier> = Client::new(config);
+            std::thread::spawn(move || {
+                let mut encoder = Encoder::new();
+                let mut decoder = Decoder::new();
 
-        //Client can only connect succesfully if we connect to the specific host IP address, not multicast. Not ideal
-        client.connect(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 25)), 12345)).expect("Couldn't connect to global address!");
-        client.socket().unwrap().connect_multicast(&multicast_addr).unwrap();        
+                let (lock, cvar) = &*running_pair;
+                let mut running = lock.lock().unwrap();
 
-        println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
+                *running = true;
 
-        let quitter = self.server_quit_rx.clone();
-        let running_pair = self.server_running.clone();
+                'server: loop {
 
-        std::thread::spawn(move || {
-            let mut encoder = Encoder::new();
-            let mut decoder = Decoder::new();
-
-            let (lock, cvar) = &*running_pair;
-            let mut running = lock.lock().unwrap();
-
-            *running = true;
-
-            'server: loop {
-
-                let quit_receiver = &*quitter.lock().unwrap(); 
-                match quit_receiver.try_recv() {
-                    Ok(_) | Err(TryRecvError::Disconnected) => {
-                        println!("[Server] Thread discontinued");
-                        break 'server;
-                    },
-                    _ => {}
-                }
-
-                while let Ok(event) = server.accept_receive() {
-                    match event {
-                        ServerEvent::Connection(id) => {
-                            let conn = server.connection(&id).unwrap();
-                            println!(
-                                "[Server] Client {} ({}, {}ms rtt) connected.",
-                                id.0,
-                                conn.peer_addr(),
-                                conn.rtt()
-                            );
+                    let quit_receiver = &*quitter.lock().unwrap(); 
+                    match quit_receiver.try_recv() {
+                        Ok(_) | Err(TryRecvError::Disconnected) => {
+                            println!("[Server] Thread discontinued");
+                            break 'server;
                         },
-                        ServerEvent::Message(id, message) => {
-                            let conn = server.connection(&id).unwrap();
-                            println!(
-                                "[Server] Message from client {} ({}, {}ms rtt)",
-                                id.0,
-                                conn.peer_addr(),
-                                conn.rtt(),
-                            );
-
-                            let decompressed = decoder.decompress_vec(&message).unwrap();
-                            let message: MessageSender = deserialize(&decompressed).unwrap();
-                            let payload = encoder.compress_vec(&serialize(&message).unwrap()).unwrap();
-
-                            // Send a message to all connected clients
-                            for (_, conn) in server.connections() {
-                                conn.send(message.message_type.as_kind(), payload.clone());
-                            }
-    
-                        },
-                        ServerEvent::ConnectionClosed(id, _) | ServerEvent::ConnectionLost(id, _) => {
-                            let conn = server.connection(&id).unwrap();
-                            println!(
-                                "[Server] Client {} ({}, {}ms rtt) disconnected.",
-                                id.0,
-                                conn.peer_addr(),
-                                conn.rtt()
-                            );
-                            if server.connections().len() == 0 {
-                                println!("[Server] Closing out server as there are no more connections");
-                                break 'server;
-                            }
-                        },
-                        ServerEvent::PacketLost(id, _) => {
-                            let conn = server.connection(&id).unwrap();
-                            println!(
-                                "[Server] Packet dropped {} ({}, {}ms rtt)",
-                                id.0,
-                                conn.peer_addr(),
-                                conn.rtt(),
-                            );
-                        },
-                        ServerEvent::ConnectionCongestionStateChanged(id, _) => {
-                            let conn = server.connection(&id).unwrap();
-                            println!(
-                                "[Server] Congestion State Changed {} ({}, {}ms rtt)",
-                                id.0,
-                                conn.peer_addr(),
-                                conn.rtt()
-                            );
-                        }
                         _ => {}
                     }
+
+                    while let Ok(event) = server.accept_receive() {
+                        match event {
+                            ServerEvent::Connection(id) => {
+                                let conn = server.connection(&id).unwrap();
+                                println!(
+                                    "[Server] Client {} ({}, {}ms rtt) connected.",
+                                    id.0,
+                                    conn.peer_addr(),
+                                    conn.rtt()
+                                );
+                            },
+                            ServerEvent::Message(id, message) => {
+                                let conn = server.connection(&id).unwrap();
+                                println!(
+                                    "[Server] Message from client {} ({}, {}ms rtt)",
+                                    id.0,
+                                    conn.peer_addr(),
+                                    conn.rtt(),
+                                );
+
+                                let decompressed = decoder.decompress_vec(&message).unwrap();
+                                let message: MessageSender = deserialize(&decompressed).unwrap();
+                                let payload = encoder.compress_vec(&serialize(&message).unwrap()).unwrap();
+
+                                // Send a message to all connected clients
+                                for (_, conn) in server.connections() {
+                                    conn.send(message.message_type.as_kind(), payload.clone());
+                                }
+        
+                            },
+                            ServerEvent::ConnectionClosed(id, _) | ServerEvent::ConnectionLost(id, _) => {
+                                let conn = server.connection(&id).unwrap();
+                                println!(
+                                    "[Server] Client {} ({}, {}ms rtt) disconnected.",
+                                    id.0,
+                                    conn.peer_addr(),
+                                    conn.rtt()
+                                );
+                                if server.connections().len() == 0 {
+                                    println!("[Server] Closing out server as there are no more connections");
+                                    break 'server;
+                                }
+                            },
+                            ServerEvent::PacketLost(id, _) => {
+                                let conn = server.connection(&id).unwrap();
+                                println!(
+                                    "[Server] Packet dropped {} ({}, {}ms rtt)",
+                                    id.0,
+                                    conn.peer_addr(),
+                                    conn.rtt(),
+                                );
+                            },
+                            ServerEvent::ConnectionCongestionStateChanged(id, _) => {
+                                let conn = server.connection(&id).unwrap();
+                                println!(
+                                    "[Server] Congestion State Changed {} ({}, {}ms rtt)",
+                                    id.0,
+                                    conn.peer_addr(),
+                                    conn.rtt()
+                                );
+                            }
+                        }
+                    }
+
+                    if let Ok(_) = server.send(true) {}
                 }
 
-                if let Ok(_) = server.send(true) {}
-            }
+                *running = false;
+                cvar.notify_one();
 
-            *running = false;
-            cvar.notify_one();
+                server.shutdown().unwrap();
+            });
 
-            server.shutdown().unwrap();
-        });
+        };
 
         let quitter = self.client_quit_rx.clone();
         let running_pair = self.client_running.clone();
 
         std::thread::spawn(move ||{
+
+            let mut client: Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier> = Client::new(config);
+
+            let client_addr = match connection.scope {
+                Scope::Loopback => LOOPBACK_ADDR_V4.parse::<SocketAddr>().unwrap(),
+                Scope::Multicast => {
+                    let mut last_sent = Instant::now();
+                    let mut wait_for = Duration::from_millis(0);
+
+                    let socket = net::UdpSocket::bind("0.0.0.0:0").unwrap();
+                    socket.set_nonblocking(true).unwrap();
+
+                    loop {
+
+                        if Instant::now() - last_sent > wait_for {
+
+                            println!("Sending an IP request to {:?}", MULTICAST_ADDR_V4);
+                            //8008 will be interpreted as an IP request
+                            socket.send_to(&[8,0,0,8], MULTICAST_ADDR_V4).unwrap();
+                            last_sent = Instant::now();
+                            wait_for = Duration::from_secs(5);
+                        }
+
+                        let mut buffer = [0; 4];
+                        // This is kind of sketchy because we don't check the validity of the origin of the request, maybe a random packet 
+                        // should be sent with the request and returned to be verified
+
+                        if let Ok((_, src_addr)) = socket.recv_from(&mut buffer) {
+
+                            println!("Source address is {:?}", src_addr);
+
+                            break src_addr
+                        }
+
+                    }
+                },
+                Scope::Online => todo!("Get global ip somehow")
+            };
+
+            match connection.scope {
+                Scope::Loopback => {
+                    client.connect(client_addr).expect("Couldn't connect to client address!");
+                },
+                Scope::Multicast => {
+
+                    println!("connect to {:?}, on multicast {:?}", client_addr, MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap());
+
+                    client.connect(client_addr).expect("Couldn't connect to client address!");
+                    client.socket().unwrap().connect_multicast(MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap()).unwrap();
+                },
+                Scope::Online => {
+                    todo!("Online support");
+                }
+            }
+
+            println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
 
             let mut message_fragments: HashMap::<u128, Vec<MessageFragment>> = HashMap::new();
             let mut encoder = Encoder::new();
@@ -561,10 +639,7 @@ impl GameStateTraits for Networking {
             world.delete(entity);
         }
 
-        //Removes the ClientAddr resource which would have been set if we were connected to a non-local host
-        resources.remove::<ClientAddr>();
-        //Removes the ServerAddr resource which would have been set if we were hosting
-        resources.remove::<ServerAddr>();
+        resources.remove::<Connection>();
 
     }
 
@@ -677,5 +752,25 @@ fn client_handle_data(data: DataType) {
             r.execute(world, resources)
         },
         _ => {},
+    }
+}
+
+/// Get local ip based on connection to the connect value IP
+fn get_local_ip<T: ToSocketAddrs>(connect: T) -> Option<SocketAddr> {
+    match net::UdpSocket::bind("0.0.0.0:0") {
+        Ok(socket) => {
+            match socket.connect(connect) {
+                Err(_) => {
+                    None
+                },
+                Ok(_) => {
+                    match socket.local_addr() {
+                        Ok(local_addr) => Some(local_addr),
+                        Err(_) => None,
+                    }
+                }
+            }
+        },
+        Err(_) => None,
     }
 }

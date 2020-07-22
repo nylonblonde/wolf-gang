@@ -77,7 +77,7 @@ impl ConnectMenu {
 
                     network_state.free(world, resources);
 
-                    resources.insert(networking::ClientAddr("255.255.255.255:1234".parse().unwrap()));
+                    resources.insert(networking::Connection::new(networking::ConnectionType::Join, networking::Scope::Multicast));
 
                     network_state.initialize(world, resources);
                 })
@@ -107,8 +107,7 @@ impl ConnectMenu {
 
                     network_state.free(world, resources);
 
-                    resources.insert(networking::ClientAddr("255.255.255.255:1234".parse().unwrap()));
-                    resources.insert(networking::ServerAddr("255.255.255.255:1234".parse().unwrap()));
+                    resources.insert(networking::Connection::new(networking::ConnectionType::Host, networking::Scope::Multicast));
 
                     network_state.initialize(world, resources);
                 })
