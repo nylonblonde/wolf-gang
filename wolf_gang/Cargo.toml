@@ -21,8 +21,7 @@ serde_derive = "1.0.106"
 approx = "0.3.2"
 bincode = "1.3.1"
 rayon = "1.3.1"
-cobalt = { path = "/home/lyon/RustProjects/cobalt-rs" }
-# "0.22.0"
+cobalt = "0.22.0"
 uuid = "0.8.1"
 snap = "1"
 
