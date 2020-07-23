@@ -279,7 +279,7 @@ impl GameStateTraits for Networking {
 
             let server_addr = match connection.scope {
                 Scope::Loopback => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345)),
-                Scope::Multicast => SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0,0,0,0)), 12345),
+                Scope::Multicast => MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap(),
                 Scope::Online => todo!("Get global ip somehow")
             };
 
