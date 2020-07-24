@@ -37,6 +37,7 @@ use std::time::{Duration, Instant};
 
 const MULTICAST_ADDR_V4: &'static str = "234.2.2.2:12345";
 const LOOPBACK_ADDR_V4: &'static str = "127.0.0.1:12345";
+const LOBBY_ADDR_V4: &'static str = "192.168.0.25:3450";
 
 #[derive(Debug, Copy, Clone)]
 pub enum Scope{
@@ -249,13 +250,18 @@ pub struct Networking {
     client_quit_tx: mpsc::Sender<()>,
     client_quit_rx: Arc<Mutex<mpsc::Receiver<()>>>,
     client_running: Arc<(Mutex<bool>, Condvar)>,
-    server_running: Arc<(Mutex<bool>, Condvar)>
+    server_running: Arc<(Mutex<bool>, Condvar)>,
+    //only needed in the case of hosting online, just a handy way for the host's server to communicate its address to the host client
+    host_addr_tx: Option<mpsc::Sender<SocketAddr>>,
+    host_addr_rx: Option<Arc<Mutex<mpsc::Receiver<SocketAddr>>>>,
 }
 
 impl GameStateTraits for Networking {
 
     fn initialize(&mut self, _: &mut World, resources: &mut Resources) {
 
+        resources.insert(Connection::new(ConnectionType::Host, Scope::Online));
+        
         resources.insert(MessagePool{
             messages: Vec::new()
         });
@@ -274,34 +280,93 @@ impl GameStateTraits for Networking {
         }
 
         if let ConnectionType::Host = connection.conn_type {
-            //Set up the server
-            let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone());
-
-            let server_addr = match connection.scope {
-                Scope::Loopback => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345)),
-                Scope::Multicast => MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap(),
-                Scope::Online => todo!("Get global ip somehow")
-            };
-
-            server.listen(server_addr).expect("Failed to bind to socket.");
-            if let Scope::Multicast = connection.scope {
-                server.socket().unwrap().join_multicast(&MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap().ip(), &IpAddr::V4(Ipv4Addr::new(0,0,0,0)))
-            }
-            println!("[Server] Listening at {:?}...", server.socket().unwrap().local_addr().unwrap());
 
             let quitter = self.server_quit_rx.clone();
             let running_pair = self.server_running.clone();
 
+            if let Scope::Online = connection.scope {
+                let (host_addr_tx, host_addr_rx) = mpsc::channel::<SocketAddr>();
+                self.host_addr_tx = Some(host_addr_tx);
+                self.host_addr_rx = Some(Arc::new(Mutex::new(host_addr_rx)));
+            }
+
+            let host_addr_tx = self.host_addr_tx.clone();
+
             std::thread::spawn(move || {
+                //Set up the server
+                let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone());
+
+                let mut lobby_client: Option<Client<cobalt::UdpSocket, BinaryRateLimiter, NoopPacketModifier>> = None;
+
+                let server_addr = match connection.scope {
+                    Scope::Loopback => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345)),
+                    Scope::Multicast => MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap(),
+                    Scope::Online => {
+
+                        lobby_client = Some(Client::new(Config{
+                            send_rate: 1,
+                            connection_init_threshold: Duration::from_secs(3),
+                            ..Default::default()
+                        }));
+                        let lobby_client = lobby_client.as_mut().unwrap();
+                        lobby_client.connect(LOBBY_ADDR_V4).unwrap();
+                        
+                        'lobby: loop {
+
+                            //Receive IP Address once we've been registered as a host
+                            while let Ok(event) = lobby_client.receive() {
+                                match event {
+                                    ClientEvent::Message(message) => {
+                                        let data: lobby::DataType = bincode::deserialize(&message).unwrap();
+
+                                        match data {
+                                            lobby::DataType::Host(host) => {
+                                                let addr = host.get_addr();
+                                                //unwrap is okay because we know we'd have this set above
+                                                host_addr_tx.unwrap().send(addr).unwrap();
+                                                break 'lobby addr
+                                            },
+                                            _ => {}
+                                        }
+                                    },
+                                    _ => {}
+                                }
+                            }
+                            
+                            if let Ok(conn) = lobby_client.connection() {
+                                conn.send(MessageKind::Instant, 
+                                    bincode::serialize(
+                                        &lobby::DataType::RequestHost(lobby::Config::default())
+                                    ).unwrap()
+                                )
+                            }
+
+                            if let Ok(_) = lobby_client.send(true) {};
+                        }
+                    }
+                };
+
+                server.listen(server_addr).expect("Failed to bind to socket.");
+                if let Scope::Multicast = connection.scope {
+                    server.socket().unwrap().join_multicast(&MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap().ip(), &IpAddr::V4(Ipv4Addr::new(0,0,0,0)))
+                }
+                println!("[Server] Listening at {:?}...", server.socket().unwrap().local_addr().unwrap());
+
                 let mut encoder = Encoder::new();
                 let mut decoder = Decoder::new();
 
                 let (lock, cvar) = &*running_pair;
                 let mut running = lock.lock().unwrap();
-
+                
                 *running = true;
 
                 'server: loop {
+
+                    //receive events from the lobby serverif we are in the online scope
+                    if let Some(lobby_client) = lobby_client.as_mut() {
+
+                        lobby_client.send(true);
+                    }
 
                     let quit_receiver = &*quitter.lock().unwrap(); 
                     match quit_receiver.try_recv() {
@@ -390,6 +455,8 @@ impl GameStateTraits for Networking {
         let quitter = self.client_quit_rx.clone();
         let running_pair = self.client_running.clone();
 
+        let host_addr_rx = self.host_addr_rx.clone();
+
         std::thread::spawn(move ||{
 
             let mut client: Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier> = Client::new(config);
@@ -427,7 +494,23 @@ impl GameStateTraits for Networking {
 
                     }
                 },
-                Scope::Online => todo!("Get global ip somehow")
+                Scope::Online => {
+                    match connection.conn_type {
+                        ConnectionType::Host => {
+                            let host_option = host_addr_rx.unwrap();
+                            let host_addr_lock = host_option.lock().unwrap();
+
+                            if let Ok(addr) = host_addr_lock.recv() {
+                                addr
+                            } else {
+                                panic!("Couldn't receive")
+                            }
+                        },
+                        ConnectionType::Join => {
+                            todo!("Wait for a suitable host to be chosen")
+                        }
+                    }
+                }
             };
 
             match connection.scope {
@@ -442,7 +525,7 @@ impl GameStateTraits for Networking {
                     client.socket().unwrap().connect_multicast(MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap()).unwrap();
                 },
                 Scope::Online => {
-                    todo!("Online support");
+                    client.connect(client_addr).expect("Couldn't connect to online address!");
                 }
             }
 
@@ -666,6 +749,9 @@ impl NewState for Networking {
 
             client_running: Arc::new((Mutex::new(false), Condvar::new())),
             server_running: Arc::new((Mutex::new(false), Condvar::new())),
+
+            host_addr_tx: None,
+            host_addr_rx: None,
             
         }
     }

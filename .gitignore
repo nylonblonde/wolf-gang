@@ -1,7 +1,7 @@
 **/.DS_Store
-/target
+**/target
 **/*.rs.bk
-Cargo.lock
+**/Cargo.lock
 
 **/*.import
 /.import
