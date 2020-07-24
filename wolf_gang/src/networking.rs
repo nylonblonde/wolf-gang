@@ -32,9 +32,6 @@ use bincode::{deserialize, serialize};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-// pub struct ClientAddr(pub SocketAddr);
-// pub struct ServerAddr(pub SocketAddr);
-
 const MULTICAST_ADDR_V4: &'static str = "234.2.2.2:12345";
 const LOOPBACK_ADDR_V4: &'static str = "127.0.0.1:12345";
 const LOBBY_ADDR_V4: &'static str = "192.168.0.25:3450";
@@ -365,7 +362,7 @@ impl GameStateTraits for Networking {
                     //receive events from the lobby serverif we are in the online scope
                     if let Some(lobby_client) = lobby_client.as_mut() {
 
-                        lobby_client.send(true);
+                        if let Ok(_) = lobby_client.send(true) {}
                     }
 
                     let quit_receiver = &*quitter.lock().unwrap(); 

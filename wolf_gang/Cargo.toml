@@ -24,7 +24,7 @@ rayon = "1.3.1"
 cobalt = "0.22.0"
 uuid = "0.8.1"
 snap = "1"
-lobby = { path = "../lobby" }
+lobby = { path = "../lobby-server/lobby" }
 
 [lib]
 crate-type = ["cdylib"]

@@ -2,6 +2,6 @@
 
 members = [
     "wolf_gang",
-    "lobby",
+    "lobby-server/lobby",
     "lobby-server"
 ]
