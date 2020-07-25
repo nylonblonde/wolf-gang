@@ -71,7 +71,7 @@ impl FileMenu {
             match file_dialog {
                 Some(file_dialog) => {
 
-                    match menu_button.connect(GodotString::from("save_load_popup"), file_dialog, GodotString::from("save_load_handler"), VariantArray::new_shared(), 0) {
+                    match menu_button.connect("save_load_popup", file_dialog, "save_load_handler", VariantArray::new_shared(), 0) {
                         Ok(_) => {
                             self.file_dialog = Some(file_dialog)
                         },
@@ -131,7 +131,7 @@ impl FileMenu {
                         let current = doc.to_raw();
 
                         if saved != current {
-                            menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]);
+                            menu_button.emit_signal("confirmation_popup", &[]);
                             return
                         }
                     },
@@ -141,7 +141,7 @@ impl FileMenu {
 
                         if doc != Document::default() {
                             //Emit signal to confirm if you want new document despite unsaved changes
-                            menu_button.emit_signal(GodotString::from("confirmation_popup"), &[]);
+                            menu_button.emit_signal("confirmation_popup", &[]);
                         }
 
                         //get outta here, we're done

@@ -14,8 +14,7 @@ __meta__ = {
 }
 
 [node name="DirectionalLight" type="DirectionalLight" parent="."]
-transform = Transform( 0.707107, -0.61249, 0.35335, 0, 0.499713, 0.866191, -0.707107, -0.61249, 0.35335, 0, 0, 0 )
-light_energy = 0.33
-shadow_enabled = true
+transform = Transform( 0.866025, -0.433013, 0.25, 0, 0.5, 0.866025, -0.5, -0.75, 0.433013, 0, 0, 0 )
+light_energy = 0.3
 
 [node name="Control" parent="." instance=ExtResource( 2 )]

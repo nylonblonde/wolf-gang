@@ -25,6 +25,7 @@ cobalt = "0.22.0"
 uuid = "0.8.1"
 snap = "1"
 lobby = { path = "../lobby-server/lobby" }
+gip = "0.6.0"
 
 [lib]
 crate-type = ["cdylib"]

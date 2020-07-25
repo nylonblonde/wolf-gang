@@ -191,6 +191,7 @@ fn init(handle: InitHandle) {
     handle.add_class::<nodes::file_dialog::SaveLoadDialog>();
     handle.add_class::<nodes::file_confirmation::FileConfirmation>();
     handle.add_class::<nodes::connect_menu::ConnectMenu>();
+    handle.add_class::<nodes::connet_dialog::ConnectDialog>();
 }
 
 godot_init!(init);

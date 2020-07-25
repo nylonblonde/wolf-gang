@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=2]
+[gd_scene load_steps=7 format=2]
 
 [ext_resource path="res://EditMenu.gdns" type="Script" id=1]
 [ext_resource path="res://FileMenu.gdns" type="Script" id=2]
 [ext_resource path="res://SaveLoadDialog.gdns" type="Script" id=3]
 [ext_resource path="res://FileConfirmation.gdns" type="Script" id=4]
 [ext_resource path="res://ConnectMenu.gdns" type="Script" id=5]
+[ext_resource path="res://ConnectDialog.gdns" type="Script" id=6]
 
 [node name="EditorUI" type="Control"]
 anchor_right = 1.0
@@ -92,6 +93,7 @@ margin_top = -16.0
 margin_right = 103.0
 margin_bottom = 79.0
 window_title = "Join Online Game"
+script = ExtResource( 6 )
 __meta__ = {
 "_edit_use_anchors_": false
 }
@@ -123,7 +125,7 @@ text = "Ip Address:"
 margin_top = 18.0
 margin_right = 184.0
 margin_bottom = 42.0
-text = "255.255.255.255:5432"
+text = "0.0.0.0:3450"
 __meta__ = {
 "_edit_use_anchors_": false
 }

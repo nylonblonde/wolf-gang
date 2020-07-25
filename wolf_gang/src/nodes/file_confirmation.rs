@@ -5,6 +5,8 @@ use gdnative::api::{
     MenuButton,
 };
 
+use super::utils;
+
 #[derive(NativeClass)]
 #[inherit(ConfirmationDialog)]
 #[user_data(user_data::LocalCellData<FileConfirmation>)]
@@ -24,24 +26,7 @@ impl FileConfirmation {
         
     }
 
-    unsafe fn disconnect_signal(emitter: &ConfirmationDialog, target: &ConfirmationDialog, signal: &'static str) {
-
-        let connections = target.get_incoming_connections();
-
-        for i in 0..connections.len() {
-            let connection = connections.get(i);
-
-            let dict = connection.to_dictionary();
-
-            let incoming_signal = dict.get("signal_name".to_variant()).to_godot_string();
-
-            if incoming_signal == GodotString::from(signal) {
-                let incoming_method = dict.get("method_name".to_variant()).to_godot_string();
-
-                emitter.disconnect(incoming_signal, target.assume_shared(), incoming_method);
-            }
-        }
-    }
+    
 
     /// Confirmation for ConfirmationDialog that will popup when pressing New when there are unsaved changes
     #[export]
@@ -52,11 +37,9 @@ impl FileConfirmation {
             let signal = "confirmed";
             let method = "new_confirmation_ok_handler";
 
-            let emitter = confirmation_dialog;
+            utils::disconnect_signal(confirmation_dialog, confirmation_dialog, signal);
 
-            Self::disconnect_signal(emitter, confirmation_dialog, signal);
-
-            emitter.connect(signal, confirmation_dialog.assume_shared(), method, VariantArray::new_shared(), 0).unwrap();
+            confirmation_dialog.connect(signal, confirmation_dialog.assume_shared(), method, VariantArray::new_shared(), 0).unwrap();
 
             confirmation_dialog.popup_centered(Vector2::new(0., 0.)); 
         
@@ -71,11 +54,9 @@ impl FileConfirmation {
             let signal = "confirmed";
             let method = "open_confirmation_ok_handler";
 
-            let emitter = confirmation_dialog;
+            utils::disconnect_signal(confirmation_dialog, confirmation_dialog, signal);
 
-            Self::disconnect_signal(emitter, confirmation_dialog, signal);
-
-            emitter.connect(signal, confirmation_dialog.assume_shared(), method, VariantArray::new_shared(), 0).unwrap();
+            confirmation_dialog.connect(signal, confirmation_dialog.assume_shared(), method, VariantArray::new_shared(), 0).unwrap();
 
             confirmation_dialog.popup_centered(Vector2::new(0., 0.)); 
         }

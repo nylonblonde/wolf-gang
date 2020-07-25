@@ -5,15 +5,21 @@ use crate::{
 };
 
 use gdnative::prelude::*;
-
 use gdnative::api::{
     ConfirmationDialog,
     MenuButton,
     PopupMenu
 };
 
+use std::net::{
+    SocketAddr, Ipv4Addr, IpAddr
+};
+
+use gip::Provider;
+
 #[derive(NativeClass)]
 #[inherit(MenuButton)]
+#[register_with(Self::register_signals)]
 #[user_data(user_data::LocalCellData<ConnectMenu>)]
 pub struct ConnectMenu {
     confirmation: Option<Ref<ConfirmationDialog>>,
@@ -56,13 +62,26 @@ impl ConnectMenu {
         }
     }
 
-    #[export]
-    fn _ready(&mut self, menu_button: &MenuButton) {
-        self.confirmation = unsafe { node::get_child_by_type::<ConfirmationDialog>(menu_button.upcast()) };
+    fn register_signals(builder: &ClassBuilder<Self>) {
+        builder.add_signal(Signal {
+            name: "join_or_host_online",
+            args: &[SignalArgument {
+                name: "type_flag",
+                default: Variant::from_i64(0),
+                export_info: ExportInfo::new(VariantType::I64),
+                usage: PropertyUsage::DEFAULT
+            }]
+        });
     }
 
     #[export]
-    fn join_item_handler(&mut self, _: &MenuButton, id: i64) {
+    fn _ready(&mut self, menu_button: &MenuButton) {
+        self.confirmation = unsafe { node::get_child_by_type::<ConfirmationDialog>(menu_button.upcast()) };
+        menu_button.connect("join_or_host_online", self.confirmation.unwrap(), "connection_type_handler", VariantArray::new_shared(), 0).unwrap();
+    }
+
+    #[export]
+    fn join_item_handler(&mut self, menu_button: &MenuButton, id: i64) {
         match id {
             0 => { //Local
                 crate::STATE_MACHINE.with(|s| {
@@ -83,16 +102,15 @@ impl ConnectMenu {
                 })
             },
             1 => { //Online
-                if let Some(confirmation) = self.confirmation {
-                    unsafe { confirmation.assume_safe().popup_centered(Vector2::new(200.,100.)); }
-                }
+                menu_button.emit_signal("join_or_host_online", &[Variant::from_i64(0)]);
+
             },
             _ => {}
         }
     }
 
     #[export]
-    fn host_item_handler(&mut self, _: &MenuButton, id: i64) {
+    fn host_item_handler(&mut self, menu_button: &MenuButton, id: i64) {
         match id {
             0 => { //Local
                 crate::STATE_MACHINE.with(|s| {
@@ -113,7 +131,25 @@ impl ConnectMenu {
                 })
             },
             1 => { //Online
+                menu_button.emit_signal("join_or_host_online", &[Variant::from_i64(1)]);
 
+
+                // let global_ip = match gip::ProviderDefaultV4::new().get_addr() {
+                //     Ok(addr) => match addr.v4addr {
+                //         Some(addr) => addr,
+                //         None => std::net::Ipv4Addr::new(0,0,0,0)
+                //     },
+                //     Err(err) => std::net::Ipv4Addr::new(0,0,0,0)
+                // };
+                // let global_ip = SocketAddr::new(IpAddr::V4(global_ip), 3450);
+                // godot_print!("{}", global_ip);
+
+                // if let Some(confirmation) = self.confirmation {
+                //     unsafe { 
+                //         let confirmation = confirmation.assume_safe();
+                //         confirmation.popup_centered(Vector2::new(200.,100.)); 
+                //     }
+                // }
             },
             _ => {}
         }
@@ -122,22 +158,10 @@ impl ConnectMenu {
     #[export]
     fn item_handler(&mut self, _: &MenuButton, id: i64) {
         match id {
-            // 0 => { // Join
-            //     //replace this with an emit signal to a handler which switches between host and join
-            //     if let Some(confirmation) = self.confirmation {
-            //         unsafe { confirmation.assume_safe().popup_centered(Vector2::new(200.,100.)); }
-            //     }
-            // },
-            // 1 => { // Host
-            //     //replace this with an emit signal to a handler which switches between host and join
-            //     if let Some(confirmation) = self.confirmation {
-            //         unsafe { confirmation.assume_safe().popup_centered(Vector2::new(200.,100.)); }
-            //     }
-            // },
             3 => { // Disconnect
 
             }, 
-            _ => {}, //0 is join, 1 is host, 2 is a separator
+            _ => {}, //0 is join submenu, 1 is host submenu, 2 is a separator
         }
     }
 }
