@@ -1,3 +1,5 @@
+
+
 use std::{
     collections::VecDeque,
     net,
@@ -47,6 +49,8 @@ fn main() {
                                     match server.connections().get_mut(&id) {
                                         Some(connection) => {
                                             let host = Host::new(config, connection.peer_addr());
+
+                                            println!("Sending Host message to {:?} at {:?}", id, connection.peer_addr());
 
                                             match bincode::serialize(&DataType::Host(host)) {
                                                 Ok(payload) => {
