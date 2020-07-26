@@ -21,14 +21,15 @@ use std::sync::mpsc;
 
 use super::*;
 
-pub const TILE_PIXELS: f32 = 64.;
-pub const SHEET_PIXELS: f32 = 1024.;
-pub const TILE_SIZE: f32 = TILE_PIXELS/SHEET_PIXELS;
-pub const BEVEL_SIZE: f32 = 0.2;
-pub const START_REPEAT_ABOVE_HEIGHT: f32 = 7.;
-pub const START_REPEAT_BELOW_HEIGHT: f32 = 0.;
-pub const REPEAT_AMOUNT_ABOVE: f32 = 4.;
-pub const REPEAT_AMOUNT_BELOW: f32 = 4.;
+const TILE_PIXELS: f32 = 64.;
+const SHEET_PIXELS: f32 = 1024.;
+const TILE_SIZE: f32 = TILE_PIXELS/SHEET_PIXELS;
+const BEVEL_SIZE: f32 = 0.2;
+const START_REPEAT_ABOVE_HEIGHT: f32 = 2.;
+const START_REPEAT_BELOW_HEIGHT: f32 = 0.;
+const REPEAT_AMOUNT_ABOVE: f32 = 2.;
+const REPEAT_AMOUNT_BELOW: f32 = 1.;
+const WALL_VERTICAL_OFFSET: f32 = 9.;
 
 lazy_static!{
     pub static ref NEIGHBOR_DIRS: [Point; 8] = [
@@ -730,13 +731,15 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                                             
                                             let true_top = true_top.unwrap().y;
 
-                                            let vert_offset = if bottom < START_REPEAT_BELOW_HEIGHT  {
+                                            let mut vert_offset = if bottom < START_REPEAT_BELOW_HEIGHT  {
                                                 (bottom / REPEAT_AMOUNT_BELOW).floor() * REPEAT_AMOUNT_BELOW * TILE_SIZE
                                             } else if bottom - START_REPEAT_ABOVE_HEIGHT >= START_REPEAT_BELOW_HEIGHT {
                                                 ((((bottom - START_REPEAT_ABOVE_HEIGHT) / REPEAT_AMOUNT_ABOVE).floor() * REPEAT_AMOUNT_ABOVE) - REPEAT_AMOUNT_BELOW) * TILE_SIZE
                                             } else {
                                                 - REPEAT_AMOUNT_BELOW * TILE_SIZE
                                             }; //height * TILE_SIZE;
+
+                                            vert_offset -= WALL_VERTICAL_OFFSET * TILE_SIZE;
 
                                             vertex_data.uvs.push(Vector2::new(u,-1.-height * TILE_SIZE - bottom * TILE_SIZE + vert_offset)); //bottom of face
                                             vertex_data.uvs.push(Vector2::new(u,-1.-bottom * TILE_SIZE + vert_offset)); //top of face
@@ -998,7 +1001,6 @@ pub fn scale_from_origin(pt: Vector3, origin: Vector3, scale_amount: f32) -> Vec
 } 
 
 pub fn get_open_sides(world: &legion::world::World, map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
-    // let mut open_sides: HashSet<Point> = HashSet::new();
     let chunk_max = map_data.octree.get_aabb().get_max();
     let chunk_min = map_data.octree.get_aabb().get_min();
     

@@ -83,7 +83,6 @@ switch_on_hover = true
 script = ExtResource( 5 )
 
 [node name="ConfirmationDialog" type="ConfirmationDialog" parent="HBoxContainer/Connect"]
-visible = true
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
