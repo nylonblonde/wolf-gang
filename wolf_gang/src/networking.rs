@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 
 const MULTICAST_ADDR_V4: &'static str = "234.2.2.2:12345";
 const LOOPBACK_ADDR_V4: &'static str = "127.0.0.1:12345";
-const LOBBY_ADDR_V4: &'static str = "70.75.147.110:3450";
+// const LOBBY_ADDR_V4: &'static str = "";
 
 #[derive(Debug, Copy, Clone)]
 pub enum Scope{

@@ -914,7 +914,7 @@ pub fn create_drawing_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::Wor
                         let min = aabb.get_min();
                         let max = aabb.get_max();
 
-                        let aabb = AABB::from_extents(Point::new(min.x-1, min.y-map_aabb.dimensions.y/2, min.z-1), Point::new(max.x+1, max.y, max.z+1));
+                        let aabb = AABB::from_extents(Point::new(min.x-1, min.y-map_aabb.dimensions.y/2, min.z-1), Point::new(max.x+1, max.y+1, max.z+1));
                         // grab a region below to ensure updates to lower adjacent chunks happen (for the edge lip texture, for instance)
                         // grab adjacent horizontal spaces because we'd want to update edges that become connected or disconnected
 
