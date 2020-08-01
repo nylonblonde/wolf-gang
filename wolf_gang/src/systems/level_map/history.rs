@@ -34,7 +34,7 @@ pub fn create_map_input_system() -> impl systems::Schedulable {
 
                 map_messages.push((networking::MessageSender{
                     data_type: networking::DataType::MapInput((*map_input).clone()),
-                    message_type: networking::MessageType::Reliable
+                    message_type: networking::MessageType::Ordered
                 },));
 
                 commands.remove(*entity);
