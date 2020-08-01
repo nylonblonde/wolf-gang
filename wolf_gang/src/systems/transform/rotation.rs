@@ -3,7 +3,7 @@ use gdnative::api::{
     Spatial,
 };
 
-use legion::prelude::*;
+use legion::*;
 
 type Vector3D = nalgebra::Vector3<f32>;
 type Rotation3D = nalgebra::Rotation3<f32>;
@@ -22,6 +22,7 @@ impl Default for Rotation {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct Direction {
     pub right: Vector3D,
     pub up: Vector3D,
@@ -38,14 +39,14 @@ impl Default for Direction {
     }
 }
 
-pub fn create_system_local() -> Box<dyn Runnable> {
+pub fn create_system() -> impl systems::Schedulable {
     SystemBuilder::new("rotation_system")
-    .with_query(<(Read<Rotation>, Write<Direction>, Tagged<node::NodeName>)>::query()
-        .filter(changed::<Rotation>())
+    .with_query(<(Read<Rotation>, Write<Direction>, Read<node::NodeName>)>::query()
+        .filter(maybe_changed::<Rotation>())
     )
-    .build_thread_local(move |_, world, _, query| {
+    .build(move |_, world, _, query| {
 
-        for (rotation, mut direction, node_name) in query.iter_mut(&mut *world) {
+        query.for_each_mut(world, |(rotation, mut direction, node_name)| {
             let spatial_node : Option<Ref<Spatial>> = {
                 unsafe {
                     match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0.clone()) {
@@ -121,6 +122,6 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                    
                 None => {}
             }
-        }
+        })
     })
 }

@@ -1,4 +1,4 @@
-use legion::prelude::*;
+use legion::*;
 use crate::{
     game_state::{NewState, GameState, GameStateTraits},
     history,
@@ -8,12 +8,6 @@ use crate::{
         selection_box,
     },
 };
-
-use std::{
-    cell::RefCell,
-    rc::Rc
-};
-
 
 pub struct Editor {
     game_state: GameState,
@@ -26,11 +20,13 @@ impl GameStateTraits for Editor {
         self.camera = camera::initialize_camera(world);
         selection_box::initialize_selection_box(world, self.camera.clone());
 
+        resources.insert(level_map::history::MapInputHistory::new());
         resources.insert(self.map);    
         resources.insert(history::CurrentHistoricalStep::default());
         resources.insert(level_map::document::Document::default());
     }
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
+        resources.remove::<level_map::history::MapInputHistory>();
         resources.remove::<level_map::document::Document>();
         resources.remove::<history::CurrentHistoricalStep>();
 

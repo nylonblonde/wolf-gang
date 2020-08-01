@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use crate::game_state::{GameState, GameStateTraits, NewState};
-use legion::prelude::*;
+use legion::*;
 
 use cobalt::{
     BinaryRateLimiter, 
@@ -261,7 +261,7 @@ impl GameStateTraits for Networking {
             messages: Vec::new()
         });
 
-        let connection = *resources.get_or_default::<Connection>().unwrap();
+        let connection = *resources.get_or_default::<Connection>();
 
         let mut config = Config{
             packet_drop_threshold: std::time::Duration::from_secs(30),
@@ -285,13 +285,13 @@ impl GameStateTraits for Networking {
             //     self.host_addr_rx = Some(Arc::new(Mutex::new(host_addr_rx)));
             // }
 
-            let host_addr_tx = self.host_addr_tx.clone();
+            // let _host_addr_tx = self.host_addr_tx.clone();
 
             std::thread::spawn(move || {
                 //Set up the server
                 let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone());
 
-                let mut lobby_client: Option<Client<cobalt::UdpSocket, BinaryRateLimiter, NoopPacketModifier>> = None;
+                // let mut _lobby_client: Option<Client<cobalt::UdpSocket, BinaryRateLimiter, NoopPacketModifier>> = None;
 
                 let server_addr = match connection.scope {
                     Scope::Loopback => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345)),
@@ -451,7 +451,7 @@ impl GameStateTraits for Networking {
         let quitter = self.client_quit_rx.clone();
         let running_pair = self.client_running.clone();
 
-        let host_addr_rx = self.host_addr_rx.clone();
+        // let _host_addr_rx = self.host_addr_rx.clone();
 
         std::thread::spawn(move ||{
 
@@ -712,11 +712,11 @@ impl GameStateTraits for Networking {
         });
 
         //get rid of any message senders that might still exist
-        let query = <Read<MessageSender>>::query();
-        let entities = query.iter_entities(world).map(|(entity, _)| entity).collect::<Vec<Entity>>();
+        let mut query = <(Entity, Read<MessageSender>)>::query();
+        let entities = query.iter(world).map(|(entity, _)| *entity).collect::<Vec<Entity>>();
 
         for entity in entities {
-            world.delete(entity);
+            world.remove(entity);
         }
 
         resources.remove::<Connection>();

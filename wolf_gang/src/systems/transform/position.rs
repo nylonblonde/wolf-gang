@@ -3,7 +3,7 @@ use gdnative::api::{
     Spatial,
 };
 
-use legion::prelude::*;
+use legion::*;
 
 use crate::node;
 
@@ -19,14 +19,14 @@ impl Default for Position {
     }
 }
 
-pub fn create_system_local() -> Box<dyn Runnable> {
+pub fn create_system() -> impl systems::Schedulable {
     SystemBuilder::new("transform_position_system")
-    .with_query(<(Read<Position>, Tagged<node::NodeName>)>::query()
-        .filter(changed::<Position>())
+    .with_query(<(Read<Position>, Read<node::NodeName>)>::query()
+        .filter(maybe_changed::<Position>())
     )
-    .build_thread_local(move |_, world, _, query| {
+    .build(move |_, world, _, query| {
 
-        for (position, node_name) in query.iter(&mut *world) {
+        query.for_each(world, |(position, node_name)| {
             // godot_print!("Move {:?}", node_name.name);
 
             let spatial_node : Option<Ref<Spatial>> = {
@@ -51,7 +51,7 @@ pub fn create_system_local() -> Box<dyn Runnable> {
                 None => {}
             }
         
-        }
+        })
 
     })
 }

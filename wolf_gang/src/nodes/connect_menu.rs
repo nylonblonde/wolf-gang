@@ -132,24 +132,6 @@ impl ConnectMenu {
             },
             1 => { //Online
                 menu_button.emit_signal("join_or_host_online", &[Variant::from_i64(1)]);
-
-
-                // let global_ip = match gip::ProviderDefaultV4::new().get_addr() {
-                //     Ok(addr) => match addr.v4addr {
-                //         Some(addr) => addr,
-                //         None => std::net::Ipv4Addr::new(0,0,0,0)
-                //     },
-                //     Err(err) => std::net::Ipv4Addr::new(0,0,0,0)
-                // };
-                // let global_ip = SocketAddr::new(IpAddr::V4(global_ip), 3450);
-                // godot_print!("{}", global_ip);
-
-                // if let Some(confirmation) = self.confirmation {
-                //     unsafe { 
-                //         let confirmation = confirmation.assume_safe();
-                //         confirmation.popup_centered(Vector2::new(200.,100.)); 
-                //     }
-                // }
             },
             _ => {}
         }

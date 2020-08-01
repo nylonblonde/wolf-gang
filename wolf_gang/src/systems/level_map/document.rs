@@ -1,7 +1,7 @@
 use crate::collections::octree;
 use crate::systems::level_map;
 
-use legion::prelude::*;
+use legion::*;
 
 use gdnative::prelude::*;
 use gdnative::api::{
@@ -41,7 +41,7 @@ impl Document {
     ///Updates the data for the document by iterating through queries on the world    
     pub fn update_data(&mut self, world: &mut legion::world::World) {
         //go through and updata the data with the octree from each map chunk
-        let map_query = <Read<level_map::MapChunkData>>::query();
+        let mut map_query = <Read<level_map::MapChunkData>>::query();
 
         let mut data: Vec<Octree> = Vec::new();
         for map_data in map_query.iter(world) {

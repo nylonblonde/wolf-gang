@@ -5,7 +5,7 @@ pub mod document;
 use std::sync::mpsc;
 use std::collections::HashSet;
 use std::collections::HashMap;
-use legion::prelude::*;
+use legion::*;
 use serde::{Serialize, Deserialize};
 use rayon::prelude::*;
 
@@ -14,14 +14,9 @@ use crate::{
         octree,
         octree::{ 
             Octree,
-            PointData
         }
     },
-    networking::{
-        MessageSender, 
-        MessageType, 
-        DataType
-    }
+    systems::custom_mesh,
 };
 
 #[cfg(not(test))]
@@ -116,15 +111,14 @@ fn change_map(world: &mut legion::world::World, resources: &mut Resources, octre
 
         let pt = Point::new(x,y,z);
 
-        let map_chunk_exists_query = <Read<MapChunkData>>::query()
-            .filter(tag_value(&pt));
+        let mut map_chunk_exists_query = <(Entity, Read<MapChunkData>, Read<Point>)>::query();
 
         let mut exists = false;
 
-        match map_chunk_exists_query.iter_entities(world).next() {
-            Some((entity, map_chunk)) => {
+        match map_chunk_exists_query.iter(world).filter(|(_, _, chunk_pt)| **chunk_pt == pt).next() {
+            Some((entity, map_chunk, _)) => {
                 println!("Map chunk exists already");
-                entities.insert(entity, map_chunk.as_ref().clone());
+                entities.insert(*entity, map_chunk.clone());
                 exists = true;
             },
             _ => {}
@@ -179,15 +173,17 @@ fn change_map(world: &mut legion::world::World, resources: &mut Resources, octre
             map_data.octree.insert(*item).unwrap();
         }
 
-        world.add_component(*entity, map_data.clone()).unwrap();
-        world.add_tag(*entity, ManuallyChange(ChangeType::Direct(aabb))).unwrap();
+        if let Some(mut entry) = world.entry(*entity) {
+            entry.add_component(map_data.clone());
+            entry.add_component(ManuallyChange(ChangeType::Direct(aabb)));
+        }
 
         historically_significant.insert(*entity, map_data.clone());
     }
 
-    let current_step = &mut *resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
+    let _current_step = &mut *resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
 
-    history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center }, aabb);
+    // history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center }, aabb);
 }
 
 #[derive(Copy, Clone)]
@@ -208,33 +204,30 @@ impl Map {
     /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache, and resets the Document and CurrentHistoricalStep resources
     pub fn free(&self, world: &mut legion::world::World) {
 
-        let map_chunk_query = <(Read<MapChunkData>, Tagged<crate::node::NodeName>)>::query();
+        let mut map_chunk_query = <(Entity, Read<MapChunkData>, Read<crate::node::NodeName>)>::query();
 
         let mut entities: Vec<Entity> = Vec::new();
 
-        for (entity, (_, node_name)) in map_chunk_query.iter_entities(world) {
-            entities.push(entity);
+        for (entity, _, node_name) in map_chunk_query.iter(world) {
+            entities.push(*entity);
 
             unsafe { crate::node::remove_node(node_name.0.clone()); }
         }
 
         for entity in entities {
-            world.delete(entity);
+            world.remove(entity);
         }
     }
 
     pub fn remove(&self, world: &mut legion::world::World, aabb: AABB) {
 
-        world.insert((), vec![
+        world.push(
             (
-                MessageSender {
-                    data_type: DataType::MapInput(MapInput {
-                        octree: Octree::new(aabb, octree::DEFAULT_MAX)
-                    }),
-                    message_type: MessageType::Ordered
+                MapInput {
+                    octree: Octree::new(aabb, octree::DEFAULT_MAX)
                 },
             )
-        ]);
+        );
     }
 
     pub fn insert(&self, world: &mut legion::world::World, tile_data: TileData, aabb: AABB) {
@@ -264,16 +257,15 @@ impl Map {
             octree.insert(x).unwrap()
         });
 
-        world.insert((), vec![
+        // create an entity for the change, which has a system which will check if it is not identical to the most recent historical step, and forward it along as a 
+        // MessageSender if it is appropriate to do so
+        world.push(
             (
-                MessageSender {
-                    data_type: DataType::MapInput(MapInput {
-                        octree
-                    }),
-                    message_type: MessageType::Ordered
+                MapInput {
+                    octree
                 },
             )
-        ]);
+        );
     }
 
     /// Inserts a new mapchunk with the octree data into world
@@ -284,21 +276,32 @@ impl Map {
 
         let chunk_pt = map_data.get_chunk_point();
 
-        let (entity, map_data) = (world.insert((chunk_pt,), vec![
-            (
-                map_data.clone(),
-                history::MapChunkHistory::new(map_data.clone()),
-                #[cfg(not(test))]
-                MeshData::new(),
-            )
-        ])[0], map_data);
+        let area = self.chunk_dimensions.x * self.chunk_dimensions.z;
 
         if changed {
-            world.add_tag(entity, ManuallyChange(ChangeType::Direct(octree.get_aabb()))).unwrap();
+            (world.push(
+                (
+                    ManuallyChange(ChangeType::Direct(octree.get_aabb())),
+                    chunk_pt,
+                    map_data.clone(),
+                    #[cfg(not(test))]
+                    MeshData::new(),
+                    mesh::MapMeshData::new((0..area).map(|_| mesh::VertexData::default()).collect()),
+                    custom_mesh::RequiresManualChange{}
+                )
+            ), map_data)
+        } else {
+            (world.push(
+                (
+                    chunk_pt,
+                    map_data.clone(),
+                    #[cfg(not(test))]
+                    MeshData::new(),
+                    mesh::MapMeshData::new((0..area).map(|_| mesh::VertexData::default()).collect()),
+                    custom_mesh::RequiresManualChange{}
+                )
+            ), map_data)
         }
-
-        (entity, map_data)
-
     }
 }
 

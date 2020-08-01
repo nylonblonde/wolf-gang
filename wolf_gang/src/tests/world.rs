@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use legion::prelude::*;
+use legion::*;
 use crate::systems::level_map;
 use std::sync::{Arc, Mutex};
 

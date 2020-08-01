@@ -9,7 +9,7 @@ use gdnative::prelude::*;
 #[macro_use]
 extern crate lazy_static;
 
-use legion::prelude::*;
+use legion::*;
 
 use std::sync:: Mutex;
 use std::cell::RefCell;
@@ -123,31 +123,35 @@ impl WolfGang {
             state_machine.add_state(
                 editor::Editor::new("MapEditor", 
                     Schedule::builder()
-                        .add_thread_local_fn(systems::input::create_thread_local_fn())
                         .add_system(systems::smoothing::create_system())
                         .add_system(systems::camera::create_movement_system())
                         .add_system(systems::camera::create_rotation_system())
                         .add_system(systems::selection_box::create_system())
                         .add_system(systems::selection_box::create_coord_to_pos_system())
-                        .add_system(systems::custom_mesh::create_tag_system())
-                        .flush()
-                        //systems which add nodes should go first
-                        .add_thread_local(systems::custom_mesh::create_draw_system_local())
-                        //systems that work on nodes follow
                         
-                        .add_thread_local_fn(systems::selection_box::create_orthogonal_dir_thread_local_fn())
-                        .add_thread_local_fn(systems::selection_box::create_movement_thread_local_fn())
-                        .add_thread_local_fn(systems::selection_box::create_expansion_thread_local_fn())
-                        .add_thread_local_fn(systems::selection_box::create_tile_tool_thread_local_fn())
-                        .add_thread_local_fn(systems::level_map::mesh::create_add_components_system())
-                        .add_thread_local_fn(systems::level_map::history::create_undo_redo_input_system())
-                        .add_thread_local_fn(systems::level_map::mesh::create_drawing_thread_local_fn())
-                        .add_thread_local_fn(systems::camera::create_focal_point_thread_local_fn())
-                        .add_thread_local_fn(systems::camera::create_camera_angle_thread_local_fn())
-                        .add_thread_local_fn(systems::camera::create_follow_selection_box_thread_local_fn())
-                        // // .add_thread_local_fn(test_system)
-                        .add_thread_local(systems::transform::rotation::create_system_local())
-                        .add_thread_local(systems::transform::position::create_system_local())
+                        .add_system(systems::selection_box::create_tile_tool_system())
+
+                        .add_system(systems::custom_mesh::create_tag_system())
+
+                        .add_system(systems::camera::create_camera_angle_system())
+                        .add_system(systems::camera::create_focal_point_system())
+                        .add_system(systems::camera::create_follow_selection_box_system())
+
+                        .add_system(systems::selection_box::create_orthogonal_dir_system())
+                        .add_system(systems::selection_box::create_movement_system()) 
+                        .add_system(systems::selection_box::create_expansion_system())
+
+                        .add_system(systems::level_map::mesh::create_add_components_system())
+                        .add_system(systems::level_map::mesh::create_drawing_system())
+                        .flush() //need to flush before drawing custom meshes
+                        .add_system(systems::custom_mesh::create_draw_system())
+
+                        .add_system(systems::transform::rotation::create_system())
+                        .add_system(systems::transform::position::create_system())
+                        
+                        .add_system(systems::input::create_input_system())                             
+                        .add_system(systems::level_map::history::create_map_input_system())
+                        .add_system(systems::networking::create_message_pooling_system())
                         .build(),
                     true
                 ),
@@ -195,8 +199,3 @@ fn init(handle: InitHandle) {
 }
 
 godot_init!(init);
-
-// // macros that create the entry-points of the dynamic library.
-// godot_gdnative_init!();
-// godot_nativescript_init!(init);
-// godot_gdnative_terminate!();

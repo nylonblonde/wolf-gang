@@ -4,7 +4,7 @@ use gdnative::api::{
     GlobalConstants,
     InputMap
 };
-use legion::prelude::*;
+use legion::*;
 use ron::ser::{PrettyConfig};
 use serde::{Deserialize, Serialize};
 
@@ -336,7 +336,6 @@ pub fn initialize_input_config(world: &mut legion::world::World, path: &str) {
     
             match ron::de::from_str::<InputConfig>(string.as_str()) {
                 Ok(r) => {
-                    // r.transcode_to_input_map(); 
                     r
                 }
                 _err => {
@@ -349,6 +348,9 @@ pub fn initialize_input_config(world: &mut legion::world::World, path: &str) {
 
     input_config.transcode_to_input_map();
 
+    let mut modifiers: Vec<(Action, TypeTag, Modifier, InputData)> = Vec::new();
+    let mut non_modifiers: Vec<(Action, TypeTag, InputData)> = Vec::new();
+
     for action in input_config.actions {
         let (name, events) = action;
         for event in events {
@@ -357,31 +359,16 @@ pub fn initialize_input_config(world: &mut legion::world::World, path: &str) {
             for i in 0.. input_data.len() {
                 let input = input_data[i];
                 match input {
-                    Some(r) if i == 0 => {
-                        world.insert(
-                            (Action(name.clone()), TypeTag(input_type), Modifier{}),
-                            vec![
-                                (
-                                    r,
-                                )
-                            ]
-                        );
-                    },
-                    Some(r) => { 
-                        world.insert(
-                            (Action(name.clone()), TypeTag(input_type)),
-                            vec![
-                                (
-                                    r,
-                                )
-                            ]
-                        );
-                    },
+                    Some(input_data) if i == 0 => modifiers.push((Action(name.clone()), TypeTag(input_type), Modifier{}, input_data)),
+                    Some(input_data) => non_modifiers.push((Action(name.clone()), TypeTag(input_type), input_data)),
                     None => {}
                 }
             }
         }
     }
+
+    world.extend(modifiers);
+    world.extend(non_modifiers);
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -396,6 +383,7 @@ pub struct TypeTag(InputType);
 ///Repeater incremenets by delta time each frame so that individual systems can arbitrarily control length of repeating as needed by checking against it.
 /// Also a good way of checking how long a button has been pressed.
 /// Strength is zero when action has just been released.
+#[derive(Copy, Clone)]
 pub struct InputActionComponent {
     pub strength: f64,
     pub repeater: f32
@@ -417,34 +405,42 @@ impl InputActionComponent {
     }
 }
 
-pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut Resources)> {
-    Box::new(|world: &mut legion::world::World, resources: &mut Resources|{
-        let time = resources.get::<crate::Time>().unwrap();
+pub fn create_input_system() -> impl systems::Schedulable {
 
-        let inputs = Input::godot_singleton();
+    SystemBuilder::new("input_system")
+        .read_resource::<crate::Time>()
+        .with_query(<(Entity, Read<InputData>, Read<Action>)>::query() //input data that is a modifier
+            .filter(component::<Modifier>())
+        )
+        .with_query(<(Entity, Read<InputData>, Read<Action>)>::query() //input data that is not a modifier
+            .filter(!component::<Modifier>())
+        )
+        .with_query(<(Entity, Write<InputActionComponent>, Read<Action>)>::query()) 
+        .build(|commands, world, time, queries| {
 
-        let mut already_pressed: HashSet<String> = HashSet::new();
+            let inputs = Input::godot_singleton();
 
-        let mut delete_entities: Vec<Entity> = Vec::new();
+            let mut already_pressed: HashSet<String> = HashSet::new();
 
-        let input_config_query = <(Read<InputData>, Tagged<Action>)>::query()
-            .filter(!tag::<Modifier>());
+            let mut delete_entities: Vec<Entity> = Vec::new();
 
-        unsafe {
-            for (input_data, action) in input_config_query.iter_unchecked(world) {
+            let (modifier_config_query, not_modifier_config_query, input_component_query) = queries;
+
+            let modifiers = modifier_config_query.iter(world)
+                .map(|(entity, input, action)| (*entity, *input, (*action).clone()))
+                .collect::<Vec<(Entity, InputData, Action)>>();
+            let non_modifiers = not_modifier_config_query.iter(world)
+                .map(|(entity, input, action)| (*entity, *input, (*action).clone()))
+                .collect::<Vec<(Entity, InputData, Action)>>();
+
+            for (_, input_data, action) in non_modifiers.iter() {
 
                 //Check if this input config requires a modifier
-                let modifier_config_query = <Read<InputData>>::query()
-                    .filter(tag::<Modifier>())
-                    .filter(tag_value(action));
+                //Grab a modifier associated with this action, if there is one
+                let modifier = modifiers.iter().filter(|(_, _, a)| a == action).next();                
 
-                let modifier = modifier_config_query.iter_unchecked(world).next();                
-                
-                let input_component_query = <Write<InputActionComponent>>::query()
-                    .filter(tag_value(action));
-
-                match input_component_query.iter_entities_unchecked(world).next() {
-                    Some((entity, mut input_component)) => {
+                match input_component_query.iter_mut(world).filter(|(_, _, a)| *a == action).next() {
+                    Some((entity, mut input_component, _)) => {
 
                         let mut pressed = inputs.is_action_pressed(GodotString::from(action.0.clone()));
 
@@ -454,20 +450,11 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                         };
 
                         pressed = {
+        
                             //check to see if another modifier conflicts
-                            let other_modifier_query = <(Read<InputData>, Tagged<Action>)>::query()
-                            .filter(tag::<Modifier>());
+                            for (_, _, other_action) in modifiers.iter().filter(|(_,_,a)| a != action) {
         
-                            for (_other_input_modifier, other_action) in other_modifier_query.iter_unchecked(world) {
-                                if other_action == action {
-                                    continue;
-                                }
-
-                                let other_config_query = <Read<InputData>>::query()
-                                    .filter(!tag::<Modifier>())
-                                    .filter(tag_value(other_action));
-        
-                                for other_input in other_config_query.iter_unchecked(world) {
+                                for (_, other_input, _) in non_modifiers.iter().filter(|(_,_,a)| a == other_action) {
                                     if other_input.code == input_data.code {
                                         pressed = {
                                             if inputs.is_action_pressed(GodotString::from(format!("{}{}", other_action.0.clone(), MODIFIER_SUFFIX))) {
@@ -496,7 +483,7 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                         } else {
                             if input_component.strength < std::f32::EPSILON.into() { 
                                 // If strength is already 0.0, then we've already passed on "on release" frame
-                                delete_entities.push(entity);
+                                delete_entities.push(*entity);
                             } else {
                                 // If action is no longer pressed, set strength to zero. If a component has a strength of 0.0, we can confirm that it has been released.
                                 input_component.strength = 0.0;
@@ -508,32 +495,20 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                 }
 
             }
-        }
-        
 
-        for entity in delete_entities {
-            world.delete(entity);
-        }
+            for entity in delete_entities {
+                commands.remove(entity);
+            }
 
-        let input_config_query = <(Read<InputData>, Tagged<Action>)>::query()
-            .filter(!tag::<Modifier>());
+            let mut insert_data: Vec<(Action, InputActionComponent)> = Vec::new();
 
-        let mut insert_data: HashMap<Action, InputActionComponent> = HashMap::new();
-
-        //Go through each input configuration and check to see if it is pressed
-        unsafe {
-            for (input_data, action) in input_config_query.iter_unchecked(world) {
+            //Go through each input configuration and check to see if it is pressed
+            for (_, input_data, action) in not_modifier_config_query.iter(world) {
 
                 //check to see if this action has a modifier
-                let modifier_query = <Read<InputData>>::query()
-                    .filter(tag_value(action))
-                    .filter(tag::<Action>())
-                    .filter(tag::<Modifier>());
-
-                let modifier_input = modifier_query.iter_unchecked(world).next();
+                let modifier_input = modifiers.iter().filter(|(_,_,a)| a == action).next();
 
                 let mut pressed = inputs.is_action_pressed(GodotString::from(action.0.clone()));
-                // if pressed { godot_print!("{:?} {}", action.0, pressed); }
 
                 //If there is a modifier configured, check that it is pressed, otherwise just return pressed
                 pressed = match modifier_input {
@@ -542,59 +517,40 @@ pub fn create_thread_local_fn() -> Box<dyn FnMut(&mut legion::world::World, &mut
                 };
 
                 pressed = {
-                    //check to see if another modifier conflicts
-                    let other_modifier_query = <(Read<InputData>, Tagged<Action>)>::query()
-                    .filter(tag::<Modifier>());
-
-                    for (_other_input_modifier, other_action) in other_modifier_query.iter_unchecked(world) {
-                        if other_action == action {
-                            continue;
+                    // check to see if another modifier conflicts
+                    for (_, _, other_action) in modifiers.iter().filter(|(_,_,a)| a != action) {
+                        
+                        if let Some((_, _, _)) = non_modifiers.iter().filter(|(_,input,a)| a == other_action && input.code == input_data.code).next() {
+                            pressed = {
+                                if inputs.is_action_pressed(GodotString::from(format!("{}{}", other_action.0.clone(), MODIFIER_SUFFIX))) {
+                                    false
+                                } else {
+                                    pressed
+                                }
+                            };
                         }
 
-                        let other_config_query = <Read<InputData>>::query()
-                            .filter(!tag::<Modifier>())
-                            .filter(tag_value(other_action));
-
-                        for other_input in other_config_query.iter_unchecked(world) {
-                            if other_input.code == input_data.code {
-                                pressed = {
-                                    if inputs.is_action_pressed(GodotString::from(format!("{}{}", other_action.0.clone(), MODIFIER_SUFFIX))) {
-                                        false
-                                    } else {
-                                        pressed
-                                    }
-                                };
-                                break
-                            } 
-                        }
-
-                        if pressed == false {
+                        if !pressed {
                             break
                         }
                     }
-
                     pressed  
                 };
 
                 if !already_pressed.contains(&action.0) && pressed {
 
-                    insert_data.insert(action.clone(), InputActionComponent{ 
+                    insert_data.push((action.clone(), InputActionComponent{ 
                         strength: inputs.get_action_strength(&action.0), 
                         repeater: 0. 
-                    });
+                    }));
                 }
             }
-        }
 
-        for (action, input) in insert_data {
-            world.insert(
-                (action.clone(),),
-                vec![
-                    (input,)
-                ]
-            );
-
-        }
-
+            #[cfg(debug_assertions)]
+            for input in &insert_data {
+                godot_print!("{:?}", input.0);
+            }
+            
+            commands.extend(insert_data);
     })
 }

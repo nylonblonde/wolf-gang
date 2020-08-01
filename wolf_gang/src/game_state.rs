@@ -1,4 +1,4 @@
-use legion::prelude::*;
+use legion::*;
 
 pub struct GameState {
     name: &'static str,
@@ -7,10 +7,6 @@ pub struct GameState {
 }
 
 impl GameState{
-
-    // pub unsafe fn as_game_state<T: GameStateTraits<'a> + ?Sized>(original: &mut T) -> Box<GameState> {
-    //     cast(original)
-    // }
 
     pub fn is_active(&self) -> bool {
         self.active
@@ -25,9 +21,9 @@ impl GameState{
     }
 }
 pub trait GameStateTraits: NewState + AsMut<GameState> + AsRef<GameState> {
-    fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
+    fn initialize(&mut self, _: &mut World, _: &mut Resources) {
     }
-    fn free(&mut self, world: &mut World, resources: &mut Resources) {
+    fn free(&mut self, _: &mut World, _: &mut Resources) {
     }
 }
 

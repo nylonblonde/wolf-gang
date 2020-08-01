@@ -1,6 +1,6 @@
 use gdnative::prelude::*;
 use gdnative::api::ImmediateGeometry;
-use legion::prelude::*;
+use legion::*;
 use nalgebra::Rotation3;
 use num::Float;
 
@@ -10,6 +10,7 @@ use crate::geometry::aabb;
 use crate::node;
 
 use crate::systems::{
+    camera,
     custom_mesh,
     transform,
     input,
@@ -57,7 +58,7 @@ impl SelectionBox {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RelativeCamera(pub String);
 
 pub fn initialize_selection_box(world: &mut World, camera_name: String) {
@@ -68,37 +69,37 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
         node::add_node(mesh.upcast())
     }.unwrap();
 
-    world.insert((node_name.clone(),), 
-        vec![
-            (
-                SelectionBox::new(), 
-                RelativeCamera(camera_name),
-                custom_mesh::MeshData::new(),
-                level_map::CoordPos::default(),
-                transform::position::Position::default(), 
-                CameraAdjustedDirection::default(),
-                custom_mesh::Material::from_str("res://materials/select_box.material")
-            )
-        ]
+    world.push(
+        (
+            node_name,
+            SelectionBox::new(), 
+            RelativeCamera(camera_name),
+            custom_mesh::MeshData::new(),
+            level_map::CoordPos::default(),
+            transform::position::Position::default(), 
+            CameraAdjustedDirection::default(),
+            custom_mesh::Material::from_str("res://materials/select_box.material")
+        )
     );
 }
 
 /// Removes all SelectionBox entities from the world, and frees and removes the related Godot nodes
 pub fn free_all(world: &mut World) {
-    let selection_box_query = <(Read<SelectionBox>, Tagged<node::NodeName>)>::query();
+    let mut selection_box_query = <(Entity, Read<node::NodeName>)>::query()
+        .filter(component::<SelectionBox>());
 
     let mut entities: Vec<Entity> = Vec::new();
 
-    for (entity, (_, node_name)) in selection_box_query.iter_entities(world) {
+    selection_box_query.for_each(world, |(entity, node_name)| {
         unsafe {
             node::remove_node(node_name.clone().0);
         }
 
-        entities.push(entity);
-    }
+        entities.push(*entity);
+    });
 
     for entity in entities {
-        world.delete(entity);
+        world.remove(entity);
     }
 }
 
@@ -129,23 +130,26 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
 }
 
 /// Calculates the orthogonal direction that should be considered forward and right when grid-like directional input is used.
-pub fn create_orthogonal_dir_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+pub fn create_orthogonal_dir_system() -> impl systems::Schedulable {
 
-    let selection_box_query = <(Write<CameraAdjustedDirection>, Read<RelativeCamera>)>::query();
+    SystemBuilder::new("orthogonal_dir_system")
+        .with_query(<(Write<CameraAdjustedDirection>, Read<RelativeCamera>)>::query())
+        .with_query(<(Read<transform::rotation::Direction>, Read<node::NodeName>)>::query()
+            .filter(maybe_changed::<transform::rotation::Direction>() & component::<camera::FocalPoint>()))
+        .build(|_, world, _, queries| {
 
-    Box::new(move |world: &mut World, _|{
+            let (selection_box_query, cam_query) = queries;
 
-        unsafe {
+            let cameras = cam_query.iter(world)
+                .map(|(dir, name)| (*dir, (*name).clone()))
+                .collect::<Vec<(transform::rotation::Direction, node::NodeName)>>();
 
-            for (mut camera_adjusted_dir, relative_cam) in selection_box_query.iter_unchecked(world) {
+            for (mut camera_adjusted_dir, relative_cam) in selection_box_query.iter_mut(world) {
 
                 let node_name = node::NodeName(relative_cam.0.clone());
 
-                let cam_query = <Read<transform::rotation::Direction>>::query()
-                    .filter(tag_value(&node_name) & changed::<transform::rotation::Direction>());
-
-                match cam_query.iter(world).next() {
-                    Some(dir) => {
+                match cameras.iter().filter(|(_,name)| *name == node_name).next() {
+                    Some((dir, _)) => {
 
                         // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
                         // view.
@@ -184,43 +188,44 @@ pub fn create_orthogonal_dir_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
                     None => {}
                 }
             }
-        }
     })
 } 
 
-/// This function reads input, then moves the coord position of the selection_box
-pub fn create_movement_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
-    Box::new(|world: &mut World, resources: &mut Resources|{
-        let time = resources.get::<crate::Time>().unwrap();
+/// This system reads input, then moves the coord position of the selection_box
+pub fn create_movement_system() -> impl systems::Schedulable {
+    
+    let move_forward = input::Action("move_forward".to_string());
+    let move_back = input::Action("move_back".to_string());
+    let move_left = input::Action("move_left".to_string());
+    let move_right = input::Action("move_right".to_string());
+    let move_up = input::Action("move_up".to_string());
+    let move_down = input::Action("move_down".to_string());
 
-        let move_forward = input::Action("move_forward".to_string());
-        let move_back = input::Action("move_back".to_string());
-        let move_left = input::Action("move_left".to_string());
-        let move_right = input::Action("move_right".to_string());
-        let move_up = input::Action("move_up".to_string());
-        let move_down = input::Action("move_down".to_string());
+    SystemBuilder::new("selection_box_movement_system")
+        .read_resource::<crate::Time>()
+        .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
+        .with_query(<(Read<CameraAdjustedDirection>, Write<level_map::CoordPos>)>::query()
+            .filter(component::<SelectionBox>()))
+        .build(move |_, world, time, queries| {
 
-        let input_query = <(Read<input::InputActionComponent>, Tagged<input::Action>)>::query()
-            .filter(
-                tag_value(&move_forward)
-                | tag_value(&move_back)
-                | tag_value(&move_left)
-                | tag_value(&move_right)
-                | tag_value(&move_up)
-                | tag_value(&move_down)
-            );
+            let (input_query, selection_box_query) = queries;
 
-        //this should be fine as no systems runs in parallel with local thread
-        unsafe { 
+            let inputs = input_query.iter(world)
+                .map(|(input, action)| (*input, (*action).clone()))
+                .collect::<Vec<(input::InputActionComponent, input::Action)>>();
 
-            for(input_component, action) in input_query.iter(world) {                    
+            for(input_component, action) in inputs.iter().filter(|(_, a)|
+                a == &move_forward ||
+                a == &move_back ||
+                a == &move_left ||
+                a == &move_right ||
+                a == &move_up ||
+                a == &move_down
+            ) {                    
                 
                 if input_component.repeated(time.delta, 0.25) {
-                    
-                    let selection_box_query = <(Read<CameraAdjustedDirection>, Write<level_map::CoordPos>)>::query()
-                        .filter(component::<SelectionBox>());
 
-                    for (camera_adjusted_dir, mut coord_pos) in selection_box_query.iter_unchecked(world) {
+                    selection_box_query.for_each_mut(world, |(camera_adjusted_dir, coord_pos)| {
 
                         let mut movement = Point::zeros();
 
@@ -255,107 +260,114 @@ pub fn create_movement_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resou
                         
                         coord_pos.value += adjusted;
 
-                    }
+                    });
                 }            
             }       
-        } 
-    })
-}
-
-pub fn create_coord_to_pos_system() -> Box<dyn Schedulable> {
-    SystemBuilder::<()>::new("selection_box_coord_system")
-        .with_query(<(Read<level_map::CoordPos>, Write<transform::position::Position>,)>::query()
-            .filter(changed::<level_map::CoordPos>(),)
-        )
-        .build(move |_, world, _, query| {
-
-            for (coord_pos, mut position) in query.iter_mut(&mut *world) {
-                let coord_pos = level_map::map_coords_to_world(coord_pos.value);
-                position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
-            }
         })
 }
 
-pub fn create_tile_tool_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+pub fn create_coord_to_pos_system() -> impl systems::Schedulable {
+    SystemBuilder::new("selection_box_coord_system")
+        .with_query(<(Read<level_map::CoordPos>, Write<transform::position::Position>,)>::query()
+            .filter(maybe_changed::<level_map::CoordPos>() & component::<SelectionBox>())
+        )
+        .build(move |_, world, _, query| {
 
-    let selection_box_moved_query = <Read<SelectionBox>>::query().filter(changed::<level_map::CoordPos>());
+            query.for_each_mut(world, |(coord_pos, mut position)| {
 
-    Box::new(move |world: &mut World, resources: &mut Resources|{
+                let coord_pos = level_map::map_coords_to_world(coord_pos.value);
+                position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
+            })
+        })
+}
 
-        let map = resources.get_mut::<level_map::Map>().expect("Couldn't get map resource!");
-        // let mut current_step = resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
+pub fn create_tile_tool_system() -> impl systems::Schedulable {
+    let insertion = input::Action(("insertion").to_string());
+    let removal = input::Action(("removal").to_string());
 
-        let selection_box_query = <(Read<SelectionBox>, Read<level_map::CoordPos>)>::query();
+    SystemBuilder::new("tile_tool_system")
+        .read_resource::<level_map::Map>()
+        .with_query(<(Read<SelectionBox>, Read<level_map::CoordPos>)>::query()) //all selection_boxes
+        .with_query(<(Read<SelectionBox>, Read<level_map::CoordPos>)>::query() //only moved selection_boxes
+            .filter(maybe_changed::<level_map::CoordPos>()))
+        .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
+        .build(move |commands, world, map, queries| {
 
-        let insertion = input::Action(("insertion").to_string());
-        let removal = input::Action(("removal").to_string());
+            let (selection_box_moved_query, selection_box_query, input_query) = queries;
 
-        let input_query = <(Read<input::InputActionComponent>, Tagged<input::Action>)>::query()
-            .filter(tag_value(&insertion) | tag_value(&removal));
+            let mut to_insert: Option<AABB> = None;
+            let mut to_remove: Option<AABB> = None;
 
-        let mut to_insert: Option<AABB> = None;
-        let mut to_remove: Option<AABB> = None;
-
-        for (input_component, action) in input_query.iter(world) {
-        
-            for (selection_box, coord_pos) in selection_box_query.iter(world) {
-
-                let moved = selection_box_moved_query.iter(world).next().is_some();
-
-                if input_component.just_pressed() || (input_component.is_held() && moved) {
-                    if action == &insertion {
-                        godot_print!("Pressed insertion at {:?}!", coord_pos.value);
-
-                        to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
-                    } else if action == &removal {
-                        to_remove = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
-                    }
+            for (input_component, action) in input_query.iter(world).filter(|(_,a)|
+                *a == &insertion ||
+                *a == &removal
+            ) {
+                selection_box_query.for_each(world, |(selection_box, coord_pos)| {
                     
-                }
+                    let moved = selection_box_moved_query.iter(world).next().is_some();
+
+                    if input_component.just_pressed() 
+                    || (input_component.is_held() && moved) 
+                    {
+                        if action == &insertion {
+                            godot_print!("Pressed insertion at {:?}!", coord_pos.value);
+
+                            to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
+                        } else if action == &removal {
+                            to_remove = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
+                        }
+                        
+                    }
+                })
             }
-        }
 
-        if let Some(r) = to_insert {
-            map.insert(world, level_map::TileData::new(Point::zeros()), r);
-        }
+            let map = **map;
 
-        if let Some(r) = to_remove {
-            map.remove(world, r);
-        }
-
-    })
+            commands.exec_mut(move |world|{
+                if let Some(r) = to_insert {
+                    map.insert(world, level_map::TileData::new(Point::zeros()), r);
+                }
+        
+                if let Some(r) = to_remove {
+                    map.remove(world, r);
+                }
+            });
+        })
 }
 
 /// Expands the dimensions of the selection box
-pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {    
-    Box::new(|world: &mut World, resources: &mut Resources|{
-        let time = resources.get::<crate::Time>().unwrap();
+pub fn create_expansion_system() -> impl systems::Schedulable {    
 
-        let expand_selection_forward = input::Action("expand_selection_forward".to_string());
-        let expand_selection_back = input::Action("expand_selection_back".to_string());
-        let expand_selection_left = input::Action("expand_selection_left".to_string());
-        let expand_selection_right = input::Action("expand_selection_right".to_string());
-        let expand_selection_up = input::Action("expand_selection_up".to_string());
-        let expand_selection_down = input::Action("expand_selection_down".to_string());
+    let expand_selection_forward = input::Action("expand_selection_forward".to_string());
+    let expand_selection_back = input::Action("expand_selection_back".to_string());
+    let expand_selection_left = input::Action("expand_selection_left".to_string());
+    let expand_selection_right = input::Action("expand_selection_right".to_string());
+    let expand_selection_up = input::Action("expand_selection_up".to_string());
+    let expand_selection_down = input::Action("expand_selection_down".to_string());
 
-        let input_query = <(Read<input::InputActionComponent>, Tagged<input::Action>)>::query()
-            .filter(
-                tag_value(&expand_selection_forward)
-                | tag_value(&expand_selection_back)
-                | tag_value(&expand_selection_left)
-                | tag_value(&expand_selection_right)
-                | tag_value(&expand_selection_up)
-                | tag_value(&expand_selection_down)
-            );
+    SystemBuilder::new("selection_expansion_system")
+        .read_resource::<crate::Time>()
+        .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
+        .with_query(<(Write<SelectionBox>, Write<level_map::CoordPos>, Read<CameraAdjustedDirection>)>::query())
+        .build(move |_, world, time, queries| {
+            let (input_query, selection_box_query) = queries;
 
-        for(input_component, action) in input_query.iter(world) {                    
-            
-            if input_component.repeated(time.delta, 0.25) {
+            let inputs = input_query.iter(world)
+                .map(|(input, action)| (*input, (*action).clone()))
+                .collect::<Vec<(input::InputActionComponent, input::Action)>>();
+
+            for(input_component, action) in inputs.iter().filter(|(_, a)|
+                a == &expand_selection_forward ||
+                a == &expand_selection_back ||
+                a == &expand_selection_left ||
+                a == &expand_selection_right ||
+                a == &expand_selection_up ||
+                a == &expand_selection_down
+            ) {                    
                 
-                let selection_box_query = <(Write<SelectionBox>, Write<level_map::CoordPos>, Read<CameraAdjustedDirection>)>::query();
-                
-                unsafe { 
-                    for (mut selection_box, mut coord_pos, camera_adjusted_dir) in selection_box_query.iter_unchecked(world) {
+                if input_component.repeated(time.delta, 0.25) {
+
+                    selection_box_query.for_each_mut(world, |(mut selection_box, coord_pos, camera_adjusted_dir)| {
 
                         let mut expansion = Point::zeros();
 
@@ -436,24 +448,22 @@ pub fn create_expansion_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Reso
 
                         selection_box.aabb.dimensions = new_aabb.dimensions;
 
-                    }
+                    }); 
                 }
             }
-        }
-
-    })
+        })
 
 }
 
-pub fn create_system() -> Box<dyn Schedulable> {
+pub fn create_system() -> impl systems::Schedulable {
     
-    SystemBuilder::<()>::new("selection_box_system")
+    SystemBuilder::new("selection_box_system")
         .with_query(<(Read<SelectionBox>, Write<custom_mesh::MeshData>,)>::query()
-            .filter(changed::<SelectionBox>(),)
+            .filter(maybe_changed::<SelectionBox>(),)
         )
-        .build(move |_, world, _, queries| {
+        .build(move |_, world, _, query| {
 
-            for (selection_box, mut mesh_data) in queries.iter_mut(&mut *world) {
+            query.for_each_mut(world, |(selection_box, mesh_data)| {
 
                 mesh_data.verts.clear();
                 mesh_data.normals.clear();
@@ -727,8 +737,6 @@ pub fn create_system() -> Box<dyn Schedulable> {
                         _ => {}
                     } 
 
-                    
-
                     let mut indices: Vec<i32> = Vec::with_capacity(48);
 
                     //add indices for all "quads" in the face;
@@ -752,13 +760,12 @@ pub fn create_system() -> Box<dyn Schedulable> {
                     mesh_data.normals.extend(normals);
                     mesh_data.uvs.extend(uvs);
                     mesh_data.indices.extend(indices);
-
-                   
+ 
                 }
 
                 // godot_print!("Updated selection box mesh");
                 
-            }
+            })
 
         })
     

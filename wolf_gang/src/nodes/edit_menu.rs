@@ -4,7 +4,7 @@ use gdnative::api::{
     PopupMenu,
 };
 
-use legion::prelude::*;
+use legion::*;
 
 use super::utils;
 
@@ -57,7 +57,7 @@ impl EditMenu {
             None => panic!("Couldn't retrieve the CurrentHistoricalStep from Resources")
         };
 
-        let history_query = <Read<level_map::history::MapChunkHistory>>::query();
+        // let history_query = <Read<level_map::history::MapChunkHistory>>::query();
 
         //if the current step is greater than zero, we can undo
         if current_step.0 > 1 {
@@ -66,19 +66,19 @@ impl EditMenu {
             }
         }
 
-        //check if there is any history that is more recent than current step, to see if we can redo
-        for map_history in history_query.iter(world) {
+        // //check if there is any history that is more recent than current step, to see if we can redo
+        // for map_history in history_query.iter(world) {
             
-            for change in map_history.steps.iter().rev() {
+        //     for change in map_history.steps.iter().rev() {
 
-                if change.step_changed_at.0 >= current_step.0 {
-                    unsafe {
-                        self.popup_menu.assume_safe().set_item_disabled(1, false);
-                    }
-                    break;
-                }
-            }
-        }
+        //         if change.step_changed_at.0 >= current_step.0 {
+        //             unsafe {
+        //                 self.popup_menu.assume_safe().set_item_disabled(1, false);
+        //             }
+        //             break;
+        //         }
+        //     }
+        // }
     }
 
     #[export]
@@ -95,10 +95,10 @@ impl EditMenu {
             Some(mut current_step) => {
                 match id {
                     0 => { //undo
-                        level_map::history::move_to_step(&mut *world, &mut current_step, -1);
+                        // level_map::history::move_to_step(&mut *world, &mut current_step, -1);
                     },
                     1 => { //redo
-                        level_map::history::move_to_step(&mut *world, &mut current_step, 1);
+                        // level_map::history::move_to_step(&mut *world, &mut current_step, 1);
                     },
                     _ => {}
                 }
