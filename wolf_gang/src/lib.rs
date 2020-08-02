@@ -123,6 +123,9 @@ impl WolfGang {
             state_machine.add_state(
                 editor::Editor::new("MapEditor", 
                     Schedule::builder()
+                        .add_system(systems::input::create_input_system())                             
+                        .flush() //flush to avoid accidental double inputs
+
                         .add_system(systems::smoothing::create_system())
                         .add_system(systems::camera::create_movement_system())
                         .add_system(systems::camera::create_rotation_system())
@@ -149,7 +152,6 @@ impl WolfGang {
                         .add_system(systems::transform::rotation::create_system())
                         .add_system(systems::transform::position::create_system())
                         
-                        .add_system(systems::input::create_input_system())                             
                         .add_system(systems::level_map::history::create_map_input_system())
                         .add_system(systems::networking::create_message_pooling_system())
                         .build(),
