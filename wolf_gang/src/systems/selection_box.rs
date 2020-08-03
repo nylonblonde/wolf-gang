@@ -293,7 +293,7 @@ pub fn create_tile_tool_system() -> impl systems::Schedulable {
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
         .build(move |commands, world, map, queries| {
 
-            let (selection_box_moved_query, selection_box_query, input_query) = queries;
+            let (selection_box_query, selection_box_moved_query, input_query) = queries;
 
             let mut to_insert: Option<AABB> = None;
             let mut to_remove: Option<AABB> = None;
@@ -314,6 +314,8 @@ pub fn create_tile_tool_system() -> impl systems::Schedulable {
 
                             to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
                         } else if action == &removal {
+                            godot_print!("Pressed removal at {:?}!", coord_pos.value);
+
                             to_remove = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
                         }
                         
