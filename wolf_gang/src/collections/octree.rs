@@ -10,9 +10,10 @@ use rayon::prelude::*;
 
 use std::error;
 use std::fmt;
+use std::iter::FromIterator;
 
 use nalgebra::{Scalar, Vector3};
-use num::{Num, NumCast, Signed};
+use num::{Num, NumCast, Signed, traits::Bounded};
 use crate::geometry::aabb::AABB;
 
 pub static DEFAULT_MAX: usize = 32;
@@ -55,6 +56,41 @@ impl<'de, N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + S
     }
 }
 
+impl <'de, N: Sync + Send + Bounded + Signed + Scalar + NumCast + Ord + AddAssign + SubAssign + DivAssign + Copy + Clone + Serialize + Deserialize<'de>, T: PointData<N> + Hash + Eq + PartialEq + Debug + Sync + Send> FromIterator<T> for Octree<N, T> {
+    fn from_iter<A: IntoIterator<Item=T>>(iter: A) -> Self {
+
+        let mut smallest = Vector3::<N>::new(Bounded::max_value(), Bounded::max_value(), Bounded::max_value());
+        let mut largest = Vector3::<N>::new(Bounded::min_value(), Bounded::min_value(), Bounded::min_value());
+
+        let items = iter.into_iter().collect::<Vec<T>>();
+
+        if items.len() == 0 {
+            smallest = Vector3::zeros();
+            largest = Vector3::zeros();
+        } else {
+            for item in items.iter() {
+                let pt = item.get_point();
+
+                smallest.x = Ord::min(pt.x, smallest.x);
+                smallest.y = Ord::min(pt.y, smallest.y);
+                smallest.z = Ord::min(pt.z, smallest.z);
+
+                largest.x = Ord::max(pt.x, largest.x);
+                largest.y = Ord::max(pt.y, largest.y);
+                largest.z = Ord::max(pt.z, largest.z);
+            }
+        }
+
+        let mut octree = Octree::new(AABB::from_extents(smallest, largest), DEFAULT_MAX);
+
+        for item in items.iter() {
+            octree.insert(*item).unwrap();
+        }
+
+        octree
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[allow(dead_code)]
 pub struct Octree <N: Scalar, T: PointData<N>>{
@@ -86,6 +122,10 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
     pub fn get_aabb(&self) -> AABB<N> {
         self.aabb
     } 
+
+    pub fn get_max_elements(&self) -> usize {
+        self.max_elements
+    }
 
     fn subdivide(&mut self) -> Result<(), SubdivisionError<N>> {
 

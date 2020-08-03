@@ -26,8 +26,6 @@ impl FileConfirmation {
         
     }
 
-    
-
     /// Confirmation for ConfirmationDialog that will popup when pressing New when there are unsaved changes
     #[export]
     fn new_confirmation_handler(&mut self, confirmation_dialog: &ConfirmationDialog) {

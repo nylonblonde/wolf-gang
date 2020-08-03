@@ -10,8 +10,10 @@ use super::utils;
 
 use crate::{
     GAME_UNIVERSE,
-    history,
-    systems::level_map,
+    systems::{
+        level_map,
+        history::History
+    }
 };
 
 /// The EditMenu "class"
@@ -52,33 +54,14 @@ impl EditMenu {
         let world = &mut game.world;
         let resources = &mut game.resources;
 
-        let current_step = match resources.get::<history::CurrentHistoricalStep>() {
-            Some(r) => r,
-            None => panic!("Couldn't retrieve the CurrentHistoricalStep from Resources")
-        };
+        let history = resources.get::<History>().expect("Couldn't retrieve the History resource");
 
-        // let history_query = <Read<level_map::history::MapChunkHistory>>::query();
+        let popup_menu = unsafe { self.popup_menu.assume_safe() };
 
-        //if the current step is greater than zero, we can undo
-        if current_step.0 > 1 {
-            unsafe {
-                self.popup_menu.assume_safe().set_item_disabled(0, false);
-            }
-        }
+        popup_menu.set_item_disabled(0,!history.can_undo());
 
-        // //check if there is any history that is more recent than current step, to see if we can redo
-        // for map_history in history_query.iter(world) {
-            
-        //     for change in map_history.steps.iter().rev() {
+        popup_menu.set_item_disabled(1,!history.can_redo());
 
-        //         if change.step_changed_at.0 >= current_step.0 {
-        //             unsafe {
-        //                 self.popup_menu.assume_safe().set_item_disabled(1, false);
-        //             }
-        //             break;
-        //         }
-        //     }
-        // }
     }
 
     #[export]
@@ -89,23 +72,21 @@ impl EditMenu {
         let resources = &mut game.resources;
         let world = &mut game.world;
 
-        let current_step = resources.get_mut::<history::CurrentHistoricalStep>();
+        let mut history = resources.get_mut::<History>().expect("Couldn't retrieve History resource!");
 
-        match current_step {
-            Some(mut current_step) => {
-                match id {
-                    0 => { //undo
-                        // level_map::history::move_to_step(&mut *world, &mut current_step, -1);
-                    },
-                    1 => { //redo
-                        // level_map::history::move_to_step(&mut *world, &mut current_step, 1);
-                    },
-                    _ => {}
-                }
+        let mut command_buffer = systems::CommandBuffer::new(world);
+
+        match id {
+            0 => { //undo
+                history.move_by_step(&mut command_buffer, -1);
             },
-            None => {
-                panic!("Couldn't retrieve CurrentHistoricalStep from Resources");
-            }
-        }   
+            1 => { //redo
+                history.move_by_step(&mut command_buffer, 1);
+            },
+            _ => {}
+        }
+
+        command_buffer.flush(world);
+            
     }   
 }

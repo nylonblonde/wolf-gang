@@ -9,6 +9,24 @@ type Point = Vector3<i32>;
 type AABB = aabb::AABB<i32>;
 
 #[test]
+fn from_iter() {
+    let pts: Vec<TileData> = vec![
+        TileData::new(Point::zeros())
+    ];
+
+    let mut oct_a: Octree<i32, TileData> = Octree::new(AABB::from_extents(Point::zeros(), Point::zeros()), octree::DEFAULT_MAX);
+
+    for pt in &pts {
+        oct_a.insert(*pt).unwrap();
+    }
+
+    let oct_b = pts.into_iter().collect::<Octree<i32, TileData>>();
+
+    assert_eq!(oct_a, oct_b);
+    
+}
+
+#[test]
 fn even_subdivision() {
 
     let aabb = AABB::new(

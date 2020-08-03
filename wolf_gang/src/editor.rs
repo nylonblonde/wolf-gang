@@ -1,9 +1,9 @@
 use legion::*;
 use crate::{
     game_state::{NewState, GameState, GameStateTraits},
-    history,
     systems::{
         camera,
+        history::History,
         level_map,
         selection_box,
     },
@@ -20,15 +20,13 @@ impl GameStateTraits for Editor {
         self.camera = camera::initialize_camera(world);
         selection_box::initialize_selection_box(world, self.camera.clone());
 
-        resources.insert(level_map::history::MapInputHistory::new());
+        resources.insert(History::new());
         resources.insert(self.map);    
-        resources.insert(history::CurrentHistoricalStep::default());
         resources.insert(level_map::document::Document::default());
     }
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
-        resources.remove::<level_map::history::MapInputHistory>();
+        resources.remove::<History>();
         resources.remove::<level_map::document::Document>();
-        resources.remove::<history::CurrentHistoricalStep>();
 
         camera::free_camera(world, &self.camera);
 

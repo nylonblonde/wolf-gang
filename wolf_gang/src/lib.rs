@@ -18,7 +18,6 @@ mod collections;
 mod geometry;
 mod systems;
 mod node;
-mod history;
 mod editor;
 mod game_state;
 mod networking;
@@ -152,7 +151,9 @@ impl WolfGang {
                         .add_system(systems::transform::rotation::create_system())
                         .add_system(systems::transform::position::create_system())
                         
-                        .add_system(systems::level_map::history::create_map_input_system())
+                        .add_system(systems::level_map::create_map_input_system())
+                        .add_system(systems::history::create_history_input_system())
+
                         .add_system(systems::networking::create_message_pooling_system())
                         .build(),
                     true

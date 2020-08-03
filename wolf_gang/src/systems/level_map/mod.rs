@@ -1,5 +1,4 @@
 pub mod mesh;
-pub mod history;
 pub mod document;
 
 use std::sync::mpsc;
@@ -16,7 +15,11 @@ use crate::{
             Octree,
         }
     },
-    systems::custom_mesh,
+    systems::{
+        custom_mesh,
+        history::{History, StepTypes},
+    },
+    networking,
 };
 
 #[cfg(not(test))]
@@ -96,7 +99,7 @@ fn change_map(world: &mut legion::world::World, resources: &mut Resources, octre
     let z_max_chunk = (max.z as f32/ map.chunk_dimensions.z as f32).floor() as i32 + 1;
 
     let mut entities: HashMap<Entity, MapChunkData> = HashMap::new();
-    let mut historically_significant: HashMap<Entity, MapChunkData> = HashMap::new();
+    // let mut historically_significant: HashMap<Entity, MapChunkData> = HashMap::new();
 
     let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
 
@@ -156,10 +159,10 @@ fn change_map(world: &mut legion::world::World, resources: &mut Resources, octre
         let set = input_query_range.into_iter().collect::<HashSet<TileData>>();
         let map_set = map_query_range.into_iter().collect::<HashSet<TileData>>();
 
-        if set.symmetric_difference(&map_set).count() == 0 {
-            println!("Set and map_set were symmetrically the same");
-            continue
-        }
+        // if set.symmetric_difference(&map_set).count() == 0 {
+        //     println!("Set and map_set were symmetrically the same");
+        //     continue
+        // }
 
         //Remove any data that is in map_set but not set
         let difference = map_set.difference(&set);
@@ -178,10 +181,10 @@ fn change_map(world: &mut legion::world::World, resources: &mut Resources, octre
             entry.add_component(ManuallyChange(ChangeType::Direct(aabb)));
         }
 
-        historically_significant.insert(*entity, map_data.clone());
+        // historically_significant.insert(*entity, map_data.clone());
     }
 
-    let _current_step = &mut *resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
+    // let _current_step = &mut *resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
 
     // history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center }, aabb);
 }
@@ -268,6 +271,44 @@ impl Map {
         );
     }
 
+    /// Does a query range on every chunk that fits within the range
+    fn query_chunk_range(&self, map_datas: Vec<(&MapChunkData, &Point)>, range: AABB) -> Vec<TileData> {
+        let min = range.get_min();
+        let max = range.get_max();
+
+        let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
+        let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
+        let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
+
+        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
+        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
+        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
+
+        let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
+
+        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) - min_chunk;
+
+        let volume = dimensions.x * dimensions.y * dimensions.z;
+        
+        let mut results: Vec<TileData> = Vec::new();
+
+        for i in 0..volume {
+            let x = x_min_chunk + i % dimensions.x;
+            let y = y_min_chunk + (i / dimensions.x) % dimensions.y;
+            let z = z_min_chunk + i / (dimensions.x * dimensions.y);
+
+            let point = Point::new(x,y,z);
+
+            // let mut chunk_query = <(Read<MapChunkData>, Read<Point>)>::query();
+
+            for (map_data, _) in map_datas.iter().filter(|(_,pt)| **pt == point) {
+                results.extend(map_data.octree.query_range(range));
+            }
+        }
+
+        results
+    }
+
     /// Inserts a new mapchunk with the octree data into world
     pub fn insert_mapchunk_with_octree(self, octree: &Octree<i32, TileData>, world: &mut World, changed: bool) -> (Entity, MapChunkData) {
         let map_data = MapChunkData{
@@ -350,4 +391,59 @@ impl crate::collections::octree::PointData<i32> for TileData {
     fn get_point(&self) -> Point {
         self.point
     }
+}
+
+/// Takes map inputs, determines if they should be added to history (no duplicates), and creates a message if it should
+pub fn create_map_input_system() -> impl systems::Schedulable {
+    SystemBuilder::new("map_input_system")
+        .write_resource::<History>()
+        .read_resource::<Map>()
+        .with_query(<(Entity, Read<MapInput>)>::query())
+        .with_query(<(Read<MapChunkData>, Read<Point>)>::query())
+        .build(|commands, world, (map_history, map), queries| {
+
+            let (map_input_query, map_data_query) = queries;
+
+            let mut map_messages: Vec<(networking::MessageSender,)> = Vec::new();
+            map_input_query.for_each(world, |(entity, map_input)| {
+
+                let map_datas = map_data_query.iter(world).collect::<Vec<(&MapChunkData, &Point)>>();
+
+                let query_range = map.query_chunk_range(map_datas, map_input.octree.get_aabb());
+
+                let input_set = map_input.octree.clone().into_iter().collect::<HashSet<TileData>>();
+
+                //If there is no difference between the input and what is already in the map, just return
+                if input_set.symmetric_difference(&query_range.clone().into_iter().collect::<HashSet<TileData>>()).count() == 0 {
+                    return {}
+                }
+
+                let mut original_state: Octree<i32, TileData> = Octree::new(map_input.octree.get_aabb(), map_input.octree.get_max_elements());
+
+                for item in query_range {
+                    original_state.insert(item).unwrap();
+                }
+
+                //add the original state to history
+                map_history.add_step(StepTypes::MapInput(
+                    (
+                        MapInput{ 
+                            octree: original_state
+                        },
+                        (*map_input).clone()
+                    )
+                ));
+                //add the new state to history
+                // map_history.add_step(StepTypes::MapInput((*map_input).clone()));
+
+                map_messages.push((networking::MessageSender{
+                    data_type: networking::DataType::MapInput((*map_input).clone()),
+                    message_type: networking::MessageType::Ordered
+                },));
+
+                commands.remove(*entity);
+            });
+
+            commands.extend(map_messages);
+        })
 }
