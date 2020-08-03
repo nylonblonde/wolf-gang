@@ -21,20 +21,22 @@ pub enum StepTypes {
 pub struct History {
     history: VecDeque<StepTypes>,
     current_step: i32,
+    previous_amount: i32,
 }
 
 impl History {
     pub fn new() -> Self {
         History {
             history: VecDeque::new(),
-            current_step: -1
+            current_step: -1,
+            previous_amount: -1,
         }
     }
 
     pub fn add_step(&mut self, step: StepTypes) {
 
         //if there is a history beyond this step, wipe it out
-        if self.history.len() as i32 > self.current_step + 1 {
+        if self.current_step > -1 && self.history.len() as i32 > self.current_step {
             //this will always be shrinking so the generator is unreachable - there's nothing to generate
             self.history.resize_with(self.current_step as usize, || unreachable!());
         }
@@ -48,13 +50,20 @@ impl History {
     /// Moves forward or backward in history by the given amount
     pub fn move_by_step(&mut self, buffer: &mut systems::CommandBuffer, amount: i32) {
 
-        let next_step = self.current_step as i32 + amount;
+        let mut next_step = self.current_step as i32 + amount;
+
+        //since current_step was determined by the previous step, make an adjustment if we've actually changed direction in the history this time
+        if num::signum(amount) != num::signum(self.previous_amount) {
+            next_step -= amount;
+        }
 
         let step: Option<&StepTypes> = if next_step > -1 && next_step < self.history.len() as i32 {
-          Some(&self.history[next_step as usize])
-        } else if next_step == -1 || next_step == self.history.len() as i32{
-            Some(&self.history[self.current_step as usize])
-        }else {
+            Some(&self.history[next_step as usize])
+        } else if next_step < 0 {
+            Some(&self.history[0])
+        } else if next_step > self.history.len() as i32 -1 {
+            Some(&self.history[self.history.len()-1])
+        } else {
             None
         };
 
@@ -72,6 +81,7 @@ impl History {
         }
 
         self.current_step = std::cmp::max(-1, std::cmp::min(self.history.len() as i32, next_step));
+        self.previous_amount = amount;
 
     }
 
