@@ -1,8 +1,10 @@
 use legion::*;
 
+use std::cell::RefCell;
+
 pub struct GameState {
     name: &'static str,
-    pub schedule: Schedule,
+    pub schedule: RefCell<Schedule>,
     active: bool,
 }
 
@@ -21,10 +23,9 @@ impl GameState{
     }
 }
 pub trait GameStateTraits: NewState + AsMut<GameState> + AsRef<GameState> {
-    fn initialize(&mut self, _: &mut World, _: &mut Resources) {
-    }
-    fn free(&mut self, _: &mut World, _: &mut Resources) {
-    }
+    fn initialize(&mut self, _: &mut World, _: &mut Resources) {}
+    fn free(&mut self, _: &mut World, _: &mut Resources) {}
+    fn on_connection(&self, _connection_id: u32, _world: &mut World) {}
 }
 
 pub trait NewState {
@@ -35,15 +36,9 @@ impl NewState for GameState {
     fn new(name: &'static str, schedule: Schedule, active: bool) -> Self {
         GameState {
             name,
-            schedule,
+            schedule: RefCell::new(schedule),
             active,
         }
-    }
-}
-
-impl AsMut<Schedule> for GameState {
-    fn as_mut(&mut self) -> &mut Schedule {
-        &mut self.schedule
     }
 }
 

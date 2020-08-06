@@ -15,8 +15,6 @@ use crate::{
     }
 };
 
-use std::borrow::BorrowMut;
-
 #[derive(NativeClass)]
 #[inherit(MenuButton)]
 #[register_with(Self::register_signals)]
@@ -154,7 +152,7 @@ impl FileMenu {
 
                     for state in &mut s.borrow_mut().states {
 
-                        let state: &mut (dyn GameStateTraits) = state.borrow_mut();
+                        let state: &mut (dyn GameStateTraits) = std::borrow::BorrowMut::borrow_mut(state);
 
                         //clear the world of related entities and free related nodes before re-initializing
                         state.free(world, resources);

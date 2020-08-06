@@ -1,7 +1,5 @@
 use crate::{
-    node,
     nodes::utils,
-    networking,
     networking::{
         Connection, ConnectionType, Scope
     }
@@ -14,10 +12,8 @@ use gdnative::api::{
 };
 
 use std::net::{
-    SocketAddr, Ipv4Addr, IpAddr
+    SocketAddr, IpAddr
 };
-
-use std::borrow::BorrowMut;
 
 use gip::Provider;
 

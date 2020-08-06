@@ -11,7 +11,6 @@ use super::utils;
 use crate::{
     GAME_UNIVERSE,
     systems::{
-        level_map,
         history::History
     }
 };
@@ -47,11 +46,8 @@ impl EditMenu {
             self.popup_menu.assume_safe().set_item_disabled(1, true);
         }
         
-        let mut game = GAME_UNIVERSE.lock().unwrap();
-
-        let game = &mut *game;
-
-        let world = &mut game.world;
+        let mut game_lock = GAME_UNIVERSE.lock().unwrap();
+        let game = &mut *game_lock;
         let resources = &mut game.resources;
 
         let history = resources.get::<History>().expect("Couldn't retrieve the History resource");
@@ -67,8 +63,8 @@ impl EditMenu {
     #[export]
     fn item_handler(&mut self, _: &MenuButton, id: i64) {
 
-        let mut game = GAME_UNIVERSE.lock().unwrap();
-        let game = &mut *game;
+        let mut game_lock = GAME_UNIVERSE.lock().unwrap();
+        let game = &mut *game_lock;
         let resources = &mut game.resources;
         let world = &mut game.world;
 

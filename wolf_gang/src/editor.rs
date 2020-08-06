@@ -18,7 +18,7 @@ pub struct Editor {
 impl GameStateTraits for Editor {
     fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
         self.camera = camera::initialize_camera(world);
-        selection_box::initialize_selection_box(world, self.camera.clone());
+        // selection_box::initialize_selection_box(world, self.camera.clone());
 
         resources.insert(History::new());
         resources.insert(self.map);    
@@ -29,9 +29,14 @@ impl GameStateTraits for Editor {
         resources.remove::<level_map::document::Document>();
 
         camera::free_camera(world, &self.camera);
-
-        selection_box::free_all(world);
+        // selection_box::free_all(world);
         self.map.free(world);
+    }
+    fn on_connection(&self, connection_id: u32, world: &mut World) {
+        
+        // Will need to check if this selection box belongs to the client before passing the camera name
+        selection_box::initialize_selection_box(world, connection_id, Some(self.camera.clone()));
+
     }
 }
 

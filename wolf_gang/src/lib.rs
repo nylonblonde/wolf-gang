@@ -111,14 +111,7 @@ impl WolfGang {
 
         STATE_MACHINE.with(|s| {
             let mut state_machine = s.borrow_mut();
-            state_machine.add_state(
-                networking::Networking::new("Networking", 
-                    Schedule::builder()
-                        .add_system(systems::networking::create_message_pooling_system())
-                        .build(),
-                    true),
-                world, resources
-            );
+            
             state_machine.add_state(
                 editor::Editor::new("MapEditor", 
                     Schedule::builder()
@@ -154,11 +147,21 @@ impl WolfGang {
                         .add_system(systems::level_map::create_map_input_system())
                         .add_system(systems::history::create_history_input_system())
 
+                        .add_system(systems::networking::create_new_connection_system())
                         .add_system(systems::networking::create_message_pooling_system())
                         .build(),
                     true
                 ),
                 world, resources);
+
+                state_machine.add_state(
+                networking::Networking::new("Networking", 
+                    Schedule::builder()
+                        .add_system(systems::networking::create_message_pooling_system())
+                        .build(),
+                    true),
+                world, resources
+            );
         });
     }
 
@@ -178,12 +181,12 @@ impl WolfGang {
         let mut world = &mut game.world;
 
         STATE_MACHINE.with(|s| {
-            for state in &mut s.borrow_mut().states {
-                let state = state.as_mut();
+            for state in &s.borrow().states {
+                let state = state.as_ref();
 
-                let game_state: &mut GameState = state.as_mut();
+                let game_state: &GameState = state.as_ref();
                 if game_state.is_active() {
-                    game_state.schedule.execute(&mut world, &mut resources);
+                    game_state.schedule.borrow_mut().execute(&mut world, &mut resources);
                 }
             }
         });

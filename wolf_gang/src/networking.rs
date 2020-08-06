@@ -90,8 +90,9 @@ type Point = nalgebra::Vector3<i32>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum  DataType {
+    NewConnection(crate::systems::networking::NewConnection),
     MessageFragment(MessageFragment),
-    MapInput(crate::systems::level_map::MapInput)
+    MapInput(crate::systems::level_map::MapInput),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,9 +249,9 @@ pub struct Networking {
     client_quit_rx: Arc<Mutex<mpsc::Receiver<()>>>,
     client_running: Arc<(Mutex<bool>, Condvar)>,
     server_running: Arc<(Mutex<bool>, Condvar)>,
-    //only needed in the case of hosting online, just a handy way for the host's server to communicate its address to the host client
-    host_addr_tx: Option<mpsc::Sender<SocketAddr>>,
-    host_addr_rx: Option<Arc<Mutex<mpsc::Receiver<SocketAddr>>>>,
+    // //only needed in the case of hosting online, just a handy way for the host's server to communicate its address to the host client
+    // host_addr_tx: Option<mpsc::Sender<SocketAddr>>,
+    // host_addr_rx: Option<Arc<Mutex<mpsc::Receiver<SocketAddr>>>>,
 }
 
 impl GameStateTraits for Networking {
@@ -383,6 +384,16 @@ impl GameStateTraits for Networking {
                                     conn.peer_addr(),
                                     conn.rtt()
                                 );
+
+                                for (_, conn) in server.connections() {
+                                    conn.send(MessageKind::Reliable, encoder.compress_vec(
+                                        &bincode::serialize(&MessageSender{
+                                            data_type: DataType::NewConnection(crate::systems::networking::NewConnection::new(id.0)),
+                                            message_type: MessageType::Reliable
+                                        }).unwrap()
+                                    ).unwrap());
+                                }
+                                
                             },
                             ServerEvent::Message(id, message) => {
                                 let conn = server.connection(&id).unwrap();
@@ -719,7 +730,9 @@ impl GameStateTraits for Networking {
             world.remove(entity);
         }
 
-        resources.remove::<Connection>();
+        // Not removing the Connection resource so we can do a reset without having to store and restate Connection.
+        // Would be overwritten in the case of a new type of connection anyway
+        // resources.remove::<Connection>();
 
     }
 
@@ -747,8 +760,8 @@ impl NewState for Networking {
             client_running: Arc::new((Mutex::new(false), Condvar::new())),
             server_running: Arc::new((Mutex::new(false), Condvar::new())),
 
-            host_addr_tx: None,
-            host_addr_rx: None,
+            // host_addr_tx: None,
+            // host_addr_rx: None,
             
         }
     }
@@ -834,6 +847,15 @@ fn client_handle_data(data: DataType) {
 
             r.execute(world, resources)
         },
+        DataType::NewConnection(r) => {
+            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
+            let game = &mut *game_lock;
+            let world = &mut game.world;
+
+            world.push(
+                (r,)
+            );
+        }
         _ => {},
     }
 }

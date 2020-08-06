@@ -11,12 +11,6 @@ use gdnative::api::{
     PopupMenu
 };
 
-use std::net::{
-    SocketAddr, Ipv4Addr, IpAddr
-};
-
-use gip::Provider;
-
 #[derive(NativeClass)]
 #[inherit(MenuButton)]
 #[register_with(Self::register_signals)]

@@ -61,7 +61,7 @@ impl SelectionBox {
 #[derive(Default, Clone)]
 pub struct RelativeCamera(pub String);
 
-pub fn initialize_selection_box(world: &mut World, camera_name: String) {
+pub fn initialize_selection_box(world: &mut World, client_id: u32, camera_name: Option<String>) {
 
     let mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
 
@@ -69,11 +69,11 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
         node::add_node(mesh.upcast())
     }.unwrap();
 
-    world.push(
+    let entity = world.push(
         (
             node_name,
+            client_id,
             SelectionBox::new(), 
-            RelativeCamera(camera_name),
             custom_mesh::MeshData::new(),
             level_map::CoordPos::default(),
             transform::position::Position::default(), 
@@ -81,6 +81,12 @@ pub fn initialize_selection_box(world: &mut World, camera_name: String) {
             custom_mesh::Material::from_str("res://materials/select_box.material")
         )
     );
+
+    if let Some(camera_name) = camera_name {
+        if let Some(mut entry) = world.entry(entity) {
+            entry.add_component(RelativeCamera(camera_name))
+        }
+    }
 }
 
 /// Removes all SelectionBox entities from the world, and frees and removes the related Godot nodes
