@@ -1,4 +1,5 @@
 use gdnative::prelude::*;
+use legion::*;
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq)]
@@ -46,12 +47,31 @@ pub unsafe fn add_node(node: Ref<Node, Unique>) -> Option<NodeName> {
     Some(NodeName(string))
 }
 
+/// Removes the Godot Node, and removes the associated legion Entity
+pub fn free(world: &mut legion::World, name: &String) {
+
+    let node_name = NodeName(name.clone());
+    let mut query = <(Entity, Read<NodeName>)>::query();
+
+    let results = query.iter(world)
+        .filter(|(_, name)| node_name == **name)
+        .map(|(entity, node_name)| (*entity, (*node_name).clone()))
+        .collect::<Vec<(Entity, NodeName)>>();
+
+    for (entity, _) in results {
+
+        unsafe { remove_node(&name); }
+
+        world.remove(entity);
+    }
+} 
+
 /// Removes the node from the scene as well as from the node cache
-pub unsafe fn remove_node(name: String) {
+pub unsafe fn remove_node(name: &String) {
     
     if let Some(node_cache) = NODE_CACHE.as_mut() {
 
-        if let Some(node) = node_cache.cache.get(&name) {
+        if let Some(node) = node_cache.cache.get(name) {
 
             match node.assume_safe().get_parent() {
                 Some(parent) => {
@@ -60,7 +80,7 @@ pub unsafe fn remove_node(name: String) {
                 None => panic!("{:?} has no parent")
             }
 
-            node_cache.cache.remove(&name);
+            node_cache.cache.remove(name);
         }
 
     }

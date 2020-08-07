@@ -25,7 +25,8 @@ impl GameState{
 pub trait GameStateTraits: NewState + AsMut<GameState> + AsRef<GameState> {
     fn initialize(&mut self, _: &mut World, _: &mut Resources) {}
     fn free(&mut self, _: &mut World, _: &mut Resources) {}
-    fn on_connection(&self, _connection_id: u32, _world: &mut World) {}
+    fn on_connection(&self, _connection_id: u32, _world: &mut World, _resources: &mut Resources) {}
+    fn on_disconnection(&self, _connection_id: u32, _world: &mut World, _resources: &mut Resources) {}
 }
 
 pub trait NewState {

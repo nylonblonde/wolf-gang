@@ -7,6 +7,9 @@ use crate::{
         level_map,
         selection_box,
     },
+    networking::ClientID,
+    node,
+    node::NodeName
 };
 
 pub struct Editor {
@@ -16,6 +19,7 @@ pub struct Editor {
 }
 
 impl GameStateTraits for Editor {
+
     fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
         self.camera = camera::initialize_camera(world);
         // selection_box::initialize_selection_box(world, self.camera.clone());
@@ -24,19 +28,41 @@ impl GameStateTraits for Editor {
         resources.insert(self.map);    
         resources.insert(level_map::document::Document::default());
     }
+
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
         resources.remove::<History>();
         resources.remove::<level_map::document::Document>();
 
-        camera::free_camera(world, &self.camera);
+        node::free(world, &self.camera);
         // selection_box::free_all(world);
         self.map.free(world);
     }
-    fn on_connection(&self, connection_id: u32, world: &mut World) {
-        
-        // Will need to check if this selection box belongs to the client before passing the camera name
-        selection_box::initialize_selection_box(world, connection_id, Some(self.camera.clone()));
 
+    fn on_connection(&self, connection_id: u32, world: &mut World, resources: &mut Resources) {
+
+        //Only pass the camera name if this selection box belongs to the client
+        let camera: Option<String> = match resources.get::<ClientID>() {
+            Some(r) if r.val() == connection_id => {
+                Some(self.camera.clone())
+            },
+            _ => None
+        };
+        
+        selection_box::initialize_selection_box(world, connection_id, camera);
+
+    }
+
+    fn on_disconnection(&self, connection_id: u32, world: &mut World, _: &mut Resources) {
+
+        let mut query = <(Read<ClientID>, Read<NodeName>)>::query();
+
+        let mut name = query.iter(world)
+            .filter(|(id, _)| connection_id == id.val())
+            .map(|(_, name)| (*name).clone());
+
+        if let Some(name) = name.next() {
+            node::free(world, &name.0);
+        }
     }
 }
 

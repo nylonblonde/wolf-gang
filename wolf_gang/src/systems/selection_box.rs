@@ -6,15 +6,17 @@ use num::Float;
 
 use std::cmp::Ordering;
 
-use crate::geometry::aabb;
-use crate::node;
-
-use crate::systems::{
-    camera,
-    custom_mesh,
-    transform,
-    input,
-    level_map,
+use crate::{
+    geometry::aabb,
+    node,
+    networking::ClientID,
+    systems::{
+        camera,
+        custom_mesh,
+        transform,
+        input,
+        level_map,
+    }
 };
 
 type AABB = aabb::AABB<i32>;
@@ -72,7 +74,7 @@ pub fn initialize_selection_box(world: &mut World, client_id: u32, camera_name: 
     let entity = world.push(
         (
             node_name,
-            client_id,
+            ClientID::new(client_id),
             SelectionBox::new(), 
             custom_mesh::MeshData::new(),
             level_map::CoordPos::default(),
@@ -98,7 +100,7 @@ pub fn free_all(world: &mut World) {
 
     selection_box_query.for_each(world, |(entity, node_name)| {
         unsafe {
-            node::remove_node(node_name.clone().0);
+            node::remove_node(&node_name.0);
         }
 
         entities.push(*entity);

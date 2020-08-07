@@ -18,6 +18,15 @@ impl NewConnection {
     }
 }
 
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct Disconnection(u32);
+
+impl Disconnection {
+    pub fn new(id: u32) -> Self {
+        Disconnection(id)
+    }
+}
+
 /// This system takes messages and sends them to the message pool where they can be sent to the server
 pub fn create_message_pooling_system() -> impl systems::Schedulable {
     SystemBuilder::new("message_pooling_system")
@@ -33,35 +42,52 @@ pub fn create_message_pooling_system() -> impl systems::Schedulable {
         })
 }
 
-/// This system calls on on_connection for the game states
-pub fn create_new_connection_system() -> impl systems::Schedulable {
+pub fn create_new_connection_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+    
+    let mut query = <(Entity, Read<NewConnection>)>::query();
+    
+    Box::new(move |world, resources| {
 
-    SystemBuilder::new("new_connection_system")
-        .with_query(<(Entity, Read<NewConnection>)>::query())
-        .build(|commands, world, _, query| {
+        let results = query.iter(world)
+            .map(|(entity, new_connection)| (*entity, *new_connection))
+            .collect::<Vec<(Entity, NewConnection)>>();
+        
+        for (entity, new_connection) in results {
+            crate::STATE_MACHINE.with(|s| {
+                let state_machine = & *s.borrow();
 
-            for (entity, new_connection) in query.iter(world) {
-                
-                let entity = *entity;
-                let connection_id = new_connection.0;
+                for state in &state_machine.states {
+                    state.on_connection(new_connection.0, world, resources);
+                }
+            });
 
-                commands.exec_mut(move |world| {
+            //only need to act on a new connection once, get rid of the entity
+            world.remove(entity);
+        }
+    })
+}
 
-                    crate::STATE_MACHINE.with(|s| {
-                        let state_machine = & *s.borrow();
+pub fn create_disconnection_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+    
+    let mut query = <(Entity, Read<Disconnection>)>::query();
+    
+    Box::new(move |world, resources| {
 
-                        for state in &state_machine.states {
+        let results = query.iter(world)
+            .map(|(entity, disconnection)| (*entity, *disconnection))
+            .collect::<Vec<(Entity, Disconnection)>>();
+        
+        for (entity, disconnection) in results {
+            crate::STATE_MACHINE.with(|s| {
+                let state_machine = & *s.borrow();
 
-                            state.on_connection(connection_id, world);
+                for state in &state_machine.states {
+                    state.on_disconnection(disconnection.0, world, resources);
+                }
+            });
 
-                            println!("Called new_connection on {:?}", state.as_ref().as_ref().get_name());
-                        }
-                    });
-
-                    //only need to act on a new connection once, get rid of the entity
-                    world.remove(entity);
-                });
-                
-            }
-        })
+            //only need to act on a disconnection once, get rid of the entity
+            world.remove(entity);
+        }
+    })
 }

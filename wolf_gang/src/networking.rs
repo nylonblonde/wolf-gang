@@ -1,5 +1,10 @@
 use std::collections::HashMap;
-use crate::game_state::{GameState, GameStateTraits, NewState};
+use crate::{
+    game_state::{GameState, GameStateTraits, NewState},
+    systems::{
+        networking::Disconnection
+    }
+};
 use legion::*;
 
 use cobalt::{
@@ -18,19 +23,23 @@ use std::{
     io::{Error, ErrorKind},
     net,
     net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs},
+    rc::Rc,
     sync::{
         mpsc,
         mpsc::TryRecvError,
-        Arc, Condvar, Mutex,
-    }
+        Arc,
+        Condvar, 
+        Mutex,
+    },
+    time::{Duration, Instant}
 };
 
+use serde_derive::{Deserialize, Serialize};
 use snap::raw::{Decoder, Encoder};
 
 use bincode::{deserialize, serialize};
 
-use std::rc::Rc;
-use std::time::{Duration, Instant};
+type Point = nalgebra::Vector3<i32>;
 
 const MULTICAST_ADDR_V4: &'static str = "234.2.2.2:12345";
 const LOOPBACK_ADDR_V4: &'static str = "127.0.0.1:12345";
@@ -70,7 +79,6 @@ impl Default for Connection {
     }
 }
 
-
 #[derive(Debug, Copy, Clone)]
 pub enum ConnectionType {
     Join,
@@ -84,13 +92,10 @@ pub enum ConnectionState {
     Connected
 }
 
-use serde_derive::{Deserialize, Serialize};
-
-type Point = nalgebra::Vector3<i32>;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum  DataType {
     NewConnection(crate::systems::networking::NewConnection),
+    Disconnection(crate::systems::networking::Disconnection),
     MessageFragment(MessageFragment),
     MapInput(crate::systems::level_map::MapInput),
 }
@@ -241,6 +246,19 @@ impl Socket for UdpSocket {
     }
 }
 
+/// Resource used to store the client ID when it connects to a server so that we can know which entities belong to this client
+pub struct ClientID(u32);
+
+impl ClientID {
+    pub fn new(id: u32) -> Self {
+        ClientID(id)
+    }
+
+    pub fn val(&self) -> u32 {
+        self.0
+    }
+}
+
 pub struct Networking {
     game_state: GameState,
     server_quit_tx: mpsc::Sender<()>,
@@ -385,6 +403,7 @@ impl GameStateTraits for Networking {
                                     conn.rtt()
                                 );
 
+                                //Let everyone know this client has connected
                                 for (_, conn) in server.connections() {
                                     conn.send(MessageKind::Reliable, encoder.compress_vec(
                                         &bincode::serialize(&MessageSender{
@@ -422,6 +441,17 @@ impl GameStateTraits for Networking {
                                     conn.peer_addr(),
                                     conn.rtt()
                                 );
+
+                                // Let everyone know this client has disconnected
+                                for (_, conn) in server.connections() {
+                                    conn.send(MessageKind::Reliable, encoder.compress_vec(
+                                        &bincode::serialize(&MessageSender{
+                                            data_type: DataType::Disconnection(crate::systems::networking::Disconnection::new(id.0)),
+                                            message_type: MessageType::Reliable
+                                        }).unwrap()
+                                    ).unwrap());
+                                }
+
                                 if server.connections().len() == 0 {
                                     println!("[Server] Closing out server as there are no more connections");
                                     break 'server;
@@ -572,6 +602,12 @@ impl GameStateTraits for Networking {
                                 conn.rtt()
                             );
 
+                            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
+                            let game = &mut *game_lock;
+                            let resources = &mut game.resources;
+
+                            resources.insert(ClientID::new(conn.id().0));
+
                         },
                         ClientEvent::Message(message) => {
                             let conn = client.connection().unwrap();
@@ -699,6 +735,14 @@ impl GameStateTraits for Networking {
 
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
         
+        let mut query = <Read<ClientID>>::query();
+        let disconnections = query.iter(world)
+            .map(|client_id| (Disconnection::new(client_id.val()),))
+            .collect::<Vec<(Disconnection,)>>();
+
+        //queue up on_disconnection for every object that has a ClientID
+        world.extend(disconnections);
+
         //If a thread is running for the client, send a signal to kill it
         self.client_quit_tx.send(()).unwrap();
 
@@ -848,6 +892,15 @@ fn client_handle_data(data: DataType) {
             r.execute(world, resources)
         },
         DataType::NewConnection(r) => {
+            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
+            let game = &mut *game_lock;
+            let world = &mut game.world;
+
+            world.push(
+                (r,)
+            );
+        },
+        DataType::Disconnection(r) => {
             let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
             let game = &mut *game_lock;
             let world = &mut game.world;

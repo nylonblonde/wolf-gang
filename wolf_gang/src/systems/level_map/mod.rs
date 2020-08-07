@@ -20,6 +20,7 @@ use crate::{
         history::{History, StepTypes},
     },
     networking,
+    node::{NodeName}
 };
 
 #[cfg(not(test))]
@@ -204,20 +205,18 @@ impl Default for Map {
 
 impl Map {
 
-    /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache, and resets the Document and CurrentHistoricalStep resources
+    /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache
     pub fn free(&self, world: &mut legion::world::World) {
 
-        let mut map_chunk_query = <(Entity, Read<MapChunkData>, Read<crate::node::NodeName>)>::query();
+        let mut map_chunk_query = <(Entity, Read<NodeName>)>::query()
+            .filter(component::<MapChunkData>());
 
-        let mut entities: Vec<Entity> = Vec::new();
+        let results = map_chunk_query.iter(world)
+            .map(|(entity, node_name)| (*entity, (*node_name).clone()))
+            .collect::<Vec<(Entity, NodeName)>>();
 
-        for (entity, _, node_name) in map_chunk_query.iter(world) {
-            entities.push(*entity);
-
-            unsafe { crate::node::remove_node(node_name.0.clone()); }
-        }
-
-        for entity in entities {
+        for (entity, node_name) in results {
+            unsafe { crate::node::remove_node(&node_name.0); }
             world.remove(entity);
         }
     }

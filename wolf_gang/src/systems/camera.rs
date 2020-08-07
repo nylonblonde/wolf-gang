@@ -76,29 +76,6 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
     node_name.0
 }
 
-pub fn free_camera(world: &mut legion::world::World, name: &String) {
-
-    let node_name = node::NodeName(name.clone());
-
-    let mut camera_query = <(Entity, Read<node::NodeName>)>::query();
-
-    let mut entities: Vec<Entity> = Vec::new();
-
-    //seems redundant to use loop instead of just next but idk, might be good to catch cases with accidental dupes?
-    for (entity, node_name) in camera_query.iter(world).filter(|(_, name)| **name == node_name) {
-        unsafe {
-            node::remove_node(node_name.clone().0);
-        }
-        entities.push(*entity);
-
-    }
-
-    for entity in entities {
-        world.remove(entity);
-    }
-
-}
-
 pub fn create_movement_system() -> impl systems::Schedulable {
     SystemBuilder::new("camera_movement_system")
     .with_query(<(Read<FocalPoint>, Read<FocalAngle>, Read<Zoom>, Write<Position>)>::query()
