@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 use crate::{
     geometry::aabb,
     node,
-    networking::ClientID,
+    networking::{ClientID, DataType, MessageSender, MessageType},
     systems::{
         camera,
         custom_mesh,
@@ -59,6 +59,9 @@ impl SelectionBox {
         }
     }
 }
+
+#[derive(Default, Copy, Clone)]
+pub struct MoveTo(pub Point);
 
 #[derive(Default, Clone)]
 pub struct RelativeCamera(pub String);
@@ -211,10 +214,11 @@ pub fn create_movement_system() -> impl systems::Schedulable {
 
     SystemBuilder::new("selection_box_movement_system")
         .read_resource::<crate::Time>()
+        .read_resource::<ClientID>()
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
-        .with_query(<(Read<CameraAdjustedDirection>, Write<level_map::CoordPos>)>::query()
+        .with_query(<(Read<CameraAdjustedDirection>, Read<level_map::CoordPos>)>::query()
             .filter(component::<SelectionBox>()))
-        .build(move |_, world, time, queries| {
+        .build(move |commands, world, (time, client_id), queries| {
 
             let (input_query, selection_box_query) = queries;
 
@@ -266,11 +270,45 @@ pub fn create_movement_system() -> impl systems::Schedulable {
 
                         adjusted.y = movement.y;
                         
-                        coord_pos.value += adjusted;
+                        commands.push(
+                            (
+                                MoveTo(coord_pos.value + adjusted),
+                                **client_id
+                            )
+                        );
+
+                        commands.push((MessageSender{
+                            data_type: DataType::MoveSelection{ client_id: client_id.val(), point: coord_pos.value },
+                            message_type: MessageType::Ordered
+                        },));
 
                     });
                 }            
             }       
+        })
+}
+
+pub fn create_move_to_system() -> impl systems::Schedulable {
+    SystemBuilder::new("selection_box_move_to_system")
+        .with_query(<(Read<ClientID>, Write<level_map::CoordPos>)>::query()
+            .filter(component::<SelectionBox>())
+        )
+        .with_query(<(Entity, Read<ClientID>, Read<MoveTo>)>::query())
+        .build(|commands, world, _, queries| {
+
+            let (selection_box_query, move_to_query) = queries;
+
+            let move_tos = move_to_query.iter(world)
+                .map(|(entity, client_id, move_to)| (*entity, *client_id, *move_to))
+                .collect::<Vec<(Entity, ClientID, MoveTo)>>();
+
+            selection_box_query.for_each_mut(world, |(client_id, coord_pos)| {
+
+                if let Some((entity, _, move_to)) = move_tos.iter().find(|(_,id,_)| id == client_id) {
+                    coord_pos.value = move_to.0;
+                    commands.remove(*entity);
+                }
+            });
         })
 }
 

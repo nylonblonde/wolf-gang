@@ -98,6 +98,10 @@ pub enum  DataType {
     Disconnection(crate::systems::networking::Disconnection),
     MessageFragment(MessageFragment),
     MapInput(crate::systems::level_map::MapInput),
+    MoveSelection{
+        client_id: u32,
+        point: Point
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,6 +251,7 @@ impl Socket for UdpSocket {
 }
 
 /// Resource used to store the client ID when it connects to a server so that we can know which entities belong to this client
+#[derive(Copy, Clone, PartialEq)]
 pub struct ClientID(u32);
 
 impl ClientID {
@@ -890,6 +895,31 @@ fn client_handle_data(data: DataType) {
             let world = &mut game.world;
 
             r.execute(world, resources)
+        },
+        DataType::MoveSelection{client_id: id, point} => {
+
+            use crate::systems::selection_box::MoveTo;
+
+            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
+            let game = &mut *game_lock;
+
+            let resources = &mut game.resources;
+            let world = &mut game.world;
+
+            //This may seem convoluded, but we only want messages to act on clients that were not the sender,
+            // as their movement was already handled at the time the message was sent to avoid any perceived input
+            // lag on their end. 
+            if let Some(client_id) = resources.get::<ClientID>() {
+                if id != client_id.0 {
+
+                    world.push((
+                        id,
+                        MoveTo(point)
+                    ));
+
+                }
+            };
+
         },
         DataType::NewConnection(r) => {
             let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
