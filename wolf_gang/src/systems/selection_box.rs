@@ -216,7 +216,7 @@ pub fn create_movement_system() -> impl systems::Schedulable {
         .read_resource::<crate::Time>()
         .read_resource::<ClientID>()
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
-        .with_query(<(Read<CameraAdjustedDirection>, Read<level_map::CoordPos>)>::query()
+        .with_query(<(Read<CameraAdjustedDirection>, Read<ClientID>, Read<level_map::CoordPos>)>::query()
             .filter(component::<SelectionBox>()))
         .build(move |commands, world, (time, client_id), queries| {
 
@@ -237,7 +237,9 @@ pub fn create_movement_system() -> impl systems::Schedulable {
                 
                 if input_component.repeated(time.delta, 0.25) {
 
-                    selection_box_query.for_each_mut(world, |(camera_adjusted_dir, coord_pos)| {
+                    selection_box_query.iter(world)
+                        .filter(|(_, id, _)| **id == **client_id)
+                        .for_each(|(camera_adjusted_dir, _, coord_pos)| {
 
                         let mut movement = Point::zeros();
 
