@@ -251,7 +251,7 @@ impl Socket for UdpSocket {
 }
 
 /// Resource used to store the client ID when it connects to a server so that we can know which entities belong to this client
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ClientID(u32);
 
 impl ClientID {
@@ -913,7 +913,7 @@ fn client_handle_data(data: DataType) {
                 if id != client_id.0 {
 
                     world.push((
-                        id,
+                        ClientID::new(id),
                         MoveTo(point)
                     ));
 

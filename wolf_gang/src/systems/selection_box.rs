@@ -272,6 +272,8 @@ pub fn create_movement_system() -> impl systems::Schedulable {
 
                         adjusted.y = movement.y;
                         
+                        let move_to_pos = coord_pos.value + adjusted;
+
                         commands.push(
                             (
                                 MoveTo(coord_pos.value + adjusted),
@@ -280,7 +282,7 @@ pub fn create_movement_system() -> impl systems::Schedulable {
                         );
 
                         commands.push((MessageSender{
-                            data_type: DataType::MoveSelection{ client_id: client_id.val(), point: coord_pos.value },
+                            data_type: DataType::MoveSelection{ client_id: client_id.val(), point: move_to_pos },
                             message_type: MessageType::Ordered
                         },));
 
