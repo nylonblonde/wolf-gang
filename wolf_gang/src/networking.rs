@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::{
     game_state::{GameState, GameStateTraits, NewState},
     systems::{
@@ -15,41 +14,25 @@ use legion::*;
 use cobalt::{
     BinaryRateLimiter, 
     Client,
-    ClientEvent,
     Config, 
-    MessageKind, 
     NoopPacketModifier, 
     Server, 
-    ServerEvent, 
     Socket,
 };
 
 use std::{
-    cell::RefCell,
     io::{Error, ErrorKind},
     net,
     net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs},
-    rc::Rc,
     sync::{
-        mpsc,
         mpsc::TryRecvError,
-        Arc,
-        Condvar, 
-        Mutex,
-        RwLock,
     },
-    time::{Duration, Instant}
 };
-
-use serde_derive::{Deserialize, Serialize};
-use snap::raw::{Decoder, Encoder};
-
-use bincode::{deserialize, serialize};
 
 type Point = nalgebra::Vector3<i32>;
 
-const MULTICAST_ADDR_V4: &'static str = "234.2.2.2:12345";
-const LOOPBACK_ADDR_V4: &'static str = "127.0.0.1:12345";
+pub const MULTICAST_ADDR_V4: &'static str = "234.2.2.2:12345";
+pub const LOOPBACK_ADDR_V4: &'static str = "127.0.0.1:12345";
 // const LOBBY_ADDR_V4: &'static str = "";
 
 #[derive(Debug, Copy, Clone)]
@@ -131,7 +114,7 @@ impl UdpSocket {
     }
 
     /// Connects clients to multicast for sending
-    fn connect_multicast(&mut self, addr: SocketAddr) -> Result<(), Error> {
+    pub fn connect_multicast(&mut self, addr: SocketAddr) -> Result<(), Error> {
         match self.multicast_addr {
             None => {
                 self.multicast_addr = Some(addr);
@@ -305,40 +288,15 @@ impl GameStateTraits for Networking {
 
             if let Ok(client) = entry.into_component_mut::<Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier>>() {
 
-                let client_addr = match connection.scope {
-                    Scope::Loopback => LOOPBACK_ADDR_V4.parse::<SocketAddr>().unwrap(),
+                let client_addr: Option<SocketAddr> = match connection.scope {
+                    Scope::Loopback => Some(LOOPBACK_ADDR_V4.parse::<SocketAddr>().unwrap()),
                     Scope::Multicast => {
-                        let mut last_sent = Instant::now();
-                        let mut wait_for = Duration::from_millis(0);
 
-                        let socket = net::UdpSocket::bind("0.0.0.0:0").unwrap();
-                        socket.set_nonblocking(true).unwrap();
-
-                        loop {
-
-                            if Instant::now() - last_sent > wait_for {
-
-                                println!("Sending an IP request to {:?}", MULTICAST_ADDR_V4);
-                                //8008 will be interpreted as an IP request
-                                socket.send_to(&[8,0,0,8], MULTICAST_ADDR_V4).unwrap();
-                                last_sent = Instant::now();
-                                wait_for = Duration::from_secs(5);
-                            }
-
-                            let mut buffer = [0; 4];
-                            // This is kind of sketchy because we don't check the validity of the origin of the request, maybe a random packet 
-                            // should be sent with the request and returned to be verified
-
-                            if let Ok((_, src_addr)) = socket.recv_from(&mut buffer) {
-
-                                println!("Source address is {:?}", src_addr);
-
-                                break src_addr
-                            }
-
-                        }
+                        //return None and we'll offload connection logic to systems so that we can retrieve the IP address
+                        None
+                        
                     },
-                    Scope::Online(host) => host
+                    Scope::Online(host) => Some(host)
                     // Scope::Online(host) => {
                     //     match connection.conn_type {
                     //         ConnectionType::Host => {
@@ -358,27 +316,37 @@ impl GameStateTraits for Networking {
                     // }
                 };
 
-                match connection.scope {
-                    Scope::Loopback => {
-                        client.connect(client_addr).expect("Couldn't connect to client address!");
+                match client_addr {
+                    Some(client_addr) => {
+                        match connection.scope {
+                            Scope::Loopback => {
+                                client.connect(client_addr).expect("Couldn't connect to client address!");
+                                println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
+                            },
+                            Scope::Online(_) => {
+                                client.connect(client_addr).expect("Couldn't connect to online address!");
+                                println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
+                            },
+                            _ => {}
+                        }
                     },
-                    Scope::Multicast => {
-
-                        println!("connect to {:?}, on multicast {:?}", client_addr, MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap());
-
-                        client.connect(client_addr).expect("Couldn't connect to local address!");
-                        client.socket().unwrap().connect_multicast(MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap()).unwrap();
-                    },
-                    Scope::Online(_) => {
-                        client.connect(client_addr).expect("Couldn't connect to online address!");
-                    }
+                    None => {} //In the case of multicast, we wouldn't have set our client address yet
                 }
-
-                println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
-
             }
         }  
 
+        //In the case of Multicast's scope, we wouldn't have connected yet because we need to get the host's IP Address. Offload IP
+        // address retrieval to systems
+        match connection.scope {
+            Scope::Multicast => {
+                if let Some(mut entry) = world.entry(entity) {
+                    let socket = net::UdpSocket::bind("0.0.0.0:0").unwrap();
+                    socket.set_nonblocking(true).ok();
+                    entry.add_component(socket);
+                }
+            },
+            _ => {}
+        }
     }
 
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
@@ -391,13 +359,33 @@ impl GameStateTraits for Networking {
         //queue up on_disconnection for every object that has a ClientID
         world.extend(disconnections);
 
+        resources.insert(ClientID::new(0));
+
         //get rid of any message senders that might still exist
         let mut query = <(Entity, Read<MessageSender>)>::query();
-        let entities = query.iter(world).map(|(entity, _)| *entity).collect::<Vec<Entity>>();
+        let mut entities = query.iter(world).map(|(entity, _)| *entity).collect::<Vec<Entity>>();
 
-        for entity in entities {
+        let mut query = <(Entity, Read<ServerMessageSender>)>::query();
+        entities.extend(query.iter(world).map(|(entity, _)| *entity).collect::<Vec<Entity>>());
+
+        let mut query = <(Entity, Write<Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier>>)>::query();
+        query.for_each_mut(world, |(entity, client)| {
+            client.disconnect().ok();
+
+            entities.push(*entity);
+        });
+
+        let mut query = <(Entity, Write<Server<UdpSocket, BinaryRateLimiter, NoopPacketModifier>>)>::query();
+
+        query.for_each_mut(world, |(entity, server)| {
+            server.shutdown().ok();
+
+            entities.push(*entity);
+        });
+
+        entities.into_iter().for_each(|entity| {
             world.remove(entity);
-        }
+        });
 
         // Not removing the Connection resource so we can do a reset without having to store and restate Connection.
         // Would be overwritten in the case of a new type of connection anyway

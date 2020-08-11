@@ -111,7 +111,7 @@ impl FileMenu {
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.borrow_mut();
 
-        let mut doc = match resources.get_mut::<Document>() {
+        let mut doc = match resources.get::<Document>() {
             Some(document) => document.clone(),
             None => panic!("Couldn't retrieve document Resource")
         };

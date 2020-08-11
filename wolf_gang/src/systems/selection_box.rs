@@ -216,7 +216,7 @@ pub fn create_movement_system() -> impl systems::Runnable {
         .read_resource::<crate::Time>()
         .read_resource::<ClientID>()
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
-        .with_query(<(Read<CameraAdjustedDirection>, Read<ClientID>, Read<level_map::CoordPos>)>::query()
+        .with_query(<(Read<CameraAdjustedDirection>, Read<ClientID>, Write<level_map::CoordPos>)>::query()
             .filter(component::<SelectionBox>()))
         .build(move |commands, world, (time, client_id), queries| {
 
@@ -235,11 +235,16 @@ pub fn create_movement_system() -> impl systems::Runnable {
                 a == &move_down
             ) {                    
                 
+                let mut combined_movement: Option<Point> = None;
+                let mut entity: Option<(Point, ClientID)> = None;
+
                 if input_component.repeated(time.delta, 0.25) {
 
-                    selection_box_query.iter(world)
-                        // .filter(|(_, id, _)| **id == **client_id)
+                    selection_box_query.iter_mut(world)
+                        .filter(|(_, id, _)| **id == **client_id)
                         .for_each(|(camera_adjusted_dir, _, coord_pos)| {
+
+                        entity = Some((coord_pos.value, **client_id));
 
                         let mut movement = Point::zeros();
 
@@ -271,30 +276,59 @@ pub fn create_movement_system() -> impl systems::Runnable {
                         ) * movement.x;
 
                         adjusted.y = movement.y;
-                        
-                        let move_to_pos = coord_pos.value + adjusted;
 
-                        commands.push(
-                            (
-                                MoveTo(coord_pos.value + adjusted),
-                                // **client_id
-                            )
-                        );
-
-                        // commands.push((MessageSender{
-                        //     data_type: DataType::MoveSelection{ client_id: client_id.val(), point: move_to_pos },
-                        //     message_type: MessageType::Ordered
-                        // },));
+                        combined_movement = Some(adjusted);
 
                     });
-                }            
+                }
+                
+                if let Some(combined_movement) = combined_movement {
+                    if let Some((coord_pos_value, client_id)) = entity {
+
+                        let move_to_pos = coord_pos_value + combined_movement;
+
+                        commands.exec_mut(move |world| {
+                            let mut query = <(Write<MoveTo>, Read<ClientID>)>::query();
+
+                            let mut existing_movement: Option<Point> = None;
+
+                            if let Some((move_to, _)) = query.iter_mut(world).filter(|(_, id)| **id == client_id).next() {
+                                move_to.0 += combined_movement;
+                                existing_movement = Some(move_to.0);
+                            }
+
+                            let mut move_selection = DataType::MoveSelection{ client_id: client_id.val(), point: move_to_pos };
+
+                            match existing_movement {
+                                Some(existing_movement) => {
+                                    if let DataType::MoveSelection{client_id: _, point} = &mut move_selection {
+                                        *point = existing_movement;
+                                    } 
+                                },
+                                None => {
+                                    world.push(
+                                        (
+                                            MoveTo(coord_pos_value + combined_movement),
+                                            client_id
+                                        )
+                                    );
+                                }
+                            }
+
+                            world.push((MessageSender{
+                                data_type: move_selection,
+                                message_type: MessageType::Ordered
+                            },));
+                        });
+                    }
+                }
             }       
         })
 }
 
 pub fn create_move_to_system() -> impl systems::Runnable {
     SystemBuilder::new("selection_box_move_to_system")
-        .with_query(<(Read<ClientID>, Write<level_map::CoordPos>)>::query()
+        .with_query(<(Entity, Read<ClientID>)>::query()
             .filter(component::<SelectionBox>())
         )
         .with_query(<(Entity, Read<ClientID>, Read<MoveTo>)>::query())
@@ -306,11 +340,25 @@ pub fn create_move_to_system() -> impl systems::Runnable {
                 .map(|(entity, client_id, move_to)| (*entity, *client_id, *move_to))
                 .collect::<Vec<(Entity, ClientID, MoveTo)>>();
 
-            selection_box_query.for_each_mut(world, |(client_id, coord_pos)| {
+            selection_box_query.for_each_mut(world, |(entity, client_id)| {
 
-                if let Some((entity, _, move_to)) = move_tos.iter().find(|(_,id,_)| id == client_id) {
-                    coord_pos.value = move_to.0;
-                    commands.remove(*entity);
+                if let Some((moveto_entity, _, move_to)) = move_tos.iter().find(|(_,id,_)| id == client_id) {
+                    
+                    let moveto_entity = *moveto_entity;
+                    let entity = *entity;
+                    let move_to = *move_to;
+
+                    // We write to CoordPos this way because if we just include it into the query every selection box gets marked as written every frame
+                    commands.exec_mut(move |world|{
+
+                        if let Some(entry) = world.entry(entity) {
+                            if let Ok(coord_pos) = entry.into_component_mut::<level_map::CoordPos>() {
+                                coord_pos.value = move_to.0;
+                            }
+                        }
+
+                        world.remove(moveto_entity);
+                    });
                 }
             });
         })

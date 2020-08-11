@@ -15,7 +15,7 @@ use std::{
     cell::RefCell,
     rc::Rc,
     sync::{
-        Arc, Mutex, RwLock
+        Arc, RwLock
     },
 };
 
@@ -129,10 +129,13 @@ impl WolfGang {
             state_machine.add_state(
                 networking::Networking::new("Networking", 
                     Schedule::builder()
+                        .add_system(systems::networking::create_client_multicast_connection_system())
                         .add_system(systems::networking::create_server_system())
                         .add_system(systems::networking::create_client_system())
+                        .add_thread_local_fn(systems::networking::create_set_client_id_thread_local_fn())
                         .add_thread_local_fn(systems::networking::create_new_connection_thread_local_fn())
                         .add_thread_local_fn(systems::networking::create_disconnection_thread_local_fn())
+                        .add_thread_local_fn(systems::networking::create_data_handler_threal_local_fn())
                         .build(),
                     true
                 ),
@@ -149,12 +152,14 @@ impl WolfGang {
                         .add_system(systems::camera::create_movement_system())
                         .add_system(systems::camera::create_rotation_system())
                         .add_system(systems::selection_box::create_system())
+                        .flush()
                         .add_system(systems::selection_box::create_move_to_system())
+                        .flush()
                         .add_system(systems::selection_box::create_coord_to_pos_system())
                         
                         .add_system(systems::selection_box::create_tile_tool_system())
 
-                        .add_system(systems::custom_mesh::create_tag_system())
+                        .add_thread_local(systems::custom_mesh::create_tag_system())
 
                         .add_system(systems::camera::create_camera_angle_system())
                         .add_system(systems::camera::create_focal_point_system())
@@ -165,12 +170,13 @@ impl WolfGang {
                         .add_system(systems::selection_box::create_expansion_system())
 
                         .add_system(systems::level_map::mesh::create_add_components_system())
-                        .add_system(systems::level_map::mesh::create_drawing_system())
+                        .add_thread_local(systems::level_map::mesh::create_drawing_system())
                         .flush() //need to flush before drawing custom meshes
-                        .add_system(systems::custom_mesh::create_draw_system())
+                        
+                        .add_thread_local(systems::custom_mesh::create_draw_system())
 
-                        .add_system(systems::transform::rotation::create_system())
-                        .add_system(systems::transform::position::create_system())
+                        .add_thread_local(systems::transform::rotation::create_system())
+                        .add_thread_local(systems::transform::position::create_system())
                         
                         .add_system(systems::level_map::create_map_input_system())
                         .add_system(systems::history::create_history_input_system())

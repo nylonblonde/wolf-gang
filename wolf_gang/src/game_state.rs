@@ -2,10 +2,6 @@ use legion::*;
 
 use std::{
     cell::RefCell,
-    rc::Rc,
-    sync::{
-        Arc, Mutex, RwLock
-    },
 };
 
 pub struct GameState {

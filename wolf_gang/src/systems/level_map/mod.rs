@@ -117,7 +117,6 @@ impl Map {
         let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
     
         let mut entities: HashMap<Entity, MapChunkData> = HashMap::new();
-        // let mut historically_significant: HashMap<Entity, MapChunkData> = HashMap::new();
     
         let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
     
@@ -175,10 +174,10 @@ impl Map {
             let set = input_query_range.into_iter().collect::<HashSet<TileData>>();
             let map_set = map_query_range.into_iter().collect::<HashSet<TileData>>();
     
-            // if set.symmetric_difference(&map_set).count() == 0 {
-            //     println!("Set and map_set were symmetrically the same");
-            //     continue
-            // }
+            if set.symmetric_difference(&map_set).count() == 0 {
+                println!("Set and map_set were symmetrically the same");
+                continue
+            }
     
             //Remove any data that is in map_set but not set
             let difference = map_set.difference(&set);
@@ -408,6 +407,7 @@ pub fn create_map_input_system() -> impl systems::Runnable {
 
                 //If there is no difference between the input and what is already in the map, just return
                 if input_set.symmetric_difference(&query_range.clone().into_iter().collect::<HashSet<TileData>>()).count() == 0 {
+                    commands.remove(*entity);
                     return {}
                 }
 

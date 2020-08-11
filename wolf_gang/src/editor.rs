@@ -12,10 +12,6 @@ use crate::{
     node::NodeName
 };
 
-use std::sync::{
-    Arc, RwLock
-};
-
 pub struct Editor {
     game_state: GameState,
     camera: String,

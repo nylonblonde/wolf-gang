@@ -2,7 +2,10 @@ use legion::*;
 
 use serde::{Serialize, Deserialize};
 
-use crate::networking::UdpSocket;
+use crate::{
+    networking,
+    networking::UdpSocket
+};
 
 use cobalt::{
     BinaryRateLimiter, 
@@ -18,12 +21,11 @@ use cobalt::{
 
 use std::{
     collections::HashMap,
-    io::{Error, ErrorKind},
-    sync::{
-        mpsc::TryRecvError,
-    },
     net,
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs},
+    net::SocketAddr,
+    time::{
+        Duration, Instant
+    },
 };
 
 use snap::raw::{Decoder, Encoder};
@@ -43,6 +45,12 @@ impl ClientID {
     pub fn val(&self) -> u32 {
         self.0
     }
+}
+
+/// Component that gets used to set the ClientID resource on the main thread
+#[derive(Copy, Clone)]
+pub struct SetClientID {
+    client_id: ClientID
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
@@ -254,7 +262,7 @@ pub fn create_server_system() -> impl systems::ParallelRunnable {
                     commands.remove(entity);
                 });
  
-                if let Ok(_) = server.send(false) {} //TODO: Honor send rate but not by sleeping the thread
+                server.send(false).ok(); //TODO: Honor send rate but not by sleeping the thread
 
             }
         })
@@ -289,9 +297,13 @@ pub fn create_client_system() -> impl systems::ParallelRunnable {
                                 conn.rtt()
                             );
 
-                            //TODO: push an entity to a world which will set the clientID resource
-                            // let resources = resources.lock().unwrap();
-                            // resources.insert(ClientID::new(conn.id().0));
+                            commands.push(
+                                (
+                                    SetClientID{
+                                        client_id: ClientID::new(conn.id().0)
+                                    },
+                                )
+                            );
 
                         },
                         ClientEvent::Message(message) => {
@@ -301,18 +313,14 @@ pub fn create_client_system() -> impl systems::ParallelRunnable {
                                 conn.peer_addr(),
                                 conn.rtt(),
                             );
-
+                           
                             let payload = decoder.decompress_vec(&message).unwrap();
                             let data: DataType = deserialize(&payload).unwrap();
 
-                            //TODO: try getting resources from the WolfGang assoc func or push an entity to handle it on the main thread
-                            // let mut world = world.write().unwrap();
-                            // let resources = resources.read().unwrap();
-
-                            // match data {
-                            //     DataType::MessageFragment(frag) => client_handle_fragments(frag, decoder, &mut message_fragments, &mut world, &resources),
-                            //     _=> client_handle_data(data, &mut world, &resources)
-                            // }
+                            //Create data entities to handle them on the main thread
+                            commands.push(
+                                (data,)
+                            );
                         },
                         ClientEvent::ConnectionClosed(_) | ClientEvent::ConnectionLost(_) => {
                             let conn = client.connection().unwrap();
@@ -357,15 +365,94 @@ pub fn create_client_system() -> impl systems::ParallelRunnable {
                 // Send all outgoing messages.
                 //
                 // Also auto delay the current thread to achieve the configured tick rate.
-                match client.send(false) { //TODO: Honor send rate but not by sleeping the thread
-                    Ok(_) => {},
-                    Err(err) => {
-                        println!("{:?}", err);
-                    }
-                }
+                client.send(false).ok(); //TODO: Honor send rate but not by sleeping the thread
+                
             }
             
         })
+}
+
+pub fn create_client_multicast_connection_system() -> impl systems::Runnable {
+    let mut last_sent = Instant::now();
+    let mut wait_for = Duration::from_millis(0);
+
+    SystemBuilder::new("client_multicast_connection_system")
+        .with_query(<(Entity, Write<std::net::UdpSocket>, Write<Client<networking::UdpSocket, BinaryRateLimiter, NoopPacketModifier>>)>::query())
+        .build(move |commands, world, _, query| {
+
+            if let Some((entity, socket, client)) = query.iter_mut(world).next() {
+
+                if Instant::now() - last_sent > wait_for {
+
+                    println!("Sending an IP request to {:?}", networking::MULTICAST_ADDR_V4);
+                    //8008 will be interpreted as an IP request
+                    socket.send_to(&[8,0,0,8], networking::MULTICAST_ADDR_V4).unwrap();
+                    last_sent = Instant::now();
+                    wait_for = Duration::from_secs(5);
+
+                }
+
+                let mut buffer = [0; 4];
+                // This is kind of sketchy because we don't check the validity of the origin of the request, maybe a random packet 
+                // should be sent with the request and returned to be verified
+
+                if let Ok((_, src_addr)) = socket.recv_from(&mut buffer) {
+
+                    client.connect(src_addr).expect("Couldn't connect to local address!");
+                    client.socket().unwrap().connect_multicast(networking::MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap()).unwrap();
+                    println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
+
+                    wait_for = Duration::from_millis(0);
+
+                    commands.remove_component::<net::UdpSocket>(*entity);
+                }
+
+            }
+        })
+}
+
+pub fn create_data_handler_threal_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+
+    let mut query = <(Entity, Read<DataType>)>::query();
+    let mut message_fragments: HashMap<u128, Vec<MessageFragment>> = HashMap::new();
+    let mut decoder = Decoder::new();
+
+    Box::new(move |world, resources| {
+
+        let entities = query.iter(world)
+            .map(|(entity, data)| (*entity, (*data).clone()))
+            .collect::<Vec<(Entity, DataType)>>();
+
+        entities.into_iter().for_each(|(entity, data_type)| {
+
+            match data_type {
+                DataType::MessageFragment(frag) => client_handle_fragments(frag, &mut decoder, &mut message_fragments, world, resources),
+                _=> client_handle_data(data_type, world, resources)
+            }
+
+            world.remove(entity);
+        });
+
+    })
+}
+
+pub fn create_set_client_id_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+
+    let mut query = <(Entity, Read<SetClientID>)>::query();
+
+    Box::new(move |world, resources| {
+
+        let entities = query.iter(world)
+            .map(|(entity, client_id)| (*entity, *client_id))
+            .collect::<Vec<(Entity, SetClientID)>>();
+
+        entities.into_iter().for_each(|(entity, set_client_id)| {
+            resources.insert(set_client_id.client_id);
+
+            world.remove(entity);
+        })
+
+    })
 }
 
 pub fn create_new_connection_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
@@ -423,7 +510,7 @@ fn client_handle_fragments(
     decoder: &mut Decoder, 
     message_fragments: &mut HashMap<u128, Vec<MessageFragment>>, 
     world: &mut World, 
-    resources: &systems::SyncResources
+    resources: &mut Resources
 ) {
 
     match message_fragments.get_mut(&fragment.uuid) {
@@ -438,7 +525,7 @@ fn client_handle_fragments(
                 ..
             } = fragment;
 
-            frag_vec.push(fragment);
+            frag_vec.push(fragment.clone());
 
             //If we've received all of the pieces
             if frag_vec.len() == pieces {
@@ -473,12 +560,12 @@ fn client_handle_fragments(
             }
         },
         None => {
-            message_fragments.insert(fragment.uuid, vec![fragment]);
+            message_fragments.insert(fragment.uuid, vec![fragment.clone()]);
         }
     }
 }
 
-fn client_handle_data(data: DataType, world: &mut World, resources: &systems::SyncResources) {
+fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resources) {
     match data {
         DataType::MapInput(r) => {
             if let Some(map) = resources.get::<crate::systems::level_map::Map>() {
