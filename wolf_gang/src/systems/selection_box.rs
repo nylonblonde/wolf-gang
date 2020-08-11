@@ -60,7 +60,7 @@ impl SelectionBox {
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct MoveTo(pub Point);
 
 #[derive(Default, Clone)]
