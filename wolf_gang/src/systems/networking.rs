@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::{
     networking,
-    networking::UdpSocket
+    networking::UdpSocket,
 };
 
 use cobalt::{
@@ -32,6 +32,7 @@ use snap::raw::{Decoder, Encoder};
 use bincode::{serialize, deserialize};
 
 type Point = nalgebra::Vector3<i32>;
+type AABB = crate::geometry::aabb::AABB<i32>;
 
 /// Resource used to store the client ID when it connects to a server so that we can know which entities belong to this client
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -140,9 +141,10 @@ pub enum  DataType {
     Disconnection(crate::systems::networking::Disconnection),
     MessageFragment(MessageFragment),
     MapInput(crate::systems::level_map::MapInput),
-    MoveSelection{
+    UpdateSelectionBounds{
         client_id: u32,
-        point: Point
+        point: Point,
+        aabb: AABB
     },
 }
 
@@ -572,9 +574,9 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 map.change(world, r.get_octree())
             }
         },  
-        DataType::MoveSelection{client_id: id, point} => {
+        DataType::UpdateSelectionBounds{client_id: id, point: coord_pos, aabb} => {
 
-            use crate::systems::selection_box::MoveTo;
+            use crate::systems::selection_box::UpdateBounds;
 
             //This may seem convoluded, but we only want messages to act on clients that were not the sender,
             // as their movement was already handled at the time the message was sent to avoid any perceived input
@@ -584,7 +586,10 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
 
                     world.push((
                         ClientID::new(id),
-                        MoveTo(point)
+                        UpdateBounds{
+                            coord_pos,
+                            aabb
+                        }
                     ));
 
                 }

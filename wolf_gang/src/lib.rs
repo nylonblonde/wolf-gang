@@ -153,7 +153,7 @@ impl WolfGang {
                         .add_system(systems::camera::create_rotation_system())
                         .add_system(systems::selection_box::create_system())
                         .flush()
-                        .add_system(systems::selection_box::create_move_to_system())
+                        .add_system(systems::selection_box::create_update_bounds_system())
                         .flush()
                         .add_system(systems::selection_box::create_coord_to_pos_system())
                         

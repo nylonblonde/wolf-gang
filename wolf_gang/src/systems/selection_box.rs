@@ -25,7 +25,7 @@ type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
 type Vector2D = nalgebra::Vector2<f32>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct SelectionBox {
     pub aabb: AABB
 }
@@ -61,7 +61,10 @@ impl SelectionBox {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct MoveTo(pub Point);
+pub struct UpdateBounds {
+    pub coord_pos: Point,
+    pub aabb: AABB
+}
 
 #[derive(Default, Clone)]
 pub struct RelativeCamera(pub String);
@@ -216,8 +219,7 @@ pub fn create_movement_system() -> impl systems::Runnable {
         .read_resource::<crate::Time>()
         .read_resource::<ClientID>()
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
-        .with_query(<(Read<CameraAdjustedDirection>, Read<ClientID>, Write<level_map::CoordPos>)>::query()
-            .filter(component::<SelectionBox>()))
+        .with_query(<(Read<CameraAdjustedDirection>, Read<ClientID>, Read<level_map::CoordPos>, Read<SelectionBox>)>::query())
         .build(move |commands, world, (time, client_id), queries| {
 
             let (input_query, selection_box_query) = queries;
@@ -225,6 +227,9 @@ pub fn create_movement_system() -> impl systems::Runnable {
             let inputs = input_query.iter(world)
                 .map(|(input, action)| (*input, (*action).clone()))
                 .collect::<Vec<(input::InputActionComponent, input::Action)>>();
+
+            let mut combined_movement: Option<Point> = None;
+            let mut entity: Option<(Point, ClientID, SelectionBox)> = None;
 
             for(input_component, action) in inputs.iter().filter(|(_, a)|
                 a == &move_forward ||
@@ -234,17 +239,14 @@ pub fn create_movement_system() -> impl systems::Runnable {
                 a == &move_up ||
                 a == &move_down
             ) {                    
-                
-                let mut combined_movement: Option<Point> = None;
-                let mut entity: Option<(Point, ClientID)> = None;
 
                 if input_component.repeated(time.delta, 0.25) {
 
-                    selection_box_query.iter_mut(world)
-                        .filter(|(_, id, _)| **id == **client_id)
-                        .for_each(|(camera_adjusted_dir, _, coord_pos)| {
+                    selection_box_query.iter(world)
+                        .filter(|(_, id, _, _)| **id == **client_id)
+                        .for_each(|(camera_adjusted_dir, _, coord_pos, selection_box)| {
 
-                        entity = Some((coord_pos.value, **client_id));
+                        entity = Some((coord_pos.value, **client_id, *selection_box));
 
                         let mut movement = Point::zeros();
 
@@ -281,88 +283,93 @@ pub fn create_movement_system() -> impl systems::Runnable {
 
                     });
                 }
-                
-                if let Some(combined_movement) = combined_movement {
-                    if let Some((coord_pos_value, client_id)) = entity {
+            }   
+            
+            if let Some(combined_movement) = combined_movement {
+                if let Some((coord_pos_value, client_id, selection_box)) = entity {
 
-                        let move_to_pos = coord_pos_value + combined_movement;
+                    let move_to_pos = coord_pos_value + combined_movement;
 
-                        commands.exec_mut(move |world| {
-                            let mut query = <(Write<MoveTo>, Read<ClientID>)>::query();
+                    commands.exec_mut(move |world| {
+                        let mut query = <(Write<UpdateBounds>, Read<ClientID>)>::query();
 
-                            let mut existing_movement: Option<Point> = None;
+                        let mut existing_movement: Option<Point> = None;
 
-                            if let Some((move_to, _)) = query.iter_mut(world).filter(|(_, id)| **id == client_id).next() {
-                                move_to.0 += combined_movement;
-                                existing_movement = Some(move_to.0);
-                            }
+                        if let Some((update_to, _)) = query.iter_mut(world).filter(|(_, id)| **id == client_id).next() {
+                            update_to.coord_pos += combined_movement;
+                            existing_movement = Some(update_to.coord_pos);
+                        }
 
-                            let mut move_selection = DataType::MoveSelection{ client_id: client_id.val(), point: move_to_pos };
+                        let mut update_selection = DataType::UpdateSelectionBounds{ client_id: client_id.val(), point: move_to_pos, aabb: selection_box.aabb };
 
-                            match existing_movement {
-                                Some(existing_movement) => {
-                                    if let DataType::MoveSelection{client_id: _, point} = &mut move_selection {
-                                        *point = existing_movement;
-                                    } 
-                                },
-                                None => {
+                        match existing_movement {
+                            Some(existing_movement) => {
+                                if let DataType::UpdateSelectionBounds{client_id:_, point, aabb:_} = &mut update_selection {
+                                    *point = existing_movement;
+                                } 
+                            },
+                            None => {
+                                if let DataType::UpdateSelectionBounds{client_id:_, point, aabb} = &mut update_selection {
                                     world.push(
                                         (
-                                            MoveTo(coord_pos_value + combined_movement),
+                                            UpdateBounds {
+                                                aabb: *aabb,
+                                                coord_pos: *point
+                                            },
                                             client_id
                                         )
                                     );
                                 }
                             }
-
-                            world.push((MessageSender{
-                                data_type: move_selection,
-                                message_type: MessageType::Ordered
-                            },));
-                        });
-                    }
-                }
-            }       
-        })
-}
-
-pub fn create_move_to_system() -> impl systems::Runnable {
-    SystemBuilder::new("selection_box_move_to_system")
-        .with_query(<(Entity, Read<ClientID>)>::query()
-            .filter(component::<SelectionBox>())
-        )
-        .with_query(<(Entity, Read<ClientID>, Read<MoveTo>)>::query())
-        .build(|commands, world, _, queries| {
-
-            let (selection_box_query, move_to_query) = queries;
-
-            let move_tos = move_to_query.iter(world)
-                .map(|(entity, client_id, move_to)| (*entity, *client_id, *move_to))
-                .collect::<Vec<(Entity, ClientID, MoveTo)>>();
-
-            selection_box_query.for_each_mut(world, |(entity, client_id)| {
-
-                if let Some((moveto_entity, _, move_to)) = move_tos.iter().find(|(_,id,_)| id == client_id) {
-                    
-                    let moveto_entity = *moveto_entity;
-                    let entity = *entity;
-                    let move_to = *move_to;
-
-                    // We write to CoordPos this way because if we just include it into the query every selection box gets marked as written every frame
-                    commands.exec_mut(move |world|{
-
-                        if let Some(entry) = world.entry(entity) {
-                            if let Ok(coord_pos) = entry.into_component_mut::<level_map::CoordPos>() {
-                                coord_pos.value = move_to.0;
-                            }
                         }
 
-                        world.remove(moveto_entity);
+                        world.push((MessageSender{
+                            data_type: update_selection,
+                            message_type: MessageType::Ordered
+                        },));
                     });
                 }
-            });
+            }
         })
 }
+
+// pub fn create_move_to_system() -> impl systems::Runnable {
+//     SystemBuilder::new("selection_box_move_to_system")
+//         .with_query(<(Entity, Read<ClientID>)>::query()
+//             .filter(component::<SelectionBox>())
+//         )
+//         .with_query(<(Entity, Read<ClientID>, Read<MoveTo>)>::query())
+//         .build(|commands, world, _, queries| {
+
+//             let (selection_box_query, move_to_query) = queries;
+
+//             let move_tos = move_to_query.iter(world)
+//                 .map(|(entity, client_id, move_to)| (*entity, *client_id, *move_to))
+//                 .collect::<Vec<(Entity, ClientID, MoveTo)>>();
+
+//             selection_box_query.for_each_mut(world, |(entity, client_id)| {
+
+//                 if let Some((moveto_entity, _, move_to)) = move_tos.iter().find(|(_,id,_)| id == client_id) {
+                    
+//                     let moveto_entity = *moveto_entity;
+//                     let entity = *entity;
+//                     let move_to = *move_to;
+
+//                     // We write to CoordPos this way because if we just include it into the query every selection box gets marked as written every frame
+//                     commands.exec_mut(move |world|{
+
+//                         if let Some(entry) = world.entry(entity) {
+//                             if let Ok(coord_pos) = entry.into_component_mut::<level_map::CoordPos>() {
+//                                 coord_pos.value = move_to.0;
+//                             }
+//                         }
+
+//                         world.remove(moveto_entity);
+//                     });
+//                 }
+//             });
+//         })
+// }
 
 pub fn create_coord_to_pos_system() -> impl systems::Runnable {
     SystemBuilder::new("selection_box_coord_system")
@@ -447,14 +454,19 @@ pub fn create_expansion_system() -> impl systems::Runnable {
 
     SystemBuilder::new("selection_expansion_system")
         .read_resource::<crate::Time>()
+        .read_resource::<ClientID>()
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
-        .with_query(<(Write<SelectionBox>, Write<level_map::CoordPos>, Read<CameraAdjustedDirection>)>::query())
-        .build(move |_, world, time, queries| {
+        .with_query(<(Read<CameraAdjustedDirection>, Read<ClientID>, Read<level_map::CoordPos>, Read<SelectionBox>)>::query())
+        .build(move |commands, world, (time, client_id), queries| {
             let (input_query, selection_box_query) = queries;
 
             let inputs = input_query.iter(world)
                 .map(|(input, action)| (*input, (*action).clone()))
                 .collect::<Vec<(input::InputActionComponent, input::Action)>>();
+
+            //left: movement, right: expansion
+            let mut combined_expansion: Option<Point> = None;
+            let mut entity: Option<(CameraAdjustedDirection, Point, AABB, ClientID)> = None;
 
             for(input_component, action) in inputs.iter().filter(|(_, a)|
                 a == &expand_selection_forward ||
@@ -467,7 +479,11 @@ pub fn create_expansion_system() -> impl systems::Runnable {
                 
                 if input_component.repeated(time.delta, 0.25) {
 
-                    selection_box_query.for_each_mut(world, |(mut selection_box, coord_pos, camera_adjusted_dir)| {
+                    selection_box_query.iter(world)
+                        .filter(|(_, id, _, _)| **id == **client_id)
+                        .for_each(|(camera_adjusted_dir, client_id, coord_pos, selection_box)| {
+
+                        entity = Some((*camera_adjusted_dir, coord_pos.value, selection_box.aabb, *client_id));
 
                         let mut expansion = Point::zeros();
 
@@ -500,59 +516,161 @@ pub fn create_expansion_system() -> impl systems::Runnable {
 
                         adjusted.y = expansion.y as i32;
 
-                        let mut new_aabb = crate::geometry::aabb::AABB::new(Point::zeros(), selection_box.aabb.dimensions + adjusted);
+                        combined_expansion = Some(adjusted);
 
-                        if new_aabb.dimensions.x == 0 {
-                            new_aabb.dimensions.x += adjusted.x * 2;
-                        }
+                        // let mut new_aabb = crate::geometry::aabb::AABB::new(Point::zeros(), selection_box.aabb.dimensions + adjusted);
 
-                        if new_aabb.dimensions.y == 0 {
-                            new_aabb.dimensions.y += adjusted.y * 2;
-                        }
+                        // if new_aabb.dimensions.x == 0 {
+                        //     new_aabb.dimensions.x += adjusted.x * 2;
+                        // }
 
-                        if new_aabb.dimensions.z == 0 {
-                            new_aabb.dimensions.z += adjusted.z * 2;
-                        }
+                        // if new_aabb.dimensions.y == 0 {
+                        //     new_aabb.dimensions.y += adjusted.y * 2;
+                        // }
 
-                        let mut min = selection_box.aabb.get_min();
-                        let mut max = selection_box.aabb.get_max();
+                        // if new_aabb.dimensions.z == 0 {
+                        //     new_aabb.dimensions.z += adjusted.z * 2;
+                        // }
 
-                        let mut new_min = new_aabb.get_min();
-                        let mut new_max = new_aabb.get_max();
+                        // let mut min = selection_box.aabb.get_min();
+                        // let mut max = selection_box.aabb.get_max();
+
+                        // let mut new_min = new_aabb.get_min();
+                        // let mut new_max = new_aabb.get_max();
 
                         //Adjust the offset based off of camera direction
-                        if camera_adjusted_dir.right.x < 0. { 
-                            let tmp_min = min.x;
-                            let tmp_new_min = new_min.x;
-                            min.x = max.x; 
-                            new_min.x = new_max.x; 
-                            max.x = tmp_min;
-                            new_max.x = tmp_new_min;
-                        } 
-                        if camera_adjusted_dir.right.z < 0. { 
-                            let tmp_min = min.z;
-                            let tmp_new_min = new_min.z;
-                            min.z = max.z; 
-                            new_min.z = new_max.z; 
-                            max.z = tmp_min;
-                            new_max.z = tmp_new_min;
-                        }
+                        // if camera_adjusted_dir.right.x < 0. { 
+                        //     let tmp_min = min.x;
+                        //     let tmp_new_min = new_min.x;
+                        //     min.x = max.x; 
+                        //     new_min.x = new_max.x; 
+                        //     max.x = tmp_min;
+                        //     new_max.x = tmp_new_min;
+                        // } 
+                        // if camera_adjusted_dir.right.z < 0. { 
+                        //     let tmp_min = min.z;
+                        //     let tmp_new_min = new_min.z;
+                        //     min.z = max.z; 
+                        //     new_min.z = new_max.z; 
+                        //     max.z = tmp_min;
+                        //     new_max.z = tmp_new_min;
+                        // }
 
-                        let diff = Point::new(
-                            if new_aabb.dimensions.x < 0 { new_max.x - max.x } else { new_min.x - min.x },
-                            if new_aabb.dimensions.y < 0 { new_max.y - max.y } else { new_min.y - min.y },
-                            if new_aabb.dimensions.z < 0 { new_max.z - max.z } else { new_min.z - min.z },
-                        );
+                        // let diff = Point::new(
+                        //     if new_aabb.dimensions.x < 0 { new_max.x - max.x } else { new_min.x - min.x },
+                        //     if new_aabb.dimensions.y < 0 { new_max.y - max.y } else { new_min.y - min.y },
+                        //     if new_aabb.dimensions.z < 0 { new_max.z - max.z } else { new_min.z - min.z },
+                        // );
 
-                        coord_pos.value -= diff;
+                        // coord_pos.value -= diff;
 
-                        selection_box.aabb.dimensions = new_aabb.dimensions;
+                        // selection_box.aabb.dimensions = new_aabb.dimensions;
 
                     }); 
                 }
             }
-        })
 
+            if let Some(combined_expansion) = combined_expansion {
+                if let Some((camera_adjusted_dir, coord_pos_value, aabb, client_id)) = entity {
+                    
+                    // let mut new_aabb = crate::geometry::aabb::AABB::new(Point::zeros(), aabb.dimensions + combined_expansion);
+
+                    commands.exec_mut(move |world| {
+                        let mut query = <(Write<UpdateBounds>, Read<ClientID>)>::query();
+
+                        let mut existing_expansion: Option<(Point, AABB)> = None;
+
+                        let mut new_aabb = aabb.clone();
+                                    
+                        let diff = expansion_movement_helper(combined_expansion, camera_adjusted_dir, &mut new_aabb);
+
+                        let move_to_pos = coord_pos_value - diff;
+
+                        if let Some((update_to, _)) = query.iter_mut(world).filter(|(_, id)| **id == client_id).next() {
+                            
+                            update_to.coord_pos -= diff;
+                            update_to.aabb.dimensions += combined_expansion;
+
+                            existing_expansion = Some((update_to.coord_pos, update_to.aabb));
+                        }
+
+                        let mut update_selection = DataType::UpdateSelectionBounds{ client_id: client_id.val(), point: move_to_pos, aabb: new_aabb };
+
+                        match existing_expansion {
+                            Some(existing_expansion) => {
+                                if let DataType::UpdateSelectionBounds{client_id:_, point, aabb} = &mut update_selection {
+
+                                    *point = existing_expansion.0;
+                                    *aabb = existing_expansion.1;
+                                }
+                            },
+                            None => {
+                                if let DataType::UpdateSelectionBounds{client_id:_, point, aabb} = &mut update_selection {
+                                    world.push(
+                                        (
+                                            UpdateBounds {
+                                                aabb: *aabb,
+                                                coord_pos: *point
+                                            },
+                                            client_id
+                                        )
+                                    );
+                                }
+                            }
+                        }
+
+                        world.push((MessageSender{
+                            data_type: update_selection,
+                            message_type: MessageType::Ordered
+                        },));
+
+                    });
+                }
+            }  
+        })
+}
+
+pub fn create_update_bounds_system() -> impl systems::Runnable {
+    SystemBuilder::new("selection_box_move_to_system")
+        .with_query(<(Entity, Read<ClientID>)>::query()
+            .filter(component::<SelectionBox>())
+        )
+        .with_query(<(Entity, Read<ClientID>, Read<UpdateBounds>)>::query())
+        .build(|commands, world, _, queries| {
+            let (selection_box_query, move_to_query) = queries;
+
+            let move_tos = move_to_query.iter(world)
+                .map(|(entity, client_id, update_to)| (*entity, *client_id, *update_to))
+                .collect::<Vec<(Entity, ClientID, UpdateBounds)>>();
+
+            selection_box_query.for_each_mut(world, |(entity, client_id)| {
+
+                if let Some((update_entity, _, update_to)) = move_tos.iter().find(|(_,id,_)| id == client_id) {
+                    
+                    let update_entity = *update_entity;
+                    let entity = *entity;
+                    let update_to = *update_to;
+
+                    commands.exec_mut(move |world|{
+
+                        if let Some(entry) = world.entry(entity) {
+                            if let Ok(coord_pos) = entry.into_component_mut::<level_map::CoordPos>() {
+                                coord_pos.value = update_to.coord_pos;
+                            }
+                        }
+
+                        if let Some(entry) = world.entry(entity) {
+                            if let Ok(selection_box) = entry.into_component_mut::<SelectionBox>() {
+                                selection_box.aabb = update_to.aabb;
+                            }
+                        }
+
+                        world.remove(update_entity);
+                    });
+
+                }
+            });
+        })
 }
 
 pub fn create_system() -> impl systems::Runnable {
@@ -868,6 +986,60 @@ pub fn create_system() -> impl systems::Runnable {
             })
 
         })
-    
 }
+
+fn expansion_movement_helper(expansion: Point, camera_adjusted_dir: CameraAdjustedDirection, new_aabb: &mut AABB) -> Point {
+
+    let original = new_aabb.clone();
+
+    new_aabb.dimensions += expansion;
+    
+    if new_aabb.dimensions.x == 0 {
+        new_aabb.dimensions.x += expansion.x * 2;
+    }
+
+    if new_aabb.dimensions.y == 0 {
+        new_aabb.dimensions.y += expansion.y * 2;
+    }
+
+    if new_aabb.dimensions.z == 0 {
+        new_aabb.dimensions.z += expansion.z * 2;
+    }
+
+    let mut min = original.get_min();
+    let mut max = original.get_max();
+
+    let mut new_min = new_aabb.get_min();
+    let mut new_max = new_aabb.get_max();
+
+    // Adjust the offset based off of camera direction
+    if camera_adjusted_dir.right.x < 0. { 
+        let tmp_min = min.x;
+        let tmp_new_min = new_min.x;
+        min.x = max.x; 
+        new_min.x = new_max.x; 
+        max.x = tmp_min;
+        new_max.x = tmp_new_min;
+    } 
+    if camera_adjusted_dir.right.z < 0. { 
+        let tmp_min = min.z;
+        let tmp_new_min = new_min.z;
+        min.z = max.z; 
+        new_min.z = new_max.z; 
+        max.z = tmp_min;
+        new_max.z = tmp_new_min;
+    }
+
+    let diff = Point::new(
+        if new_aabb.dimensions.x < 0 { new_max.x - max.x } else { new_min.x - min.x },
+        if new_aabb.dimensions.y < 0 { new_max.y - max.y } else { new_min.y - min.y },
+        if new_aabb.dimensions.z < 0 { new_max.z - max.z } else { new_min.z - min.z },
+    );
+
+    diff
+
+    // coord_pos.value -= diff;
+
+    // selection_box.aabb.dimensions = new_aabb.dimensions;
+} 
     
