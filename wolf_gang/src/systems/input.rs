@@ -405,7 +405,7 @@ impl InputActionComponent {
     }
 }
 
-pub fn create_input_system() -> impl systems::Schedulable {
+pub fn create_input_system() -> impl systems::Runnable {
 
     SystemBuilder::new("input_system")
         .read_resource::<crate::Time>()

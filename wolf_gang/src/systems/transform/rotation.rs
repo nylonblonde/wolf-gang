@@ -39,7 +39,7 @@ impl Default for Direction {
     }
 }
 
-pub fn create_system() -> impl systems::Schedulable {
+pub fn create_system() -> impl systems::Runnable {
     SystemBuilder::new("rotation_system")
     .with_query(<(Read<Rotation>, Write<Direction>, Read<node::NodeName>)>::query()
         .filter(maybe_changed::<Rotation>())

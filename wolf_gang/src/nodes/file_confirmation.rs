@@ -63,11 +63,10 @@ impl FileConfirmation {
     #[export]
     fn new_confirmation_ok_handler(&mut self, _: &ConfirmationDialog) {
 
-        let mut game = crate::GAME_UNIVERSE.lock().unwrap();
-        let game = &mut *game;
-
-        let world = &mut game.world;
-        let resources = &mut game.resources;
+        let world_lock = crate::WolfGang::get_world().unwrap();
+        let world = &mut world_lock.write().unwrap();
+        let resources = crate::WolfGang::get_resources().unwrap();
+        let resources = &mut resources.borrow_mut();
 
         crate::STATE_MACHINE.with(|s| {
             let mut state_machine = s.borrow_mut();

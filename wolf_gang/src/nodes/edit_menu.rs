@@ -9,7 +9,6 @@ use legion::*;
 use super::utils;
 
 use crate::{
-    GAME_UNIVERSE,
     systems::{
         history::History
     }
@@ -46,9 +45,8 @@ impl EditMenu {
             self.popup_menu.assume_safe().set_item_disabled(1, true);
         }
         
-        let mut game_lock = GAME_UNIVERSE.lock().unwrap();
-        let game = &mut *game_lock;
-        let resources = &mut game.resources;
+        let resources = crate::WolfGang::get_resources().unwrap();
+        let resources = &mut resources.borrow_mut();
 
         let history = resources.get::<History>().expect("Couldn't retrieve the History resource");
 
@@ -63,10 +61,10 @@ impl EditMenu {
     #[export]
     fn item_handler(&mut self, _: &MenuButton, id: i64) {
 
-        let mut game_lock = GAME_UNIVERSE.lock().unwrap();
-        let game = &mut *game_lock;
-        let resources = &mut game.resources;
-        let world = &mut game.world;
+        let world_lock = crate::WolfGang::get_world().unwrap();
+        let world = &mut world_lock.write().unwrap();
+        let resources = crate::WolfGang::get_resources().unwrap();
+        let resources = &mut resources.borrow_mut();
 
         let mut history = resources.get_mut::<History>().expect("Couldn't retrieve History resource!");
 

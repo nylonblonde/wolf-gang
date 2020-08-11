@@ -106,10 +106,10 @@ impl FileMenu {
     #[export]
     fn item_handler(&mut self, menu_button: &MenuButton, id: i64) {
 
-        let mut game = crate::GAME_UNIVERSE.lock().unwrap();
-        let game = &mut *game;
-        let world = &mut game.world;
-        let resources = &mut game.resources;
+        let world_lock = crate::WolfGang::get_world().unwrap();
+        let world = &mut world_lock.write().unwrap();
+        let resources = crate::WolfGang::get_resources().unwrap();
+        let resources = &mut resources.borrow_mut();
 
         let mut doc = match resources.get_mut::<Document>() {
             Some(document) => document.clone(),

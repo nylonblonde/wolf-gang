@@ -164,10 +164,10 @@ impl SaveLoadDialog {
     #[export]
     fn file_selection_handler(&mut self, file_dialog: &FileDialog, mut path: GodotString) {
 
-        let mut game = crate::GAME_UNIVERSE.lock().unwrap();
-        let game = &mut *game;
-        let world = &mut game.world;
-        let resources = &mut game.resources;
+        let world_lock = crate::WolfGang::get_world().unwrap();
+        let world = &mut world_lock.write().unwrap();
+        let resources = crate::WolfGang::get_resources().unwrap();
+        let resources = &mut resources.borrow_mut();
 
         let mut doc = match resources.get_mut::<level_map::document::Document>() {
             Some(document) => document.clone(),

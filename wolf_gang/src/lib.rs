@@ -11,8 +11,13 @@ extern crate lazy_static;
 
 use legion::*;
 
-use std::sync:: Mutex;
-use std::cell::RefCell;
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
+        Arc, Mutex, RwLock
+    },
+};
 
 mod collections;
 mod geometry;
@@ -31,24 +36,7 @@ mod tests;
 
 static mut OWNER_NODE: Option<Ref<Node>> = None;
 
-lazy_static! {
-    static ref GAME_UNIVERSE: Mutex<GameUniverse> = Mutex::new( 
-
-        {
-            let universe = Universe::new();
-            let world = universe.create_world();
-
-            GameUniverse {
-                universe,
-                world,
-                resources: Resources::default(),
-            }
-        }
-    );
-}
-
 thread_local! {
-
    pub static STATE_MACHINE: RefCell<game_state::StateMachine> = RefCell::new(
         game_state::StateMachine{
             states: Vec::new()
@@ -57,9 +45,7 @@ thread_local! {
 }
 
 pub struct GameUniverse {
-    pub universe: Universe,
     pub world: legion::world::World,
-    pub resources: Resources,
 }
 
 
@@ -72,6 +58,8 @@ pub struct Time {
 #[inherit(Node)]
 #[user_data(user_data::LocalCellData<WolfGang>)]
 pub struct WolfGang {
+    resources: Rc<RefCell<Resources>>,
+    world: Arc<RwLock<World>>,
     // schedule: Option<Schedule>,
 }
 
@@ -79,13 +67,42 @@ pub struct WolfGang {
 // code to automatically bind any exported methods to Godot.
 #[methods]
 impl WolfGang {
-    
+
+    pub fn get_world() -> Option<Arc<RwLock<World>>> {
+        let owner = unsafe { OWNER_NODE.unwrap().assume_safe() };
+        let instance = owner.cast_instance::<WolfGang>();
+
+        match instance {
+            Some(instance) =>  
+                instance.map(|inst, _| 
+                    Some(Arc::clone(&inst.world))
+                ).unwrap_or_else(|_| None),
+            _ => None
+        }
+    }
+
+    pub fn get_resources() -> Option<Rc<RefCell<Resources>>> {
+        let owner = unsafe { OWNER_NODE.unwrap().assume_safe() };
+        let instance = owner.cast_instance::<WolfGang>();
+
+        match instance {
+            Some(instance) =>  
+                instance.map(|inst, _| 
+                    Some(Rc::clone(&inst.resources))
+                ).unwrap_or_else(|_| None),
+            _ => None
+        }
+    }
+
     /// The "constructor" of the class.
     fn new(owner: &Node) -> Self {
 
         unsafe { OWNER_NODE = Some(owner.assume_shared()); }
 
-        WolfGang{}
+        WolfGang{
+            resources: Rc::new(RefCell::new(Resources::default())),
+            world: Arc::new(RwLock::new(World::default()))
+        }
     }
     
     // In order to make a method known to Godot, the #[export] attribute has to be used.
@@ -96,13 +113,10 @@ impl WolfGang {
     fn _ready(&mut self, _owner: &Node) {
 
         godot_print!("hello, world.");
+
+        let world = &mut *self.world.write().unwrap();
+        let resources = &mut *self.resources.borrow_mut();
         
-        let mut game = GAME_UNIVERSE.lock().unwrap();
-        let game = &mut *game;
-
-        let resources = &mut game.resources;
-        let world = &mut game.world;
-
         resources.insert(Time{
             delta: 0.
         });
@@ -111,6 +125,19 @@ impl WolfGang {
 
         STATE_MACHINE.with(|s| {
             let mut state_machine = s.borrow_mut();
+
+            state_machine.add_state(
+                networking::Networking::new("Networking", 
+                    Schedule::builder()
+                        .add_system(systems::networking::create_server_system())
+                        .add_system(systems::networking::create_client_system())
+                        .add_thread_local_fn(systems::networking::create_new_connection_thread_local_fn())
+                        .add_thread_local_fn(systems::networking::create_disconnection_thread_local_fn())
+                        .build(),
+                    true
+                ),
+                world, resources
+            );
             
             state_machine.add_state(
                 editor::Editor::new("MapEditor", 
@@ -148,39 +175,24 @@ impl WolfGang {
                         .add_system(systems::level_map::create_map_input_system())
                         .add_system(systems::history::create_history_input_system())
 
-                        .add_thread_local_fn(systems::networking::create_new_connection_thread_local_fn())
-                        .add_thread_local_fn(systems::networking::create_disconnection_thread_local_fn())
-                        .add_system(systems::networking::create_message_pooling_system())
                         .build(),
                     true
-                ),
-                world, resources);
-
-                state_machine.add_state(
-                networking::Networking::new("Networking", 
-                    Schedule::builder()
-                        .add_system(systems::networking::create_message_pooling_system())
-                        .build(),
-                    true),
+                ), 
                 world, resources
             );
+
         });
     }
 
     #[export]
     fn _process(&mut self, _owner: &Node, delta: f64) {
 
-        let mut game_lock = GAME_UNIVERSE.lock().unwrap();
-
-        let game = &mut *game_lock;
-
-        let mut resources = &mut game.resources;
+        let mut world = &mut self.world.write().unwrap();
+        let mut resources = &mut *self.resources.borrow_mut();
 
         resources.insert(Time{
             delta: delta as f32
         });
-
-        let mut world = &mut game.world;
 
         STATE_MACHINE.with(|s| {
             for state in &s.borrow().states {
@@ -193,6 +205,7 @@ impl WolfGang {
             }
         });
     }
+
 }
 
 // Function that registers all exposed classes to Godot

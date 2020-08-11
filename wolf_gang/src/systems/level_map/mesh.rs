@@ -58,7 +58,7 @@ lazy_static!{
 }
 
 /// Adds additional required components
-pub fn create_add_components_system() -> impl systems::Schedulable {
+pub fn create_add_components_system() -> impl systems::Runnable {
     
     SystemBuilder::new("map_mesh_add_components_system")
         .with_query(<Entity>::query()
@@ -80,7 +80,7 @@ pub fn create_add_components_system() -> impl systems::Schedulable {
         })
 }
 
-pub fn create_drawing_system() -> impl systems::Schedulable {
+pub fn create_drawing_system() -> impl systems::Runnable {
 
     SystemBuilder::new("map_mesh_drawing_system")
         .with_query(<(Entity, Read<MapChunkData>, Read<ManuallyChange>)>::query())

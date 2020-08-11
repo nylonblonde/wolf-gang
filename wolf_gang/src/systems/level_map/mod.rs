@@ -18,8 +18,8 @@ use crate::{
     systems::{
         custom_mesh,
         history::{History, StepTypes},
+        networking
     },
-    networking,
     node::{NodeName}
 };
 
@@ -78,116 +78,12 @@ pub struct MapInput {
 }
 
 impl MapInput {
-    pub fn execute(self, world: &mut legion::world::World, resources: &mut Resources) {
-        change_map(world, resources, self.octree);
+    pub fn get_octree(&self) -> &Octree<i32, TileData> {
+        &self.octree
     }
-}
-
-fn change_map(world: &mut legion::world::World, resources: &mut Resources, octree: Octree<i32, TileData>) {
-    let map = resources.get::<Map>().unwrap();
-
-    let aabb = octree.get_aabb();
-
-    let min = aabb.get_min();
-    let max = aabb.get_max();
-
-    let x_min_chunk = (min.x as f32 / map.chunk_dimensions.x as f32).floor() as i32;
-    let y_min_chunk = (min.y as f32 / map.chunk_dimensions.y as f32).floor() as i32;
-    let z_min_chunk = (min.z as f32 / map.chunk_dimensions.z as f32).floor() as i32;
-
-    let x_max_chunk = (max.x as f32/ map.chunk_dimensions.x as f32).floor() as i32 + 1;
-    let y_max_chunk = (max.y as f32/ map.chunk_dimensions.y as f32).floor() as i32 + 1;
-    let z_max_chunk = (max.z as f32/ map.chunk_dimensions.z as f32).floor() as i32 + 1;
-
-    let mut entities: HashMap<Entity, MapChunkData> = HashMap::new();
-    // let mut historically_significant: HashMap<Entity, MapChunkData> = HashMap::new();
-
-    let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
-
-    let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) - min_chunk;
-
-    let volume = dimensions.x * dimensions.y * dimensions.z;
-    
-    for i in 0..volume {
-        let x = x_min_chunk + i % dimensions.x;
-        let y = y_min_chunk + (i / dimensions.x) % dimensions.y;
-        let z = z_min_chunk + i / (dimensions.x * dimensions.y);
-
-        let pt = Point::new(x,y,z);
-
-        let mut map_chunk_exists_query = <(Entity, Read<MapChunkData>, Read<Point>)>::query();
-
-        let mut exists = false;
-
-        match map_chunk_exists_query.iter(world).filter(|(_, _, chunk_pt)| **chunk_pt == pt).next() {
-            Some((entity, map_chunk, _)) => {
-                println!("Map chunk exists already");
-                entities.insert(*entity, map_chunk.clone());
-                exists = true;
-            },
-            _ => {}
-        }
-
-        if !exists {
-            println!("Creating a new map chunk at {:?}", pt);
-
-            let (entity, map_data) = map.insert_mapchunk_with_octree(
-                &Octree::new(AABB::new(
-                    Point::new(
-                        pt.x * map.chunk_dimensions.x + map.chunk_dimensions.x/2,
-                        pt.y * map.chunk_dimensions.y + map.chunk_dimensions.y/2,
-                        pt.z * map.chunk_dimensions.z + map.chunk_dimensions.z/2,
-                    ),
-                    map.chunk_dimensions
-                ), octree::DEFAULT_MAX), 
-                world, false
-            );
-
-            entities.insert(entity, map_data);
-        }
-    }
-
-    for (entity, map_data) in &mut entities {
-
-        println!("Updating map_data");
-        
-        let map_aabb = map_data.octree.get_aabb();
-        let overlap_aabb = aabb.get_intersection(map_aabb);
-
-        let map_query_range = map_data.octree.query_range(overlap_aabb);
-        let input_query_range = octree.query_range(overlap_aabb);
-
-        let set = input_query_range.into_iter().collect::<HashSet<TileData>>();
-        let map_set = map_query_range.into_iter().collect::<HashSet<TileData>>();
-
-        // if set.symmetric_difference(&map_set).count() == 0 {
-        //     println!("Set and map_set were symmetrically the same");
-        //     continue
-        // }
-
-        //Remove any data that is in map_set but not set
-        let difference = map_set.difference(&set);
-        for item in difference {
-            map_data.octree.remove_item(item);
-        }
-
-        //Add any data that is in set but not map_set
-        let difference = set.difference(&map_set);
-        for item in difference {
-            map_data.octree.insert(*item).unwrap();
-        }
-
-        if let Some(mut entry) = world.entry(*entity) {
-            entry.add_component(map_data.clone());
-            entry.add_component(ManuallyChange(ChangeType::Direct(aabb)));
-        }
-
-        // historically_significant.insert(*entity, map_data.clone());
-    }
-
-    // let _current_step = &mut *resources.get_mut::<crate::history::CurrentHistoricalStep>().unwrap();
-
-    // history::add_to_history(world, current_step, &mut historically_significant, CoordPos { value: aabb.center }, aabb);
+//     pub fn execute(self, world: &mut legion::world::World, resources: &mut Resources) {
+//         change_map(world, resources, self.octree);
+//     }
 }
 
 #[derive(Copy, Clone)]
@@ -204,6 +100,104 @@ impl Default for Map {
 }
 
 impl Map {
+
+    pub fn change(&self, world: &mut legion::world::World, octree: &Octree<i32, TileData>) {
+
+        let aabb = octree.get_aabb();
+    
+        let min = aabb.get_min();
+        let max = aabb.get_max();
+    
+        let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
+        let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
+        let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
+    
+        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
+        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
+        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
+    
+        let mut entities: HashMap<Entity, MapChunkData> = HashMap::new();
+        // let mut historically_significant: HashMap<Entity, MapChunkData> = HashMap::new();
+    
+        let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
+    
+        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) - min_chunk;
+    
+        let volume = dimensions.x * dimensions.y * dimensions.z;
+        
+        for i in 0..volume {
+            let x = x_min_chunk + i % dimensions.x;
+            let y = y_min_chunk + (i / dimensions.x) % dimensions.y;
+            let z = z_min_chunk + i / (dimensions.x * dimensions.y);
+    
+            let pt = Point::new(x,y,z);
+    
+            let mut map_chunk_exists_query = <(Entity, Read<MapChunkData>, Read<Point>)>::query();
+    
+            let mut exists = false;
+    
+            match map_chunk_exists_query.iter(world).filter(|(_, _, chunk_pt)| **chunk_pt == pt).next() {
+                Some((entity, map_chunk, _)) => {
+                    println!("Map chunk exists already");
+                    entities.insert(*entity, map_chunk.clone());
+                    exists = true;
+                },
+                _ => {}
+            }
+    
+            if !exists {
+                println!("Creating a new map chunk at {:?}", pt);
+    
+                let (entity, map_data) = self.insert_mapchunk_with_octree(
+                    &Octree::new(AABB::new(
+                        Point::new(
+                            pt.x * self.chunk_dimensions.x + self.chunk_dimensions.x/2,
+                            pt.y * self.chunk_dimensions.y + self.chunk_dimensions.y/2,
+                            pt.z * self.chunk_dimensions.z + self.chunk_dimensions.z/2,
+                        ),
+                        self.chunk_dimensions
+                    ), octree::DEFAULT_MAX), 
+                    world, false
+                );
+    
+                entities.insert(entity, map_data);
+            }
+        }
+    
+        for (entity, map_data) in &mut entities {
+            
+            let map_aabb = map_data.octree.get_aabb();
+            let overlap_aabb = aabb.get_intersection(map_aabb);
+    
+            let map_query_range = map_data.octree.query_range(overlap_aabb);
+            let input_query_range = octree.query_range(overlap_aabb);
+    
+            let set = input_query_range.into_iter().collect::<HashSet<TileData>>();
+            let map_set = map_query_range.into_iter().collect::<HashSet<TileData>>();
+    
+            // if set.symmetric_difference(&map_set).count() == 0 {
+            //     println!("Set and map_set were symmetrically the same");
+            //     continue
+            // }
+    
+            //Remove any data that is in map_set but not set
+            let difference = map_set.difference(&set);
+            for item in difference {
+                map_data.octree.remove_item(item);
+            }
+    
+            //Add any data that is in set but not map_set
+            let difference = set.difference(&map_set);
+            for item in difference {
+                map_data.octree.insert(*item).unwrap();
+            }
+    
+            if let Some(mut entry) = world.entry(*entity) {
+                entry.add_component(map_data.clone());
+                entry.add_component(ManuallyChange(ChangeType::Direct(aabb)));
+            }
+        }
+    }
 
     /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache
     pub fn free(&self, world: &mut legion::world::World) {
@@ -393,7 +387,7 @@ impl crate::collections::octree::PointData<i32> for TileData {
 }
 
 /// Takes map inputs, determines if they should be added to history (no duplicates), and creates a message if it should
-pub fn create_map_input_system() -> impl systems::Schedulable {
+pub fn create_map_input_system() -> impl systems::Runnable {
     SystemBuilder::new("map_input_system")
         .write_resource::<History>()
         .read_resource::<Map>()

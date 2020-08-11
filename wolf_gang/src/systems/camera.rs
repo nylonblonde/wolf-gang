@@ -76,7 +76,7 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
     node_name.0
 }
 
-pub fn create_movement_system() -> impl systems::Schedulable {
+pub fn create_movement_system() -> impl systems::Runnable {
     SystemBuilder::new("camera_movement_system")
     .with_query(<(Read<FocalPoint>, Read<FocalAngle>, Read<Zoom>, Write<Position>)>::query()
         .filter(maybe_changed::<FocalPoint>() | maybe_changed::<Zoom>() | maybe_changed::<FocalAngle>())
@@ -95,7 +95,7 @@ pub fn create_movement_system() -> impl systems::Schedulable {
     })
 }
 
-pub fn create_rotation_system() -> impl systems::Schedulable {
+pub fn create_rotation_system() -> impl systems::Runnable {
     SystemBuilder::new("camera_rotation_system")
     .with_query(<(Read<FocalPoint>, Read<Position>, Write<Rotation>)>::query()
         .filter(maybe_changed::<Position>())
@@ -117,7 +117,7 @@ pub fn create_rotation_system() -> impl systems::Schedulable {
 }
 
 /// Handles the input for rotating the camera around the focal point
-pub fn create_camera_angle_system() -> impl systems::Schedulable {
+pub fn create_camera_angle_system() -> impl systems::Runnable {
     let camera_rotate_left = Action("camera_rotate_left".to_string());
     let camera_rotate_right = Action("camera_rotate_right".to_string());
     let camera_rotate_up = Action("camera_rotate_up".to_string());
@@ -165,7 +165,7 @@ pub fn create_camera_angle_system() -> impl systems::Schedulable {
 }
 
 ///Updates the focal point of the camera when a smoothing entity is present
-pub fn create_focal_point_system() -> impl systems::Schedulable {
+pub fn create_focal_point_system() -> impl systems::Runnable {
 
     SystemBuilder::new("camera_focal_point_system")
         .with_query(<Read<selection_box::RelativeCamera>>::query())
@@ -195,7 +195,7 @@ pub fn create_focal_point_system() -> impl systems::Schedulable {
 }
 
 /// Adds a smoothing component that will handle smoothing between the selection box's position and the current focal point
-pub fn create_follow_selection_box_system() -> impl systems::Schedulable {
+pub fn create_follow_selection_box_system() -> impl systems::Runnable {
 
     SystemBuilder::new("follow_selection_box_system")
         .with_query(<(Read<selection_box::RelativeCamera>, Read<level_map::CoordPos>)>::query()

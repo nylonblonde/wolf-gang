@@ -2,7 +2,12 @@ use std::collections::HashMap;
 use crate::{
     game_state::{GameState, GameStateTraits, NewState},
     systems::{
-        networking::Disconnection
+        networking::{
+            ClientID,
+            Disconnection,
+            MessageSender,
+            ServerMessageSender,
+        }
     }
 };
 use legion::*;
@@ -20,6 +25,7 @@ use cobalt::{
 };
 
 use std::{
+    cell::RefCell,
     io::{Error, ErrorKind},
     net,
     net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs},
@@ -30,6 +36,7 @@ use std::{
         Arc,
         Condvar, 
         Mutex,
+        RwLock,
     },
     time::{Duration, Instant}
 };
@@ -92,59 +99,6 @@ pub enum ConnectionState {
     Connected
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum  DataType {
-    NewConnection(crate::systems::networking::NewConnection),
-    Disconnection(crate::systems::networking::Disconnection),
-    MessageFragment(MessageFragment),
-    MapInput(crate::systems::level_map::MapInput),
-    MoveSelection{
-        client_id: u32,
-        point: Point
-    },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MessageFragment {
-    //UUID of MessageFragment held collection
-    uuid: u128,
-    //id position of the fragment
-    id: usize,
-    //size of each fragment - need this because slices at the end may be shorter
-    size: usize,
-    //how many pieces the message has been split into
-    pieces: usize,
-    payload: Vec<u8>
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-//Have to do this because cobalt::MessageKind doesn't implement serialize, deserialize. 
-pub enum MessageType {
-    Instant,
-    Reliable,
-    Ordered,
-}
-
-impl MessageType {
-    /// Returns the related cobalt::MessageKind
-    fn as_kind(&self) -> MessageKind {
-        match self {
-            Self::Instant => MessageKind::Instant,
-            Self::Ordered => MessageKind::Ordered,
-            Self::Reliable => MessageKind::Reliable
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MessageSender {
-    pub data_type: DataType,
-    pub message_type: MessageType
-}
-
-pub struct MessagePool {
-    pub messages: Vec<MessageSender>
-}
 
 #[derive(Debug)]
 pub struct UdpSocket {
@@ -191,8 +145,8 @@ impl UdpSocket {
 
 }
 
-// From the cobalt source Copyright (c) 2015-2017 Ivo Wetzel
-// Redefined just because I more access to the net::UdpSocket
+// Modified from the cobalt source Copyright (c) 2015-2017 Ivo Wetzel
+// Redefined just because I needed more access to the net::UdpSocket
 impl Socket for UdpSocket {
     /// Tries to create a new UDP socket by binding to the specified address.
     fn new<T: net::ToSocketAddrs>(address: T, max_packet_size: usize) -> Result<Self, Error> {
@@ -250,41 +204,14 @@ impl Socket for UdpSocket {
     }
 }
 
-/// Resource used to store the client ID when it connects to a server so that we can know which entities belong to this client
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ClientID(u32);
-
-impl ClientID {
-    pub fn new(id: u32) -> Self {
-        ClientID(id)
-    }
-
-    pub fn val(&self) -> u32 {
-        self.0
-    }
-}
-
 pub struct Networking {
     game_state: GameState,
-    server_quit_tx: mpsc::Sender<()>,
-    server_quit_rx: Arc<Mutex<mpsc::Receiver<()>>>,
-    client_quit_tx: mpsc::Sender<()>,
-    client_quit_rx: Arc<Mutex<mpsc::Receiver<()>>>,
-    client_running: Arc<(Mutex<bool>, Condvar)>,
-    server_running: Arc<(Mutex<bool>, Condvar)>,
-    // //only needed in the case of hosting online, just a handy way for the host's server to communicate its address to the host client
-    // host_addr_tx: Option<mpsc::Sender<SocketAddr>>,
-    // host_addr_rx: Option<Arc<Mutex<mpsc::Receiver<SocketAddr>>>>,
 }
 
 impl GameStateTraits for Networking {
 
-    fn initialize(&mut self, _: &mut World, resources: &mut Resources) {
+    fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
         
-        resources.insert(MessagePool{
-            messages: Vec::new()
-        });
-
         let connection = *resources.get_or_default::<Connection>();
 
         let mut config = Config{
@@ -298,444 +225,160 @@ impl GameStateTraits for Networking {
             config.packet_max_size = 6000;
         }
 
+        resources.insert(ClientID::new(0));
+
         if let ConnectionType::Host = connection.conn_type {
+            let entity = world.push(
+                (
+                    Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone()),
+                )
+            );
 
-            let quitter = self.server_quit_rx.clone();
-            let running_pair = self.server_running.clone();
-
-            // if let Scope::Online = connection.scope {
-            //     let (host_addr_tx, host_addr_rx) = mpsc::channel::<SocketAddr>();
-            //     self.host_addr_tx = Some(host_addr_tx);
-            //     self.host_addr_rx = Some(Arc::new(Mutex::new(host_addr_rx)));
-            // }
-
-            // let _host_addr_tx = self.host_addr_tx.clone();
-
-            std::thread::spawn(move || {
-                //Set up the server
-                let mut server = Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone());
-
-                // let mut _lobby_client: Option<Client<cobalt::UdpSocket, BinaryRateLimiter, NoopPacketModifier>> = None;
-
-                let server_addr = match connection.scope {
-                    Scope::Loopback => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345)),
-                    Scope::Multicast => MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap(),
-                    Scope::Online(_) => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 3450))
-                //     Scope::Online => {
-
-                //         lobby_client = Some(Client::new(Config{
-                //             send_rate: 1,
-                //             connection_init_threshold: Duration::from_secs(3),
-                //             ..Default::default()
-                //         }));
-                //         let lobby_client = lobby_client.as_mut().unwrap();
-                //         lobby_client.connect(LOBBY_ADDR_V4).unwrap();
-                        
-                //         'lobby: loop {
-
-                //             //Receive IP Address once we've been registered as a host
-                //             while let Ok(event) = lobby_client.receive() {
-                //                 match event {
-                //                     ClientEvent::Message(message) => {
-                //                         let data: lobby::DataType = bincode::deserialize(&message).unwrap();
-
-                //                         match data {
-                //                             lobby::DataType::Host(host) => {
-                //                                 let addr = host.get_addr();
-                //                                 //unwrap is okay because we know we'd have this set above
-                //                                 host_addr_tx.unwrap().send(addr).unwrap();
-                //                                 break 'lobby addr
-                //                             },
-                //                             _ => {}
-                //                         }
-                //                     },
-                //                     _ => {}
-                //                 }
-                //             }
+            if let Some(entry) = world.entry(entity) {
+                if let Ok(server) = entry.into_component_mut::<Server<UdpSocket, BinaryRateLimiter, NoopPacketModifier>>() {
+                    let server_addr = match connection.scope {
+                        Scope::Loopback => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345)),
+                        Scope::Multicast => MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap(),
+                        Scope::Online(_) => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 3450))
+                    //     Scope::Online => {
+        
+                    //         lobby_client = Some(Client::new(Config{
+                    //             send_rate: 1,
+                    //             connection_init_threshold: Duration::from_secs(3),
+                    //             ..Default::default()
+                    //         }));
+                    //         let lobby_client = lobby_client.as_mut().unwrap();
+                    //         lobby_client.connect(LOBBY_ADDR_V4).unwrap();
                             
-                //             if let Ok(conn) = lobby_client.connection() {
-                //                 conn.send(MessageKind::Instant, 
-                //                     bincode::serialize(
-                //                         &lobby::DataType::RequestHost(lobby::Config::default())
-                //                     ).unwrap()
-                //                 )
-                //             }
+                    //         'lobby: loop {
+        
+                    //             //Receive IP Address once we've been registered as a host
+                    //             while let Ok(event) = lobby_client.receive() {
+                    //                 match event {
+                    //                     ClientEvent::Message(message) => {
+                    //                         let data: lobby::DataType = bincode::deserialize(&message).unwrap();
+        
+                    //                         match data {
+                    //                             lobby::DataType::Host(host) => {
+                    //                                 let addr = host.get_addr();
+                    //                                 //unwrap is okay because we know we'd have this set above
+                    //                                 host_addr_tx.unwrap().send(addr).unwrap();
+                    //                                 break 'lobby addr
+                    //                             },
+                    //                             _ => {}
+                    //                         }
+                    //                     },
+                    //                     _ => {}
+                    //                 }
+                    //             }
+                                
+                    //             if let Ok(conn) = lobby_client.connection() {
+                    //                 conn.send(MessageKind::Instant, 
+                    //                     bincode::serialize(
+                    //                         &lobby::DataType::RequestHost(lobby::Config::default())
+                    //                     ).unwrap()
+                    //                 )
+                    //             }
+        
+                    //             if let Ok(_) = lobby_client.send(true) {};
+                    //         }
+                    //     }
+                    };
 
-                //             if let Ok(_) = lobby_client.send(true) {};
-                //         }
-                //     }
+                    println!("Server is listening at {}", server_addr);
+        
+                    server.listen(server_addr).expect("Failed to bind to socket.");
+                    if let Scope::Multicast = connection.scope {
+                        server.socket().unwrap().join_multicast(&MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap().ip(), &IpAddr::V4(Ipv4Addr::new(0,0,0,0)))
+                    }
+                }
+            }
+        }
+
+        let entity = world.push(
+            (
+                Client::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone()),
+            )
+        );
+
+        if let Some(entry) = world.entry(entity) {
+
+            if let Ok(client) = entry.into_component_mut::<Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier>>() {
+
+                let client_addr = match connection.scope {
+                    Scope::Loopback => LOOPBACK_ADDR_V4.parse::<SocketAddr>().unwrap(),
+                    Scope::Multicast => {
+                        let mut last_sent = Instant::now();
+                        let mut wait_for = Duration::from_millis(0);
+
+                        let socket = net::UdpSocket::bind("0.0.0.0:0").unwrap();
+                        socket.set_nonblocking(true).unwrap();
+
+                        loop {
+
+                            if Instant::now() - last_sent > wait_for {
+
+                                println!("Sending an IP request to {:?}", MULTICAST_ADDR_V4);
+                                //8008 will be interpreted as an IP request
+                                socket.send_to(&[8,0,0,8], MULTICAST_ADDR_V4).unwrap();
+                                last_sent = Instant::now();
+                                wait_for = Duration::from_secs(5);
+                            }
+
+                            let mut buffer = [0; 4];
+                            // This is kind of sketchy because we don't check the validity of the origin of the request, maybe a random packet 
+                            // should be sent with the request and returned to be verified
+
+                            if let Ok((_, src_addr)) = socket.recv_from(&mut buffer) {
+
+                                println!("Source address is {:?}", src_addr);
+
+                                break src_addr
+                            }
+
+                        }
+                    },
+                    Scope::Online(host) => host
+                    // Scope::Online(host) => {
+                    //     match connection.conn_type {
+                    //         ConnectionType::Host => {
+                    //             let host_option = host_addr_rx.unwrap();
+                    //             let host_addr_lock = host_option.lock().unwrap();
+
+                    //             if let Ok(addr) = host_addr_lock.recv() {
+                    //                 addr
+                    //             } else {
+                    //                 panic!("Couldn't receive")
+                    //             }
+                    //         },
+                    //         ConnectionType::Join => {
+                    //             todo!("Wait for a suitable host to be chosen")
+                    //         }
+                    //     }
+                    // }
                 };
 
-                server.listen(server_addr).expect("Failed to bind to socket.");
-                if let Scope::Multicast = connection.scope {
-                    server.socket().unwrap().join_multicast(&MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap().ip(), &IpAddr::V4(Ipv4Addr::new(0,0,0,0)))
-                }
-                println!("[Server] Listening at {:?}...", server.socket().unwrap().local_addr().unwrap());
-
-                let mut encoder = Encoder::new();
-                let mut decoder = Decoder::new();
-
-                let (lock, cvar) = &*running_pair;
-                let mut running = lock.lock().unwrap();
-                
-                *running = true;
-
-                'server: loop {
-
-                    // //receive events from the lobby serverif we are in the online scope
-                    // if let Some(lobby_client) = lobby_client.as_mut() {
-
-                    //     if let Ok(_) = lobby_client.send(true) {}
-                    // }
-
-                    let quit_receiver = &*quitter.lock().unwrap(); 
-                    match quit_receiver.try_recv() {
-                        Ok(_) | Err(TryRecvError::Disconnected) => {
-                            println!("[Server] Thread discontinued");
-                            break 'server;
-                        },
-                        _ => {}
-                    }
-
-                    while let Ok(event) = server.accept_receive() {
-                        match event {
-                            ServerEvent::Connection(id) => {
-                                let conn = server.connection(&id).unwrap();
-                                println!(
-                                    "[Server] Client {} ({}, {}ms rtt) connected.",
-                                    id.0,
-                                    conn.peer_addr(),
-                                    conn.rtt()
-                                );
-
-                                //Let everyone know this client has connected
-                                for (_, conn) in server.connections() {
-                                    conn.send(MessageKind::Reliable, encoder.compress_vec(
-                                        &bincode::serialize(&MessageSender{
-                                            data_type: DataType::NewConnection(crate::systems::networking::NewConnection::new(id.0)),
-                                            message_type: MessageType::Reliable
-                                        }).unwrap()
-                                    ).unwrap());
-                                }
-                                
-                            },
-                            ServerEvent::Message(id, message) => {
-                                let conn = server.connection(&id).unwrap();
-                                println!(
-                                    "[Server] Message from client {} ({}, {}ms rtt)",
-                                    id.0,
-                                    conn.peer_addr(),
-                                    conn.rtt(),
-                                );
-
-                                let decompressed = decoder.decompress_vec(&message).unwrap();
-                                let message: MessageSender = deserialize(&decompressed).unwrap();
-                                let payload = encoder.compress_vec(&serialize(&message).unwrap()).unwrap();
-
-                                // Send a message to all connected clients
-                                for (_, conn) in server.connections() {
-                                    conn.send(message.message_type.as_kind(), payload.clone());
-                                }
-        
-                            },
-                            ServerEvent::ConnectionClosed(id, _) | ServerEvent::ConnectionLost(id, _) => {
-                                let conn = server.connection(&id).unwrap();
-                                println!(
-                                    "[Server] Client {} ({}, {}ms rtt) disconnected.",
-                                    id.0,
-                                    conn.peer_addr(),
-                                    conn.rtt()
-                                );
-
-                                // Let everyone know this client has disconnected
-                                for (_, conn) in server.connections() {
-                                    conn.send(MessageKind::Reliable, encoder.compress_vec(
-                                        &bincode::serialize(&MessageSender{
-                                            data_type: DataType::Disconnection(crate::systems::networking::Disconnection::new(id.0)),
-                                            message_type: MessageType::Reliable
-                                        }).unwrap()
-                                    ).unwrap());
-                                }
-
-                                if server.connections().len() == 0 {
-                                    println!("[Server] Closing out server as there are no more connections");
-                                    break 'server;
-                                }
-                            },
-                            ServerEvent::PacketLost(id, _) => {
-                                let conn = server.connection(&id).unwrap();
-                                println!(
-                                    "[Server] Packet dropped {} ({}, {}ms rtt)",
-                                    id.0,
-                                    conn.peer_addr(),
-                                    conn.rtt(),
-                                );
-                            },
-                            ServerEvent::ConnectionCongestionStateChanged(id, _) => {
-                                let conn = server.connection(&id).unwrap();
-                                println!(
-                                    "[Server] Congestion State Changed {} ({}, {}ms rtt)",
-                                    id.0,
-                                    conn.peer_addr(),
-                                    conn.rtt()
-                                );
-                            }
-                        }
-                    }
-
-                    if let Ok(_) = server.send(true) {}
-                }
-
-                *running = false;
-                cvar.notify_one();
-
-                server.shutdown().unwrap();
-            });
-
-        };
-
-        let quitter = self.client_quit_rx.clone();
-        let running_pair = self.client_running.clone();
-
-        // let _host_addr_rx = self.host_addr_rx.clone();
-
-        std::thread::spawn(move ||{
-
-            let mut client: Client<UdpSocket, BinaryRateLimiter, NoopPacketModifier> = Client::new(config);
-
-            let client_addr = match connection.scope {
-                Scope::Loopback => LOOPBACK_ADDR_V4.parse::<SocketAddr>().unwrap(),
-                Scope::Multicast => {
-                    let mut last_sent = Instant::now();
-                    let mut wait_for = Duration::from_millis(0);
-
-                    let socket = net::UdpSocket::bind("0.0.0.0:0").unwrap();
-                    socket.set_nonblocking(true).unwrap();
-
-                    loop {
-
-                        if Instant::now() - last_sent > wait_for {
-
-                            println!("Sending an IP request to {:?}", MULTICAST_ADDR_V4);
-                            //8008 will be interpreted as an IP request
-                            socket.send_to(&[8,0,0,8], MULTICAST_ADDR_V4).unwrap();
-                            last_sent = Instant::now();
-                            wait_for = Duration::from_secs(5);
-                        }
-
-                        let mut buffer = [0; 4];
-                        // This is kind of sketchy because we don't check the validity of the origin of the request, maybe a random packet 
-                        // should be sent with the request and returned to be verified
-
-                        if let Ok((_, src_addr)) = socket.recv_from(&mut buffer) {
-
-                            println!("Source address is {:?}", src_addr);
-
-                            break src_addr
-                        }
-
-                    }
-                },
-                Scope::Online(host) => host
-                // Scope::Online(host) => {
-                //     match connection.conn_type {
-                //         ConnectionType::Host => {
-                //             let host_option = host_addr_rx.unwrap();
-                //             let host_addr_lock = host_option.lock().unwrap();
-
-                //             if let Ok(addr) = host_addr_lock.recv() {
-                //                 addr
-                //             } else {
-                //                 panic!("Couldn't receive")
-                //             }
-                //         },
-                //         ConnectionType::Join => {
-                //             todo!("Wait for a suitable host to be chosen")
-                //         }
-                //     }
-                // }
-            };
-
-            match connection.scope {
-                Scope::Loopback => {
-                    client.connect(client_addr).expect("Couldn't connect to client address!");
-                },
-                Scope::Multicast => {
-
-                    println!("connect to {:?}, on multicast {:?}", client_addr, MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap());
-
-                    client.connect(client_addr).expect("Couldn't connect to client address!");
-                    client.socket().unwrap().connect_multicast(MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap()).unwrap();
-                },
-                Scope::Online(_) => {
-                    client.connect(client_addr).expect("Couldn't connect to online address!");
-                }
-            }
-
-            println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
-
-            let mut message_fragments: HashMap::<u128, Vec<MessageFragment>> = HashMap::new();
-            let mut encoder = Encoder::new();
-            let mut decoder = Rc::new(Decoder::new());
-
-            let (lock, cvar) = &*running_pair;
-            let mut running = lock.lock().unwrap();
-
-            *running = true;
-
-            'client: loop {
-
-                let quit_receiver = &*quitter.lock().unwrap();
-                match quit_receiver.try_recv() {
-                    Ok(_) | Err(TryRecvError::Disconnected) => {
-                        println!("[Client] Thread discontinued");
-                        break 'client;
+                match connection.scope {
+                    Scope::Loopback => {
+                        client.connect(client_addr).expect("Couldn't connect to client address!");
                     },
-                    _ => {}
-                }
+                    Scope::Multicast => {
 
-                // Accept incoming connections and fetch their events
-                while let Ok(event) = client.receive() {
-                    println!("{:?}", event);
-                    // Handle events (e.g. Connection, Messages, etc.)
-                    match event {
-                        ClientEvent::Connection => {
-                            let conn = client.connection().unwrap();
-                            println!(
-                                "[Client] Connection established ({}, {}ms rtt).",
-                                conn.peer_addr(),
-                                conn.rtt()
-                            );
+                        println!("connect to {:?}, on multicast {:?}", client_addr, MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap());
 
-                            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-                            let game = &mut *game_lock;
-                            let resources = &mut game.resources;
-
-                            resources.insert(ClientID::new(conn.id().0));
-
-                        },
-                        ClientEvent::Message(message) => {
-                            let conn = client.connection().unwrap();
-                            println!(
-                                "[Client] Message from server ({}, {}ms rtt)",
-                                conn.peer_addr(),
-                                conn.rtt(),
-                            );
-
-                            let decoder = Rc::get_mut(&mut decoder).unwrap();
-
-                            let payload = decoder.decompress_vec(&message).unwrap();
-                            let data: DataType = deserialize(&payload).unwrap();
-
-                            match data {
-                                DataType::MessageFragment(frag) => client_handle_fragments(frag, decoder, &mut message_fragments),
-                                _=> client_handle_data(data)
-                            }
-                        },
-                        ClientEvent::ConnectionClosed(_) | ClientEvent::ConnectionLost(_) => {
-                            let conn = client.connection().unwrap();
-                            println!(
-                                "[Client] ({}, {}ms rtt) disconnected.",
-                                conn.peer_addr(),
-                                conn.rtt()
-                            );
-                            break 'client
-                        },
-                        ClientEvent::PacketLost(_) => {
-                            let conn = client.connection().unwrap();
-                            println!(
-                                "[Client] ({}, {}ms rtt) Packet lost",
-                                conn.peer_addr(),
-                                conn.rtt(),
-                            );
-                        },
-                        ClientEvent::ConnectionCongestionStateChanged(_) => {
-                            let conn = client.connection().unwrap();
-                            println!(
-                                "[Client] Congestion State Changed ({}, {}ms rtt)",
-                                conn.peer_addr(),
-                                conn.rtt()
-                            );
-                        }
-                        _ => {}
+                        client.connect(client_addr).expect("Couldn't connect to local address!");
+                        client.socket().unwrap().connect_multicast(MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap()).unwrap();
+                    },
+                    Scope::Online(_) => {
+                        client.connect(client_addr).expect("Couldn't connect to online address!");
                     }
                 }
 
-                let config = client.config();
+                println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
 
-                if let Ok(conn) = client.connection() {
-                    // println!("{:?} {:?}", conn.peer_addr(), conn.local_addr());
-
-                    let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-                    let game = &mut *game_lock;
-                    let resources = &mut game.resources;
-
-                    match resources.get_mut::<MessagePool>() {
-                        Some(mut message_pool) => {
-                            if message_pool.messages.len() > 0 {
-
-                                for message_sender in &message_pool.messages {
-        
-                                    let message = serialize(&message_sender).unwrap().to_vec();
-                                    let size = config.packet_max_size - std::mem::size_of::<MessageSender>();
-        
-                                    let payload = encoder.compress_vec(&message).unwrap();
-        
-                                    //fragment the payload if it is too large to send
-                                    if payload.len() > size {
-                                        println!("[Client] payload is too large to send");
-        
-                                        let pieces = (payload.len() as f32 / size as f32).ceil() as usize;
-                                        let uuid = uuid::Builder::from_slice(&payload[0..16]).unwrap().build().as_u128();
-        
-                                        for i in 0..pieces {
-        
-                                            let start = i * size;
-                                            let end = std::cmp::min(payload.len(), start+size);
-        
-                                            conn.send(MessageKind::Reliable, encoder.compress_vec(
-                                                &serialize(&MessageSender{
-                                                    data_type: DataType::MessageFragment(MessageFragment{
-                                                        uuid,
-                                                        id: i,
-                                                        pieces,
-                                                        size,
-                                                        payload: payload[start..end].to_vec()
-                                                    }),
-                                                    message_type: MessageType::Reliable
-                                                })
-                                                .unwrap().to_vec()
-                                            ).unwrap());
-                                        }
-        
-                                    } else {
-                                        conn.send(message_sender.message_type.as_kind(), payload);
-                                    }
-                                }
-                                message_pool.messages.drain(..);
-                            }
-                        },
-                        None => break 'client
-                    };
-                    
-                }
-
-                // Send all outgoing messages.
-                //
-                // Also auto delay the current thread to achieve the configured tick rate.
-                match client.send(true) {
-                    Ok(_) => {},
-                    Err(err) => {
-                        println!("{:?}", err);
-                    }
-                }
             }
+        }  
 
-            *running = false;
-            cvar.notify_one();
-
-            client.disconnect().ok();
-        });
     }
 
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
@@ -747,29 +390,6 @@ impl GameStateTraits for Networking {
 
         //queue up on_disconnection for every object that has a ClientID
         world.extend(disconnections);
-
-        //If a thread is running for the client, send a signal to kill it
-        self.client_quit_tx.send(()).unwrap();
-
-        //If a thread is running for the server, send a signal to kill it
-        self.server_quit_tx.send(()).unwrap();
-
-        //Grab our Convar pairs for the server and client, and wait until they tell us that their respective threads are done
-        let (client_lock, client_cvar) = &*self.client_running;
-        let (server_lock, server_cvar) = &*self.server_running;
-
-        let mut client_running = client_lock.lock().unwrap();
-        let mut server_running = server_lock.lock().unwrap();
-
-        while *client_running && *server_running {
-            client_running = client_cvar.wait(client_running).unwrap();
-            server_running = server_cvar.wait(server_running).unwrap();
-        }
-
-        //reset the messagepool -- can't just delete it because of the legion system grabbing it
-        resources.insert(MessagePool{
-            messages: Vec::new()
-        });
 
         //get rid of any message senders that might still exist
         let mut query = <(Entity, Read<MessageSender>)>::query();
@@ -791,26 +411,12 @@ impl NewState for Networking {
 
     fn new(name: &'static str, schedule: Schedule, active: bool) -> Self {
 
-        let (server_quit_tx, server_quit_rx) = mpsc::channel::<()>();
-        let (client_quit_tx, client_quit_rx) = mpsc::channel::<()>();
-
         Self {
             game_state: GameState::new(
                 name,
                 schedule,
                 active,
             ),
-            server_quit_tx: server_quit_tx,
-            server_quit_rx: Arc::new(Mutex::new(server_quit_rx)),
-
-            client_quit_tx: client_quit_tx,
-            client_quit_rx: Arc::new(Mutex::new(client_quit_rx)),
-
-            client_running: Arc::new((Mutex::new(false), Condvar::new())),
-            server_running: Arc::new((Mutex::new(false), Condvar::new())),
-
-            // host_addr_tx: None,
-            // host_addr_rx: None,
             
         }
     }
@@ -827,119 +433,6 @@ impl AsRef<GameState> for Networking {
 
     fn as_ref(&self) -> &GameState { 
         &self.game_state
-    }
-}
-
-fn client_handle_fragments(fragment: MessageFragment, decoder: &mut Decoder, message_fragments: &mut HashMap<u128, Vec<MessageFragment>>) {
-
-    match message_fragments.get_mut(&fragment.uuid) {
-        Some(frag_vec) => {
-
-            frag_vec.sort_by(|a, b| a.id.cmp(&b.id));
-
-            let MessageFragment {
-                size,
-                pieces,
-                uuid,
-                ..
-            } = fragment;
-
-            frag_vec.push(fragment);
-
-            //If we've received all of the pieces
-            if frag_vec.len() == pieces {
-
-                //reconstruct the fragmented data
-                let mut combined: Vec<u8> = Vec::with_capacity(size * frag_vec.len());
-
-                for frag in frag_vec {
-                    combined.extend(frag.payload.iter());
-                }
-
-                //Once we're done, remove the key from message fragments
-                message_fragments.remove(&uuid);
-
-                match decoder.decompress_vec(&combined) {
-
-                    Ok(payload) => {
-
-                        //if it is able to succesfully reconstruct the data, handle that data
-                        match deserialize::<DataType>(&payload) {
-                            Ok(data) => {
-                                println!("[Client] Succesfully reconstructed data from fragments");
-                                client_handle_data(data);
-                            },
-                            Err(_) => println!("[Client] Unable to reconstruct data from fragments")
-                        }
-                    },
-
-                    Err(err) => println!("[Client] Failed to decompress fragments' payload with error: {:?}", err)
-                }
-
-            }
-        },
-        None => {
-            message_fragments.insert(fragment.uuid, vec![fragment]);
-        }
-    }
-}
-
-fn client_handle_data(data: DataType) {
-    match data {
-        DataType::MapInput(r) => {
-
-            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-            let game = &mut *game_lock;
-
-            let resources = &mut game.resources;
-            let world = &mut game.world;
-
-            r.execute(world, resources)
-        },
-        DataType::MoveSelection{client_id: id, point} => {
-
-            use crate::systems::selection_box::MoveTo;
-
-            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-            let game = &mut *game_lock;
-
-            let resources = &mut game.resources;
-            let world = &mut game.world;
-
-            //This may seem convoluded, but we only want messages to act on clients that were not the sender,
-            // as their movement was already handled at the time the message was sent to avoid any perceived input
-            // lag on their end. 
-            if let Some(client_id) = resources.get::<ClientID>() {
-                if id != client_id.0 {
-
-                    world.push((
-                        ClientID::new(id),
-                        MoveTo(point)
-                    ));
-
-                }
-            };
-
-        },
-        DataType::NewConnection(r) => {
-            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-            let game = &mut *game_lock;
-            let world = &mut game.world;
-
-            world.push(
-                (r,)
-            );
-        },
-        DataType::Disconnection(r) => {
-            let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-            let game = &mut *game_lock;
-            let world = &mut game.world;
-
-            world.push(
-                (r,)
-            );
-        }
-        _ => {},
     }
 }
 
@@ -962,3 +455,5 @@ fn get_local_ip<T: ToSocketAddrs>(connect: T) -> Option<SocketAddr> {
         Err(_) => None,
     }
 }
+
+

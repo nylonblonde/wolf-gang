@@ -1,6 +1,12 @@
 use legion::*;
 
-use std::cell::RefCell;
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
+        Arc, Mutex, RwLock
+    },
+};
 
 pub struct GameState {
     name: &'static str,
@@ -27,6 +33,11 @@ pub trait GameStateTraits: NewState + AsMut<GameState> + AsRef<GameState> {
     fn free(&mut self, _: &mut World, _: &mut Resources) {}
     fn on_connection(&self, _connection_id: u32, _world: &mut World, _resources: &mut Resources) {}
     fn on_disconnection(&self, _connection_id: u32, _world: &mut World, _resources: &mut Resources) {}
+    /// Allows us to define a method for the server to call when a client connects. This would typically be used to
+    /// communicate established data to the newly connected client, making things like join-in-progress possible. 
+    /// Since this needs to be processed on the main thread, a MessageBatch entity needs to be pushed
+    /// which will populate the server's message pool
+    fn on_client_connected(&self, _connection_id: u32, _world: &mut World, _resources: &mut Resources) {}
 }
 
 pub trait NewState {
@@ -61,12 +72,11 @@ pub struct StateMachine {
 
 impl StateMachine {
 
-    pub fn add_state(&mut self, mut game_state: impl GameStateTraits + 'static, world: &mut legion::world::World, resources: &mut Resources) -> &Box<dyn GameStateTraits> {
+    pub fn add_state(&mut self, mut game_state: impl GameStateTraits + 'static, world: &mut World, resources: &mut Resources) -> &Box<dyn GameStateTraits> {
 
         game_state.initialize(world, resources);
 
         self.states.push(Box::new(game_state));
-
         self.states.last().unwrap()
     }
 

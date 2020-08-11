@@ -9,7 +9,7 @@ pub struct Smoothing {
     pub speed: f32
 }
 
-pub fn create_system() -> impl systems::Schedulable {
+pub fn create_system() -> impl systems::Runnable {
     SystemBuilder::new("smoothing_system")
         .read_resource::<crate::Time>()
         .with_query(<(Entity, Write<Smoothing>)>::query())

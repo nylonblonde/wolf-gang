@@ -6,10 +6,14 @@ use crate::{
         history::History,
         level_map,
         selection_box,
+        networking::ClientID,
     },
-    networking::ClientID,
     node,
     node::NodeName
+};
+
+use std::sync::{
+    Arc, RwLock
 };
 
 pub struct Editor {
@@ -22,8 +26,6 @@ impl GameStateTraits for Editor {
 
     fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
         self.camera = camera::initialize_camera(world);
-        // selection_box::initialize_selection_box(world, self.camera.clone());
-
         resources.insert(History::new());
         resources.insert(self.map);    
         resources.insert(level_map::document::Document::default());
@@ -34,7 +36,6 @@ impl GameStateTraits for Editor {
         resources.remove::<level_map::document::Document>();
 
         node::free(world, &self.camera);
-        // selection_box::free_all(world);
         self.map.free(world);
     }
 
@@ -64,6 +65,11 @@ impl GameStateTraits for Editor {
             node::free(world, &name.0);
         }
     }
+
+    fn on_client_connected(&self, _connection_id: u32, _world: &mut World, _resources: &mut Resources) {
+        
+    }
+
 }
 
 impl AsMut<GameState> for Editor {

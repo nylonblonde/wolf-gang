@@ -9,13 +9,13 @@ use std::cmp::Ordering;
 use crate::{
     geometry::aabb,
     node,
-    networking::{ClientID, DataType, MessageSender, MessageType},
     systems::{
         camera,
         custom_mesh,
         transform,
         input,
         level_map,
+        networking::{ClientID, DataType, MessageSender, MessageType},
     }
 };
 
@@ -141,7 +141,7 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
 }
 
 /// Calculates the orthogonal direction that should be considered forward and right when grid-like directional input is used.
-pub fn create_orthogonal_dir_system() -> impl systems::Schedulable {
+pub fn create_orthogonal_dir_system() -> impl systems::Runnable {
 
     SystemBuilder::new("orthogonal_dir_system")
         .with_query(<(Write<CameraAdjustedDirection>, Read<RelativeCamera>)>::query())
@@ -203,7 +203,7 @@ pub fn create_orthogonal_dir_system() -> impl systems::Schedulable {
 } 
 
 /// This system reads input, then moves the coord position of the selection_box
-pub fn create_movement_system() -> impl systems::Schedulable {
+pub fn create_movement_system() -> impl systems::Runnable {
     
     let move_forward = input::Action("move_forward".to_string());
     let move_back = input::Action("move_back".to_string());
@@ -238,7 +238,7 @@ pub fn create_movement_system() -> impl systems::Schedulable {
                 if input_component.repeated(time.delta, 0.25) {
 
                     selection_box_query.iter(world)
-                        .filter(|(_, id, _)| **id == **client_id)
+                        // .filter(|(_, id, _)| **id == **client_id)
                         .for_each(|(camera_adjusted_dir, _, coord_pos)| {
 
                         let mut movement = Point::zeros();
@@ -277,14 +277,14 @@ pub fn create_movement_system() -> impl systems::Schedulable {
                         commands.push(
                             (
                                 MoveTo(coord_pos.value + adjusted),
-                                **client_id
+                                // **client_id
                             )
                         );
 
-                        commands.push((MessageSender{
-                            data_type: DataType::MoveSelection{ client_id: client_id.val(), point: move_to_pos },
-                            message_type: MessageType::Ordered
-                        },));
+                        // commands.push((MessageSender{
+                        //     data_type: DataType::MoveSelection{ client_id: client_id.val(), point: move_to_pos },
+                        //     message_type: MessageType::Ordered
+                        // },));
 
                     });
                 }            
@@ -292,7 +292,7 @@ pub fn create_movement_system() -> impl systems::Schedulable {
         })
 }
 
-pub fn create_move_to_system() -> impl systems::Schedulable {
+pub fn create_move_to_system() -> impl systems::Runnable {
     SystemBuilder::new("selection_box_move_to_system")
         .with_query(<(Read<ClientID>, Write<level_map::CoordPos>)>::query()
             .filter(component::<SelectionBox>())
@@ -316,7 +316,7 @@ pub fn create_move_to_system() -> impl systems::Schedulable {
         })
 }
 
-pub fn create_coord_to_pos_system() -> impl systems::Schedulable {
+pub fn create_coord_to_pos_system() -> impl systems::Runnable {
     SystemBuilder::new("selection_box_coord_system")
         .with_query(<(Read<level_map::CoordPos>, Write<transform::position::Position>,)>::query()
             .filter(maybe_changed::<level_map::CoordPos>() & component::<SelectionBox>())
@@ -331,7 +331,7 @@ pub fn create_coord_to_pos_system() -> impl systems::Schedulable {
         })
 }
 
-pub fn create_tile_tool_system() -> impl systems::Schedulable {
+pub fn create_tile_tool_system() -> impl systems::Runnable {
     let insertion = input::Action(("insertion").to_string());
     let removal = input::Action(("removal").to_string());
 
@@ -388,7 +388,7 @@ pub fn create_tile_tool_system() -> impl systems::Schedulable {
 }
 
 /// Expands the dimensions of the selection box
-pub fn create_expansion_system() -> impl systems::Schedulable {    
+pub fn create_expansion_system() -> impl systems::Runnable {    
 
     let expand_selection_forward = input::Action("expand_selection_forward".to_string());
     let expand_selection_back = input::Action("expand_selection_back".to_string());
@@ -507,7 +507,7 @@ pub fn create_expansion_system() -> impl systems::Schedulable {
 
 }
 
-pub fn create_system() -> impl systems::Schedulable {
+pub fn create_system() -> impl systems::Runnable {
     
     SystemBuilder::new("selection_box_system")
         .with_query(<(Read<SelectionBox>, Write<custom_mesh::MeshData>,)>::query()

@@ -83,10 +83,10 @@ impl ConnectMenu {
 
                     let network_state = state_machine.get_state_mut("Networking").expect("Failed to get the Networking state");
 
-                    let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-                    let game = &mut *game_lock;
-                    let world = &mut game.world;
-                    let resources = &mut game.resources;
+                    let world_lock = crate::WolfGang::get_world().unwrap();
+                    let world = &mut world_lock.write().unwrap();
+                    let resources = crate::WolfGang::get_resources().unwrap();
+                    let resources = &mut resources.borrow_mut();
 
                     network_state.free(world, resources);
 
@@ -112,10 +112,10 @@ impl ConnectMenu {
 
                     let network_state = state_machine.get_state_mut("Networking").expect("Failed to get the Networking state");
 
-                    let mut game_lock = crate::GAME_UNIVERSE.lock().unwrap();
-                    let game = &mut *game_lock;
-                    let world = &mut game.world;
-                    let resources = &mut game.resources;
+                    let world_lock = crate::WolfGang::get_world().unwrap();
+                    let world = &mut world_lock.write().unwrap();
+                    let resources = crate::WolfGang::get_resources().unwrap();
+                    let resources = &mut resources.borrow_mut();
 
                     network_state.free(world, resources);
 

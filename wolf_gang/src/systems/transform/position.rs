@@ -19,7 +19,7 @@ impl Default for Position {
     }
 }
 
-pub fn create_system() -> impl systems::Schedulable {
+pub fn create_system() -> impl systems::Runnable {
     SystemBuilder::new("transform_position_system")
     .with_query(<(Read<Position>, Read<node::NodeName>)>::query()
         .filter(maybe_changed::<Position>())

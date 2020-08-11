@@ -3,12 +3,12 @@ use std::collections::VecDeque;
 use legion::*;
 
 use crate::{
-    networking::{DataType, MessageSender, MessageType},
     systems::{ 
         input::{
             InputActionComponent, Action
         },
         level_map::MapInput,
+        networking::{DataType, MessageSender, MessageType},
     },
     Time
 };
@@ -98,7 +98,7 @@ impl History {
     }
 }
 
-pub fn create_history_input_system() -> impl systems::Schedulable {
+pub fn create_history_input_system() -> impl systems::Runnable {
 
     let undo = Action("undo".to_string());
     let redo = Action("redo".to_string());

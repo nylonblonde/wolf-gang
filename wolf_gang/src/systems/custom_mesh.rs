@@ -64,7 +64,7 @@ pub struct ManuallyChange{}
 
 pub struct RequiresManualChange{}
 
-pub fn create_tag_system() -> impl systems::Schedulable {
+pub fn create_tag_system() -> impl systems::Runnable {
     SystemBuilder::new("custom_mesh_system")
         .read_component::<Material>()
         .with_query(<Entity>::query()
@@ -81,7 +81,7 @@ pub fn create_tag_system() -> impl systems::Schedulable {
         })
 }
 
-pub fn create_draw_system() -> impl systems::Schedulable {
+pub fn create_draw_system() -> impl systems::Runnable {
     SystemBuilder::new("custom_mesh_system")
         .read_component::<Material>()
         .with_query(<(Entity, Read<MeshData>, Read<NodeName>)>::query()
