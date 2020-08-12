@@ -145,17 +145,21 @@ impl WolfGang {
             state_machine.add_state(
                 editor::Editor::new("MapEditor", 
                     Schedule::builder()
+
+                        // Anything that works on Godot nodes directly should be thread_local, there is way too much instability with Godot
+                        // when dealing with separate threads right now
+
                         .add_system(systems::input::create_input_system())                             
                         .flush() //flush to avoid accidental double inputs
 
                         .add_system(systems::smoothing::create_system())
                         .add_system(systems::camera::create_movement_system())
                         .add_system(systems::camera::create_rotation_system())
+                        .add_system(systems::selection_box::create_coord_to_pos_system())
                         .add_system(systems::selection_box::create_system())
                         .flush()
                         .add_system(systems::selection_box::create_update_bounds_system())
                         .flush()
-                        .add_system(systems::selection_box::create_coord_to_pos_system())
                         
                         .add_system(systems::selection_box::create_tile_tool_system())
 
