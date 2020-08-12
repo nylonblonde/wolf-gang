@@ -140,10 +140,17 @@ pub enum  DataType {
     NewConnection(crate::systems::networking::NewConnection),
     Disconnection(crate::systems::networking::Disconnection),
     MessageFragment(MessageFragment),
+    /// Message sent by the server to communicate the existence of other selection boxes when a new client connects
+    CreateSelectionBox{
+        client_id: u32,
+        coord_pos: Point,
+        aabb: AABB
+    },
     MapInput(crate::systems::level_map::MapInput),
+    /// Handles movement and expansion of selection boxes since the selection box moves when expanded anyway
     UpdateSelectionBounds{
         client_id: u32,
-        point: Point,
+        coord_pos: Point,
         aabb: AABB
     },
 }
@@ -574,12 +581,12 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 map.change(world, r.get_octree())
             }
         },  
-        DataType::UpdateSelectionBounds{client_id: id, point: coord_pos, aabb} => {
+        DataType::UpdateSelectionBounds{client_id: id, coord_pos, aabb} => {
 
             use crate::systems::selection_box::UpdateBounds;
 
             //This may seem convoluded, but we only want messages to act on clients that were not the sender,
-            // as their movement was already handled at the time the message was sent to avoid any perceived input
+            // as their update was already handled at the time the message was sent to avoid any perceived input
             // lag on their end. 
             if let Some(client_id) = resources.get::<ClientID>() {
                 if id != client_id.0 {
@@ -596,6 +603,23 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
             };
 
         },
+        DataType::CreateSelectionBox{client_id: id, coord_pos, aabb} => {
+
+            use crate::systems::selection_box::SelectionBox;
+            use crate::systems::level_map::CoordPos;
+
+            world.push(
+                (
+                    SelectionBox{
+                        aabb
+                    },
+                    CoordPos {
+                        value: coord_pos
+                    }, 
+                    ClientID::new(id)
+                )
+            );
+        }
         DataType::NewConnection(r) => {
 
             world.push(

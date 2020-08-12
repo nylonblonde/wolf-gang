@@ -300,21 +300,21 @@ pub fn create_movement_system() -> impl systems::Runnable {
                             existing_movement = Some(update_to.coord_pos);
                         }
 
-                        let mut update_selection = DataType::UpdateSelectionBounds{ client_id: client_id.val(), point: move_to_pos, aabb: selection_box.aabb };
+                        let mut update_selection = DataType::UpdateSelectionBounds{ client_id: client_id.val(), coord_pos: move_to_pos, aabb: selection_box.aabb };
 
                         match existing_movement {
                             Some(existing_movement) => {
-                                if let DataType::UpdateSelectionBounds{client_id:_, point, aabb:_} = &mut update_selection {
-                                    *point = existing_movement;
+                                if let DataType::UpdateSelectionBounds{client_id:_, coord_pos, aabb:_} = &mut update_selection {
+                                    *coord_pos = existing_movement;
                                 } 
                             },
                             None => {
-                                if let DataType::UpdateSelectionBounds{client_id:_, point, aabb} = &mut update_selection {
+                                if let DataType::UpdateSelectionBounds{client_id:_, coord_pos, aabb} = &mut update_selection {
                                     world.push(
                                         (
                                             UpdateBounds {
                                                 aabb: *aabb,
-                                                coord_pos: *point
+                                                coord_pos: *coord_pos
                                             },
                                             client_id
                                         )
@@ -507,23 +507,23 @@ pub fn create_expansion_system() -> impl systems::Runnable {
                             existing_expansion = Some((update_to.coord_pos, update_to.aabb));
                         }
 
-                        let mut update_selection = DataType::UpdateSelectionBounds{ client_id: client_id.val(), point: move_to_pos, aabb: new_aabb };
+                        let mut update_selection = DataType::UpdateSelectionBounds{ client_id: client_id.val(), coord_pos: move_to_pos, aabb: new_aabb };
 
                         match existing_expansion {
                             Some(existing_expansion) => {
-                                if let DataType::UpdateSelectionBounds{client_id:_, point, aabb} = &mut update_selection {
+                                if let DataType::UpdateSelectionBounds{client_id:_, coord_pos, aabb} = &mut update_selection {
 
-                                    *point = existing_expansion.0;
+                                    *coord_pos = existing_expansion.0;
                                     *aabb = existing_expansion.1;
                                 }
                             },
                             None => {
-                                if let DataType::UpdateSelectionBounds{client_id:_, point, aabb} = &mut update_selection {
+                                if let DataType::UpdateSelectionBounds{client_id:_, coord_pos, aabb} = &mut update_selection {
                                     world.push(
                                         (
                                             UpdateBounds {
                                                 aabb: *aabb,
-                                                coord_pos: *point
+                                                coord_pos: *coord_pos
                                             },
                                             client_id
                                         )

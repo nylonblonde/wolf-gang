@@ -6,11 +6,18 @@ use crate::{
         history::History,
         level_map,
         selection_box,
-        networking::ClientID,
+        networking::{
+            ClientID,
+            ServerMessageSender,
+            DataType,
+            MessageType,
+        }
     },
     node,
     node::NodeName
 };
+
+type AABB = crate::geometry::aabb::AABB<i32>;
 
 pub struct Editor {
     game_state: GameState,
@@ -62,7 +69,37 @@ impl GameStateTraits for Editor {
         }
     }
 
-    fn on_client_connected(&self, _connection_id: u32, _world: &mut World, _resources: &mut Resources) {
+    fn on_client_connected(&self, _connection_id: u32, world: &mut World, resources: &mut Resources) {
+        if let Some(self_id) = resources.get::<ClientID>() {
+
+        //Get all of the selection boxes to send them to the new client at self_id
+        let mut query = <(Read<selection_box::SelectionBox>, Read<ClientID>, Read<level_map::CoordPos>)>::query();
+
+        let results = query.iter(world)
+            .map(|(selection_box, client_id, coord_pos)| (selection_box.aabb, *client_id, *coord_pos))
+            .collect::<Vec<(AABB, ClientID, level_map::CoordPos)>>();
+
+
+            results.into_iter().for_each(|(aabb, client_id, coord_pos)| {
+
+                world.push(
+                    (
+                        ServerMessageSender {
+                            client_id: self_id.val(),
+                            data_type: DataType::CreateSelectionBox {
+                                client_id: client_id.val(),
+                                aabb,
+                                coord_pos: coord_pos.value
+                            },
+                            message_type: MessageType::Reliable,
+                            
+                        },
+                    )
+                );
+
+            });
+
+        }
         
     }
 
