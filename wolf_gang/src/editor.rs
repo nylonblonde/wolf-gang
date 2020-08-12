@@ -69,8 +69,7 @@ impl GameStateTraits for Editor {
         }
     }
 
-    fn on_client_connected(&self, _connection_id: u32, world: &mut World, resources: &mut Resources) {
-        if let Some(self_id) = resources.get::<ClientID>() {
+    fn on_client_connected(&self, connection_id: u32, world: &mut World, _: &mut Resources) {
 
         //Get all of the selection boxes to send them to the new client at self_id
         let mut query = <(Read<selection_box::SelectionBox>, Read<ClientID>, Read<level_map::CoordPos>)>::query();
@@ -80,26 +79,24 @@ impl GameStateTraits for Editor {
             .collect::<Vec<(AABB, ClientID, level_map::CoordPos)>>();
 
 
-            results.into_iter().for_each(|(aabb, client_id, coord_pos)| {
+        results.into_iter().for_each(|(aabb, client_id, coord_pos)| {
 
-                world.push(
-                    (
-                        ServerMessageSender {
-                            client_id: self_id.val(),
-                            data_type: DataType::CreateSelectionBox {
-                                client_id: client_id.val(),
-                                aabb,
-                                coord_pos: coord_pos.value
-                            },
-                            message_type: MessageType::Reliable,
-                            
+            world.push(
+                (
+                    ServerMessageSender {
+                        client_id: connection_id,
+                        data_type: DataType::CreateSelectionBox {
+                            client_id: client_id.val(),
+                            aabb,
+                            coord_pos: coord_pos.value
                         },
-                    )
-                );
+                        message_type: MessageType::Reliable,
+                        
+                    },
+                )
+            );
 
-            });
-
-        }
+        });
         
     }
 
