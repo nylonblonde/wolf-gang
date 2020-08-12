@@ -104,6 +104,7 @@ impl Sender for ServerMessageSender{
     }
 }
 
+/// The inner value represents the client id of the new connection
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct NewConnection(u32);
 
@@ -113,12 +114,25 @@ impl NewConnection {
     }
 }
 
+/// The inner value represents the client id of the disconnection
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct Disconnection(u32);
 
 impl Disconnection {
     pub fn new(id: u32) -> Self {
         Disconnection(id)
+    }
+}
+
+/// Component which belongs to the entity that will be calling the game state's on_client_connected method, which
+/// is responsible for handling logic when a new client connects to the server, ususally meant for sending data from
+/// the server to that new connection.
+#[derive(Debug, Copy, Clone)]
+pub struct OnClientConnected(u32);
+
+impl OnClientConnected {
+    pub fn new(id: u32) -> Self {
+        OnClientConnected(id)
     }
 }
 
@@ -182,6 +196,13 @@ pub fn create_server_system() -> impl systems::ParallelRunnable {
                                 id.0,
                                 conn.peer_addr(),
                                 conn.rtt()
+                            );
+
+                            //create an entity that will call on_client_connected
+                            commands.push(
+                                (
+                                    OnClientConnected(id.0),
+                                )
                             );
     
                             //Let everyone know this client has connected
@@ -514,6 +535,32 @@ pub fn create_disconnection_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut 
     })
 }
 
+pub fn create_on_client_connection_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+
+    let mut query = <(Entity, Read<OnClientConnected>)>::query();
+
+    Box::new(move |world, resources| {
+
+        let results = query.iter(world)
+            .map(|(entity, on_connection)| (*entity, *on_connection))
+            .collect::<Vec<(Entity, OnClientConnected)>>();
+
+        results.into_iter().for_each(|(entity, on_connected)| {
+
+            crate::STATE_MACHINE.with(|s| {
+                let state_machine = & *s.borrow();
+
+                state_machine.states.iter().for_each(|state| {
+                    state.on_client_connected(on_connected.0, world, resources);
+                })
+            });
+
+            world.remove(entity);
+        })
+
+    })
+}
+
 fn client_handle_fragments(
     fragment: MessageFragment, 
     decoder: &mut Decoder, 
@@ -608,17 +655,16 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
             use crate::systems::selection_box::SelectionBox;
             use crate::systems::level_map::CoordPos;
 
-            world.push(
-                (
-                    SelectionBox{
-                        aabb
-                    },
-                    CoordPos {
-                        value: coord_pos
-                    }, 
-                    ClientID::new(id)
-                )
-            );
+            let entity = crate::systems::selection_box::initialize_selection_box(world, id, None);
+            
+            if let Some(mut entry) = world.entry(entity) {
+                if let Ok(pos) = entry.get_component_mut::<CoordPos>() {
+                    pos.value = coord_pos;
+                }
+                if let Ok(selection_box) = entry.get_component_mut::<SelectionBox>() {
+                    selection_box.aabb = aabb;
+                }
+            }
         }
         DataType::NewConnection(r) => {
 

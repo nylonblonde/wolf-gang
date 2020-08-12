@@ -223,24 +223,21 @@ pub fn create_follow_selection_box_system() -> impl systems::Runnable {
                     let focal_point = *focal_point;
 
                     commands.exec_mut(move |world| {
-                        if let Some(entry) = world.entry(entity) {
-                            let smoothing = entry.into_component_mut::<Smoothing>();
+                        if let Some(mut entry) = world.entry(entity) {
+                            let smoothing = entry.get_component_mut::<Smoothing>();
                             match smoothing {
                                 Ok(mut smoothing) => {
                                     smoothing.heading = heading;
                                     return {}
                                 },
                                 _ => {
-                                    //need a whole new entry because into_component moves out of the original
-                                    if let Some(mut entry) = world.entry(entity) {
-                                        entry.add_component(
-                                            Smoothing{
-                                                current: focal_point.0,
-                                                heading,
-                                                speed: SPEED
-                                            }
-                                        )
-                                    }
+                                    entry.add_component(
+                                        Smoothing{
+                                            current: focal_point.0,
+                                            heading,
+                                            speed: SPEED
+                                        }
+                                    )
                                 }
                             }
                         }

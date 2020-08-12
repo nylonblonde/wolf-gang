@@ -69,7 +69,7 @@ pub struct UpdateBounds {
 #[derive(Default, Clone)]
 pub struct RelativeCamera(pub String);
 
-pub fn initialize_selection_box(world: &mut World, client_id: u32, camera_name: Option<String>) {
+pub fn initialize_selection_box(world: &mut World, client_id: u32, camera_name: Option<String>) -> Entity {
 
     let mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
 
@@ -95,6 +95,8 @@ pub fn initialize_selection_box(world: &mut World, client_id: u32, camera_name: 
             entry.add_component(RelativeCamera(camera_name))
         }
     }
+
+    entity
 }
 
 /// Removes all SelectionBox entities from the world, and frees and removes the related Godot nodes
@@ -566,14 +568,12 @@ pub fn create_update_bounds_system() -> impl systems::Runnable {
 
                     commands.exec_mut(move |world|{
 
-                        if let Some(entry) = world.entry(entity) {
-                            if let Ok(coord_pos) = entry.into_component_mut::<level_map::CoordPos>() {
+                        if let Some(mut entry) = world.entry(entity) {
+                            if let Ok(coord_pos) = entry.get_component_mut::<level_map::CoordPos>() {
                                 coord_pos.value = update_to.coord_pos;
                             }
-                        }
 
-                        if let Some(entry) = world.entry(entity) {
-                            if let Ok(selection_box) = entry.into_component_mut::<SelectionBox>() {
+                            if let Ok(selection_box) = entry.get_component_mut::<SelectionBox>() {
                                 selection_box.aabb = update_to.aabb;
                             }
                         }

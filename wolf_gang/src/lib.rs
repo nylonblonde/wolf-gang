@@ -132,6 +132,7 @@ impl WolfGang {
                         .add_system(systems::networking::create_client_multicast_connection_system())
                         .add_system(systems::networking::create_server_system())
                         .add_system(systems::networking::create_client_system())
+                        .add_thread_local_fn(systems::networking::create_on_client_connection_thread_local_fn())
                         .add_thread_local_fn(systems::networking::create_set_client_id_thread_local_fn())
                         .add_thread_local_fn(systems::networking::create_new_connection_thread_local_fn())
                         .add_thread_local_fn(systems::networking::create_disconnection_thread_local_fn())
