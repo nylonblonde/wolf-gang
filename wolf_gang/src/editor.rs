@@ -1,5 +1,6 @@
 use legion::*;
 use crate::{
+    collections::octree::Octree,
     game_state::{NewState, GameState, GameStateTraits},
     systems::{
         camera,
@@ -71,7 +72,7 @@ impl GameStateTraits for Editor {
 
     fn on_client_connected(&self, connection_id: u32, world: &mut World, _: &mut Resources) {
 
-        //Get all of the selection boxes to send them to the new client at self_id
+        //Get all of the selection boxes to send them to the new client
         let mut query = <(Read<selection_box::SelectionBox>, Read<ClientID>, Read<level_map::CoordPos>)>::query();
 
         let results = query.iter(world)
@@ -97,7 +98,27 @@ impl GameStateTraits for Editor {
             );
 
         });
+
+        //send all of the current map data as map inputs to the new client
+        let mut query = <Read<level_map::MapChunkData>>::query();
+
+        let results = query.iter(world)
+            .map(|map_data| map_data.clone().octree)
+            .collect::<Vec<Octree<i32, level_map::TileData>>>();
         
+        results.into_iter().for_each(|octree| {
+
+            world.push(
+                (
+                    ServerMessageSender {
+                        client_id: connection_id,
+                        data_type: DataType::MapInput(level_map::MapInput::new(octree)),
+                        message_type: MessageType::Ordered,
+                    },
+                )
+            );
+
+        })
     }
 
 }

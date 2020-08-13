@@ -1,5 +1,12 @@
-use crate::collections::octree;
-use crate::systems::level_map;
+use crate::{
+    collections::octree,
+    systems::{
+        level_map,
+        networking::{
+            DataType, MessageSender, MessageType
+        }
+    }
+};
 
 use legion::*;
 
@@ -52,22 +59,20 @@ impl Document {
     }
 
     /// Populate the world with the required entities from self's document data
-    pub fn populate_world(&self, world: &mut legion::world::World, resources: &mut Resources) {
+    pub fn populate_world(&self, world: &mut legion::world::World, _resources: &mut Resources) {
 
-        match resources.get::<level_map::Map>() {
-            Some(map) => {
-                
-                for octree in &self.data {
-
-                    godot_print!("inserting map chunk");
-
-                    map.insert_mapchunk_with_octree(octree, world, true);
-                }
-
-            },
-            None => panic!("Couldn't find the Map resource when populating the world")
+        for octree in &self.data {
+            world.push(
+                (
+                    MessageSender{
+                        data_type: DataType::MapInput(level_map::MapInput{
+                            octree: octree.clone()
+                        }),
+                        message_type: MessageType::Ordered
+                    },
+                )
+            );
         }
-
     }
 
     /// Returns a Vec<u8> of the result of serializing the document using bincode
