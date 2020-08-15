@@ -547,9 +547,7 @@ pub fn create_expansion_system() -> impl systems::Runnable {
 
 pub fn create_update_bounds_system() -> impl systems::Runnable {
     SystemBuilder::new("selection_box_move_to_system")
-        .with_query(<(Entity, Read<ClientID>)>::query()
-            .filter(component::<SelectionBox>())
-        )
+        .with_query(<(Entity, Read<ClientID>, Read<SelectionBox>)>::query())
         .with_query(<(Entity, Read<ClientID>, Read<UpdateBounds>)>::query())
         .build(|commands, world, _, queries| {
             let (selection_box_query, move_to_query) = queries;
@@ -558,13 +556,14 @@ pub fn create_update_bounds_system() -> impl systems::Runnable {
                 .map(|(entity, client_id, update_to)| (*entity, *client_id, *update_to))
                 .collect::<Vec<(Entity, ClientID, UpdateBounds)>>();
 
-            selection_box_query.for_each_mut(world, |(entity, client_id)| {
+            selection_box_query.for_each(world, |(entity, client_id, selection_box)| {
 
                 if let Some((update_entity, _, update_to)) = move_tos.iter().find(|(_,id,_)| id == client_id) {
                     
                     let update_entity = *update_entity;
                     let entity = *entity;
                     let update_to = *update_to;
+                    let selection_box = *selection_box;
 
                     commands.exec_mut(move |world|{
 
@@ -573,8 +572,10 @@ pub fn create_update_bounds_system() -> impl systems::Runnable {
                                 coord_pos.value = update_to.coord_pos;
                             }
 
-                            if let Ok(selection_box) = entry.get_component_mut::<SelectionBox>() {
-                                selection_box.aabb = update_to.aabb;
+                            if selection_box.aabb != update_to.aabb { //only write to SelectionBox if there is an actual change
+                                if let Ok(selection_box) = entry.get_component_mut::<SelectionBox>() {
+                                    selection_box.aabb = update_to.aabb;
+                                }
                             }
                         }
 
@@ -950,9 +951,5 @@ fn expansion_movement_helper(expansion: Point, camera_adjusted_dir: CameraAdjust
     );
 
     diff
-
-    // coord_pos.value -= diff;
-
-    // selection_box.aabb.dimensions = new_aabb.dimensions;
 } 
     
