@@ -31,7 +31,7 @@ type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
 
 
-///ChangeType stores the range of the changes so that we can determine whether or not adjacent MapChunks actually need to change, and for Indirect changes,
+///ChangeType stores the range of the changes so that we can determine whether or not adjacent MapChunks actually need to change, and
 /// the range of the original change for making comparisons
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ChangeType {
@@ -39,8 +39,13 @@ pub enum ChangeType {
     Indirect(AABB)
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-struct ManuallyChange(ChangeType);
+///ManuallyChange tells the map chunks to update, and the AABB gives us more information about which columns we will be updating so that we don't have to update all of them. 
+/// In most cases, we only need one AABB, but we store it in a Vec for cases where two chunks that are separated by a chunk update simultaneously, effectively overwriting each other's
+/// values. This means that ManuallyChange should be attempted to be got with get_component_mut in case it can be updated instead of being written as a new value.
+#[derive(Clone, Debug, PartialEq)]
+struct ManuallyChange{
+    ranges: Vec<ChangeType>
+}
 
 pub struct TileDimensions {
     pub x: f32,
@@ -194,9 +199,18 @@ impl Map {
                 map_data.octree.insert(*item).unwrap();
             }
     
+            // And the range of change to the ManuallyChange component if it exists, otherwise, make it exist
             if let Some(mut entry) = world.entry(*entity) {
                 entry.add_component(map_data.clone());
-                entry.add_component(ManuallyChange(ChangeType::Direct(aabb)));
+
+                match entry.get_component_mut::<ManuallyChange>() {
+                    Ok(change) => {
+                        change.ranges.push(ChangeType::Direct(aabb))
+                    },
+                    _ => entry.add_component(ManuallyChange{
+                        ranges: vec![ChangeType::Direct(aabb)]
+                    })
+                }
             }
         }
     }
@@ -317,7 +331,9 @@ impl Map {
         if changed {
             (world.push(
                 (
-                    ManuallyChange(ChangeType::Direct(octree.get_aabb())),
+                    ManuallyChange{
+                        ranges: vec![ChangeType::Direct(octree.get_aabb())]
+                    },
                     chunk_pt,
                     map_data.clone(),
                     #[cfg(not(test))]
@@ -429,8 +445,6 @@ pub fn create_map_input_system() -> impl systems::Runnable {
                         (*map_input).clone()
                     )
                 ));
-                //add the new state to history
-                // map_history.add_step(StepTypes::MapInput((*map_input).clone()));
 
                 map_messages.push((networking::MessageSender{
                     data_type: networking::DataType::MapInput((*map_input).clone()),

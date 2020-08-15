@@ -175,8 +175,9 @@ impl WolfGang {
                         .add_system(systems::selection_box::create_expansion_system())
 
                         .add_system(systems::level_map::mesh::create_add_components_system())
-                        .add_thread_local(systems::level_map::mesh::create_drawing_system())
-                        .flush() //need to flush before drawing custom meshes
+                        .flush()
+                        .add_thread_local_fn(systems::level_map::mesh::create_drawing_system())
+                        // .flush() //need to flush before drawing custom meshes
                         
                         .add_thread_local(systems::custom_mesh::create_draw_system())
 
