@@ -81,9 +81,12 @@ impl MapInput {
     pub fn get_octree(&self) -> &Octree<i32, TileData> {
         &self.octree
     }
-//     pub fn execute(self, world: &mut legion::world::World, resources: &mut Resources) {
-//         change_map(world, resources, self.octree);
-//     }
+
+    pub fn new(octree: Octree<i32, TileData>) -> Self {
+        Self {
+            octree
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -340,7 +343,7 @@ impl Map {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapChunkData {
-    octree: Octree<i32, TileData>,
+    pub octree: Octree<i32, TileData>,
 }
 
 impl MapChunkData {
