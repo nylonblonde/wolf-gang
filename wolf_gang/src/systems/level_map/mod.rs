@@ -281,7 +281,19 @@ impl Map {
     }
 
     /// Does a query range on every chunk that fits within the range
-    fn query_chunk_range(&self, map_datas: Vec<(&MapChunkData, &Point)>, range: AABB) -> Vec<TileData> {
+    fn query_chunk_range<'a, T: IntoIterator<Item=(&'a Entity, &'a MapChunkData, &'a Point)> + Clone>(&self, map_datas: T, range: AABB) -> Vec<TileData> {
+    
+        let mut results = Vec::new();
+
+        self.chunks_in_range(map_datas, range).iter().for_each(|(entity, map_data)| {
+            results.extend(map_data.octree.query_range(range))
+        });
+
+        results
+    }
+
+    pub fn chunks_in_range<'a, T: IntoIterator<Item=(&'a Entity, &'a MapChunkData, &'a Point)> + Clone>(&self, map_datas: T, range: AABB) -> Vec<(&'a Entity, &'a MapChunkData)> {
+        
         let min = range.get_min();
         let max = range.get_max();
 
@@ -299,7 +311,7 @@ impl Map {
 
         let volume = dimensions.x * dimensions.y * dimensions.z;
         
-        let mut results: Vec<TileData> = Vec::new();
+        let mut results: Vec<(&Entity, &MapChunkData)> = Vec::new();
 
         for i in 0..volume {
             let x = x_min_chunk + i % dimensions.x;
@@ -308,11 +320,10 @@ impl Map {
 
             let point = Point::new(x,y,z);
 
-            // let mut chunk_query = <(Read<MapChunkData>, Read<Point>)>::query();
+            map_datas.clone().into_iter().filter(|(_, _, pt)| **pt == point).for_each(|(entity, map_data, _)| {
+                results.push((entity, map_data));
+            });
 
-            for (map_data, _) in map_datas.iter().filter(|(_,pt)| **pt == point) {
-                results.extend(map_data.octree.query_range(range));
-            }
         }
 
         results
@@ -410,7 +421,7 @@ pub fn create_map_input_system() -> impl systems::Runnable {
         .write_resource::<History>()
         .read_resource::<Map>()
         .with_query(<(Entity, Read<MapInput>)>::query())
-        .with_query(<(Read<MapChunkData>, Read<Point>)>::query())
+        .with_query(<(Entity, Read<MapChunkData>, Read<Point>)>::query())
         .build(|commands, world, (map_history, map), queries| {
 
             let (map_input_query, map_data_query) = queries;
@@ -418,7 +429,7 @@ pub fn create_map_input_system() -> impl systems::Runnable {
             let mut map_messages: Vec<(networking::MessageSender,)> = Vec::new();
             map_input_query.for_each(world, |(entity, map_input)| {
 
-                let map_datas = map_data_query.iter(world).collect::<Vec<(&MapChunkData, &Point)>>();
+                let map_datas = map_data_query.iter(world).collect::<Vec<(&Entity, &MapChunkData, &Point)>>();
 
                 let query_range = map.query_chunk_range(map_datas, map_input.octree.get_aabb());
 

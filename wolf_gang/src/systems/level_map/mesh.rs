@@ -42,19 +42,6 @@ lazy_static!{
             -Point::x()-Point::z(),
             Point::x()-Point::z()
         ];
-        
-    pub static ref ALL_DIRS: [Point; 10] = [
-            Point::x(),
-            -Point::x(),
-            Point::z(),
-            -Point::z(),
-            Point::x()+Point::z(),
-            -Point::x()+Point::z(),
-            -Point::x()-Point::z(),
-            Point::x()-Point::z(),
-            Point::y(),
-            -Point::y()
-        ];
 }
 
 /// Adds additional required components
@@ -86,7 +73,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
     let mut map_query = <(Entity, Read<MapChunkData>, Read<Point>)>::query();
     let mut write_mesh_query = <(Entity, Write<MapMeshData>, Write<custom_mesh::MeshData>, Read<ManuallyChange>)>::query();
 
-    Box::new(move |world, _| {
+    Box::new(move |world, resources| {
 
     // SystemBuilder::new("map_mesh_drawing_system")
     //     .with_query(<(Entity, Read<MapChunkData>, Read<ManuallyChange>)>::query())
@@ -113,10 +100,12 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                 for i in 0..change.ranges.len() {
 
                     let change = &change.ranges[i];
+
+                    println!("{} - Change: {:?}", map_data.get_chunk_point(), change);
                     
                     let change_aabb = match change {
                         ChangeType::Direct(aabb) | ChangeType::Indirect(aabb) => {
-                            println!("{} - Change: {:?}, {:?}", map_data.get_chunk_point(), aabb.get_min(), aabb.get_max());
+                            // println!("{} - Change: {:?}, {:?}", map_data.get_chunk_point(), aabb.get_min(), aabb.get_max());
 
                             get_aabb_change_in_range(*aabb, map_data.octree.get_aabb())
                         },
@@ -898,37 +887,39 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
             let (to_change_tx, to_change_rx) = mpsc::channel::<(Entity, ChangeType)>();
 
-            entities.par_iter().for_each_with(to_change_tx, |to_change_tx, (_, map_data, change)| {
+            if let Some(map) = resources.get::<Map>() {
 
-                change.ranges.iter().for_each(|change| {
-                        
-                    //only manually change neighbors if it is a direct change
-                    if let ChangeType::Direct(aabb) = change {
-                        for dir in ALL_DIRS.into_iter() {
+                entities.par_iter().for_each_with(to_change_tx, |to_change_tx, (_, _, change)| {
+
+                    change.ranges.iter().for_each(|change| {
                             
-                            let neighbor_chunk_pt = map_data.get_chunk_point() + dir;
+                        //only manually change neighbors if it is a direct change
+                        if let ChangeType::Direct(aabb) = change {
+                            // map.chunks_in_range()
 
-                            for (entity, map_data, _) in map_datas.iter().filter(|(_,_,pt)| *pt == neighbor_chunk_pt) {
+                            let min = aabb.get_min();
+                            let max = aabb.get_max();
+
+                            // grab a region below to ensure updates to lower adjacent chunks happen (for the edge lip texture, for instance)
+                            // grab adjacent horizontal spaces because we'd want to update edges that become connected or disconnected
+                            let aabb = AABB::from_extents(min - Point::new(1,5,1), max + Point::new(1,1,1));
+
+                            let neighbors = map.chunks_in_range(map_datas.iter().map(|(entity, map_data, pt)| (entity, map_data, pt)), aabb);
+
+                            neighbors.into_iter().for_each(|(entity, map_data)| {
+                                
                                 let map_aabb = map_data.octree.get_aabb();
-
-                                let min = aabb.get_min();
-                                let max = aabb.get_max();
-
-                                let aabb = AABB::from_extents(min - Point::new(1,map_aabb.dimensions.y,1), max + Point::new(1,1,1));
-                                // grab a region below to ensure updates to lower adjacent chunks happen (for the edge lip texture, for instance)
-                                // grab adjacent horizontal spaces because we'd want to update edges that become connected or disconnected
 
                                 //only update if it's adjacent to the changes
                                 if map_aabb.intersects_bounds(aabb) {
                                     let aabb = map_aabb.get_intersection(aabb);
                                     to_change_tx.send((*entity, ChangeType::Indirect(aabb))).unwrap();
                                 }
-                            }
+                            });
                         }
-                    }
-
-                })
-            });
+                    });
+                });
+            }
 
             //Push indirect changes to their entities
             to_change_rx.into_iter().for_each(|(entity, change)| {
