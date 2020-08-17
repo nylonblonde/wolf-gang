@@ -8,7 +8,6 @@ use crate::{
             InputActionComponent, Action
         },
         level_map::MapInput,
-        networking::{DataType, MessageSender, MessageType},
     },
     Time
 };
@@ -16,6 +15,9 @@ use crate::{
 pub enum StepTypes {
     MapInput((MapInput, MapInput))
 }
+
+/// This component is basically used as a flag to keep track of whether or not a change came from the history, thus blocking the change from being written to history when handled by its system.
+pub struct IsFromHistory{}
 
 /// Resource which holds chnages as a VecDeque
 pub struct History {
@@ -72,10 +74,12 @@ impl History {
                 StepTypes::MapInput((undo_map, redo_map)) => {
                     let map_input = if amount > 0 { redo_map } else { undo_map };
 
-                    buffer.push((MessageSender{
-                        data_type: DataType::MapInput((*map_input).clone()),
-                        message_type: MessageType::Ordered
-                    },));
+                    buffer.push(
+                        (
+                            (*map_input).clone(),
+                            IsFromHistory{}
+                        )
+                    );
                 }
             }
         }

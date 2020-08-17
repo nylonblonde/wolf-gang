@@ -12,13 +12,13 @@ use crate::{
     collections::{
         octree,
         octree::{ 
-            Octree,
+            Octree, PointData
         }
     },
     systems::{
         custom_mesh,
-        history::{History, StepTypes},
-        networking
+        history::{History, IsFromHistory, StepTypes},
+        networking,
     },
     node::{NodeName}
 };
@@ -111,33 +111,13 @@ impl Map {
 
     pub fn change(&self, world: &mut legion::world::World, octree: &Octree<i32, TileData>) {
 
-        let aabb = octree.get_aabb();
-    
-        let min = aabb.get_min();
-        let max = aabb.get_max();
-    
-        let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
-        let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
-        let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
-    
-        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
-        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
-        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
-    
         let mut entities: HashMap<Entity, MapChunkData> = HashMap::new();
-    
-        let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
-    
-        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) - min_chunk;
-    
-        let volume = dimensions.x * dimensions.y * dimensions.z;
-        
-        for i in 0..volume {
-            let x = x_min_chunk + i % dimensions.x;
-            let y = y_min_chunk + (i / dimensions.x) % dimensions.y;
-            let z = z_min_chunk + i / (dimensions.x * dimensions.y);
-    
-            let pt = Point::new(x,y,z);
+
+        let aabb = octree.get_aabb();
+
+        println!("changing {:?} {:?}", aabb.get_min(), aabb.get_max());
+
+        self.range_sliced_to_chunks(aabb).into_iter().for_each(|(pt, _)| {
     
             let mut map_chunk_exists_query = <(Entity, Read<MapChunkData>, Read<Point>)>::query();
     
@@ -169,7 +149,7 @@ impl Map {
     
                 entities.insert(entity, map_data);
             }
-        }
+        });
     
         for (entity, map_data) in &mut entities {
             
@@ -213,6 +193,41 @@ impl Map {
                 }
             }
         }
+    }
+
+    /// Returns AABBs that are subdivided to fit into the constraints of the chunk dimensions, as well as the chunk pt they'd fit in
+    pub fn range_sliced_to_chunks(&self, aabb: AABB) -> Vec<(Point, AABB)> {    
+        let min = aabb.get_min();
+        let max = aabb.get_max();
+    
+        let x_min_chunk = (min.x as f32 / self.chunk_dimensions.x as f32).floor() as i32;
+        let y_min_chunk = (min.y as f32 / self.chunk_dimensions.y as f32).floor() as i32;
+        let z_min_chunk = (min.z as f32 / self.chunk_dimensions.z as f32).floor() as i32;
+    
+        let x_max_chunk = (max.x as f32/ self.chunk_dimensions.x as f32).floor() as i32 + 1;
+        let y_max_chunk = (max.y as f32/ self.chunk_dimensions.y as f32).floor() as i32 + 1;
+        let z_max_chunk = (max.z as f32/ self.chunk_dimensions.z as f32).floor() as i32 + 1;
+        
+        let min_chunk = Point::new(x_min_chunk, y_min_chunk, z_min_chunk);
+    
+        let dimensions = Point::new(x_max_chunk, y_max_chunk, z_max_chunk) - min_chunk;
+    
+        let volume = dimensions.x * dimensions.y * dimensions.z;
+
+        let mut results = Vec::new();
+        
+        for i in 0..volume {
+            let x = x_min_chunk + i % dimensions.x;
+            let y = y_min_chunk + (i / dimensions.x) % dimensions.y;
+            let z = z_min_chunk + i / (dimensions.x * dimensions.y);
+    
+            let min = Point::new(x * self.chunk_dimensions.x, y * self.chunk_dimensions.y, z * self.chunk_dimensions.z);
+            let max = min + self.chunk_dimensions;
+
+            results.push((Point::new(x,y,z), AABB::from_extents(min, max).get_intersection(aabb)));
+        }
+
+        results
     }
 
     /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache
@@ -285,7 +300,7 @@ impl Map {
     
         let mut results = Vec::new();
 
-        self.chunks_in_range(map_datas, range).iter().for_each(|(entity, map_data)| {
+        self.chunks_in_range(map_datas, range).iter().for_each(|(_, map_data)| {
             results.extend(map_data.octree.query_range(range))
         });
 
@@ -420,6 +435,7 @@ pub fn create_map_input_system() -> impl systems::Runnable {
     SystemBuilder::new("map_input_system")
         .write_resource::<History>()
         .read_resource::<Map>()
+        .read_component::<IsFromHistory>()
         .with_query(<(Entity, Read<MapInput>)>::query())
         .with_query(<(Entity, Read<MapChunkData>, Read<Point>)>::query())
         .build(|commands, world, (map_history, map), queries| {
@@ -428,41 +444,92 @@ pub fn create_map_input_system() -> impl systems::Runnable {
 
             let mut map_messages: Vec<(networking::MessageSender,)> = Vec::new();
             map_input_query.for_each(world, |(entity, map_input)| {
+                commands.remove(*entity);
+
+                let input_aabb = map_input.octree.get_aabb();
 
                 let map_datas = map_data_query.iter(world).collect::<Vec<(&Entity, &MapChunkData, &Point)>>();
 
-                let query_range = map.query_chunk_range(map_datas, map_input.octree.get_aabb());
+                let query_range = map.query_chunk_range(map_datas.clone(), input_aabb);
 
                 let input_set = map_input.octree.clone().into_iter().collect::<HashSet<TileData>>();
 
                 //If there is no difference between the input and what is already in the map, just return
                 if input_set.symmetric_difference(&query_range.clone().into_iter().collect::<HashSet<TileData>>()).count() == 0 {
-                    commands.remove(*entity);
                     return {}
                 }
 
-                let mut original_state: Octree<i32, TileData> = Octree::new(map_input.octree.get_aabb(), map_input.octree.get_max_elements());
+                if let Some(entry) = world.entry_ref(*entity) {
 
-                for item in query_range {
-                    original_state.insert(item).unwrap();
+                    // Only add to history if this entity does not contain an IsFromHistory component
+                    if entry.get_component::<IsFromHistory>().is_err() {
+
+                        let mut original_state: Octree<i32, TileData> = Octree::new(map_input.octree.get_aabb(), map_input.octree.get_max_elements());
+
+                        for item in query_range {
+                            original_state.insert(item).unwrap();
+                        }
+
+                        map_history.add_step(StepTypes::MapInput(
+                            (
+                                MapInput{ 
+                                    octree: original_state
+                                },
+                                (*map_input).clone()
+                            )
+                        ));
+                    }
                 }
 
-                //add the original state to history
-                map_history.add_step(StepTypes::MapInput(
-                    (
-                        MapInput{ 
-                            octree: original_state
-                        },
-                        (*map_input).clone()
-                    )
-                ));
+                let input_as_chunks = map.range_sliced_to_chunks(input_aabb);
+                let num_affected_cols: i32 = input_as_chunks.iter().map(|(_, aabb)| aabb.dimensions.x * aabb.dimensions.z).sum();
+                        
+                // If we'd have to update more columns than a single chunk would have, let's split that up, otherwise just send the whole map input
+                if num_affected_cols > map.chunk_dimensions.x * map.chunk_dimensions.z {
+        
+                    input_as_chunks.iter().for_each(|(point, aabb)| {
+        
+                        // let octree = map_input.octree.query_range(*aabb).into_iter().collect::<Octree<i32, TileData>>();
+                        let mut octree = Octree::new(*aabb, octree::DEFAULT_MAX);
 
-                map_messages.push((networking::MessageSender{
-                    data_type: networking::DataType::MapInput((*map_input).clone()),
-                    message_type: networking::MessageType::Ordered
-                },));
+                        input_set.iter().for_each(|tile_data| {
+                            if octree.get_aabb().contains_point(tile_data.get_point()) {
+                                octree.insert(*tile_data).unwrap();
+                            }
+                        });
+                        
+                        // Check if there is an existing chunk at the point, and if there is, return if there is no symmetric difference as there's no need to update
+                        if let Some(existing_chunk) = map_datas.clone().into_iter()
+                            .filter(|(_,_,pt)| **pt == *point)
+                            .map(|(_, map_data, _)| map_data)
+                            .next() 
+                        {
+        
+                            let slice_of_chunk = existing_chunk.octree.query_range(*aabb).into_iter().collect::<HashSet<TileData>>();
+        
+                            if octree.clone().into_iter().collect::<HashSet<TileData>>().symmetric_difference(&slice_of_chunk).count() == 0 {
+                                return {}
+                            }
+                        }
+        
+                        map_messages.push((networking::MessageSender{
+                            data_type: networking::DataType::MapInput(MapInput{
+                                octree
+                            }),
+                            message_type: networking::MessageType::Ordered
+                        },));
+                    });
+        
+                } else {
 
-                commands.remove(*entity);
+                    println!("Sending {:?}", map_input);
+        
+                    map_messages.push((networking::MessageSender{
+                        data_type: networking::DataType::MapInput((*map_input).clone()),
+                        message_type: networking::MessageType::Ordered
+                    },));
+                }
+        
             });
 
             commands.extend(map_messages);

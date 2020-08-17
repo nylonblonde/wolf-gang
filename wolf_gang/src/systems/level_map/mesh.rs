@@ -100,13 +100,9 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                 for i in 0..change.ranges.len() {
 
                     let change = &change.ranges[i];
-
-                    println!("{} - Change: {:?}", map_data.get_chunk_point(), change);
                     
                     let change_aabb = match change {
                         ChangeType::Direct(aabb) | ChangeType::Indirect(aabb) => {
-                            // println!("{} - Change: {:?}, {:?}", map_data.get_chunk_point(), aabb.get_min(), aabb.get_max());
-
                             get_aabb_change_in_range(*aabb, map_data.octree.get_aabb())
                         },
                     };
@@ -958,8 +954,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                     //add the custom_mesh ManuallyChange component to tell it to update the mes
                     entry.add_component(custom_mesh::ManuallyChange{});
 
-                    //remove this module's ManuallyChange component so vertices don't get defined again next frame
-                    // entry.remove_component::<ManuallyChange>();
+                    //remove the worked on changes so vertices don't get defined again next frame
                     if let Ok(manually_change) = entry.get_component_mut::<ManuallyChange>() {
                         manually_change.ranges.retain(|range| {
 
@@ -972,15 +967,6 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                             
                             ret_val
                         });
-
-                        // change.ranges.iter().for_each(|done_range| {
-                        //     for i in 0..manually_change.ranges.len() {
-                        //         if done_range == &manually_change.ranges[i] {
-                        //             manually_change.ranges.remove(i);
-                        //             break;
-                        //         }
-                        //     }
-                        // });
 
                         if manually_change.ranges.len() == 0 {
                             entry.remove_component::<ManuallyChange>();
