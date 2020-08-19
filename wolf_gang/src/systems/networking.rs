@@ -692,10 +692,18 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
         },
         DataType::CreateSelectionBox{client_id: id, coord_pos, aabb} => {
 
-            use crate::systems::selection_box::SelectionBox;
-            use crate::systems::level_map::CoordPos;
+            use crate::systems::{
+                selection_box::SelectionBox,
+                level_map::CoordPos,
+                history::History,
+            };
 
             let entity = crate::systems::selection_box::initialize_selection_box(world, id, None);
+
+            world.push((
+                ClientID::new(id),
+                History::new() 
+             ));
             
             if let Some(mut entry) = world.entry(entity) {
                 if let Ok(pos) = entry.get_component_mut::<CoordPos>() {
