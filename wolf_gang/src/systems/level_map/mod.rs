@@ -14,15 +14,13 @@ use crate::{
     collections::{
         octree,
         octree::{ 
-            Octree, PointData
+            Octree
         }
     },
     systems::{
         custom_mesh,
-        history::{History, IsFromHistory, StepTypes},
-        networking::{
-            ClientID, DataType, MessageSender, MessageType
-        }
+        networking::ClientID,
+        history::{History, StepType},
     },
     node::{NodeName}
 };
@@ -33,7 +31,6 @@ use crate::systems::custom_mesh::MeshData;
 type AABB = crate::geometry::aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
-
 
 ///ChangeType stores the range of the changes so that we can determine whether or not adjacent MapChunks actually need to change, and
 /// the range of the original change for making comparisons
@@ -49,6 +46,16 @@ pub enum ChangeType {
 #[derive(Clone, Debug, PartialEq)]
 struct ManuallyChange{
     ranges: Vec<ChangeType>
+}
+
+/// Message data type for communicating changes over the connection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MapChange {
+    MapInsertion{
+        aabb: AABB,
+        tile_data: crate::systems::level_map::TileData
+    },
+    MapRemoval(AABB),
 }
 
 pub struct TileDimensions {
@@ -81,28 +88,6 @@ pub fn map_coords_to_world(map_coord: Point) -> nalgebra::Vector3<f32> {
     )
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MapChange {
-    octree: Octree<i32, TileData>,
-    // store_history: bool, //TODO: MapChange should not be handling history
-    // ///Whether or not we want to forward the MapChange as a message
-    // send: bool,
-}
-
-impl MapChange {
-    pub fn get_octree(&self) -> &Octree<i32, TileData> {
-        &self.octree
-    }
-
-    pub fn new(octree: Octree<i32, TileData>, store_history: bool, send: bool) -> Self {
-        Self {
-            octree,
-            // store_history,
-            // send,
-        }
-    }
-}
-
 #[derive(Copy, Clone)]
 pub struct Map {
     chunk_dimensions: Point,
@@ -119,23 +104,20 @@ impl Default for Map {
 impl Map {
 
     /// Executes changes to the world map in octree. Takes an optional u32 as a client_id for store_history
-    pub fn change(&self, world: &mut legion::world::World, resources: &mut Resources, octree: Octree<i32, TileData>, store_history: bool) {
+    pub fn change(&self, world: &mut legion::world::World, octree: Octree<i32, TileData>, store_history: Option<u32>) {
 
-        if self.can_change(world, octree.clone()).is_err() {
-            return
-        }
+        match self.can_change(world, octree.clone()) {
+            Err(_) => return,
+            Ok((original_state, new_state)) => {
+                if let Some(client_id) = store_history {
 
-        if store_history {
-            if let Some(client_id) = resources.get::<ClientID>() {
-                world.push(
-                    (MessageSender{
-                        data_type: DataType::MapAddHistory{
-                            client_id: client_id.val(),
-                            aabb: octree.get_aabb()
-                        },
-                        message_type: MessageType::Ordered
-                    },)
-                );
+                    let mut query = <(Write<History>, Read<ClientID>)>::query();
+
+                    if let Some((history, _)) = query.iter_mut(world).filter(|(_, id)| id.val() == client_id).next() {
+                        history.add_step(StepType::MapChange((original_state, new_state)));
+                    }
+                    
+                }
             }
         }
 
@@ -219,6 +201,8 @@ impl Map {
                 }
             }
         }
+
+        
     }
 
     /// Returns AABBs that are subdivided to fit into the constraints of the chunk dimensions, as well as the chunk pt they'd fit in
@@ -270,89 +254,6 @@ impl Map {
             unsafe { crate::node::remove_node(&node_name.0); }
             world.remove(entity);
         }
-    }
-
-    pub fn send_remove(&self, world: &mut legion::world::World, aabb:AABB) -> Result<(), Error> {
-        match self.can_change(world, self.fill_octree_from_aabb(aabb, None)) {
-            Err(err) => return Err(err),
-            _ => {
-                world.push(
-                    (
-                        MessageSender{
-                            data_type: DataType::MapRemoval(aabb),
-                            message_type: MessageType::Ordered
-                        },
-                    )
-                );
-
-                Ok({})
-            }
-        }
-    }
-
-    pub fn remove(&self, world: &mut legion::world::World, resources: &mut Resources, aabb: AABB) -> Result<(), Error> {
-        match self.can_change(world, self.fill_octree_from_aabb(aabb, None)) {
-            Err(err) => return Err(err),
-            Ok(octree) => {
-
-                self.change(world, resources, octree, true);
-                // world.push(
-                //     (
-                //         MapChange {
-                //             octree,
-                //             // store_history: true,
-                //             // send: false
-                //         },
-                //     )
-                // );
-
-                Ok({})
-            }
-        }
-    }
-
-    pub fn send_insert(&self, world: &mut legion::world::World, tile_data: TileData, aabb: AABB) -> Result<(), Error> {
-        
-        match self.can_change(world, self.fill_octree_from_aabb(aabb, Some(tile_data))) {
-            Err(err) => return Err(err),
-            _ => {
-                world.push(
-                    (
-                        MessageSender{
-                            data_type: DataType::MapInsertion{
-                                aabb, tile_data
-                            },
-                            message_type: MessageType::Ordered
-                        },
-                    )
-                );
-                
-                Ok({})
-            }
-        }
-
-    }
-
-    pub fn insert(&self, world: &mut legion::world::World, resources: &mut Resources, tile_data: TileData, aabb: AABB) -> Result<(), Error> {
-        match self.can_change(world, self.fill_octree_from_aabb(aabb, Some(tile_data))) {
-            Err(err) => return Err(err),
-            Ok(octree) => {
-
-                self.change(world, resources, octree, true);
-                // world.push(
-                //     (
-                //         MapChange {
-                //             octree,
-                //             // store_history: true,
-                //             // send: false
-                //         },
-                //     )
-                // );
-
-                Ok({})
-            }
-        }
-        
     }
 
     /// Does a query range on every chunk that fits within the range
@@ -442,39 +343,8 @@ impl Map {
         }
     }
 
-    fn fill_octree_from_aabb(&self, aabb: AABB, tile_data: Option<TileData>) -> Octree<i32, TileData> {
-        let mut octree = Octree::new(aabb, octree::DEFAULT_MAX);
-
-        let min = aabb.get_min();
-
-        let dimensions = aabb.dimensions.abs();
-
-        let volume = dimensions.x * dimensions.y * dimensions.z;
-
-        let (tx, rx) = mpsc::channel::<TileData>();
-
-        if let Some(tile_data) = tile_data {
-            (0..volume).into_par_iter().for_each_with(tx, move |tx, i| {
-                let x = min.x + i % dimensions.x;
-                let y = min.y + (i / dimensions.x) % dimensions.y;
-                let z = min.z + i / (dimensions.x * dimensions.y);
-
-                tx.send(TileData {
-                    point: Point::new(x,y,z),
-                    ..tile_data
-                }).unwrap();
-            });
-        }
-
-        rx.try_iter().for_each(|item| {
-            octree.insert(item).ok();
-        });
-
-        octree
-
-    }
-
-    pub fn can_change(&self, world: &mut World, octree: Octree<i32, TileData>) -> Result<Octree<i32, TileData>, Error> {
+    /// Returns two octrees: the original state of the map that it compared against on the left, and the new octree input on the right
+    pub fn can_change(&self, world: &mut World, octree: Octree<i32, TileData>) -> Result<(Octree<i32, TileData>, Octree<i32, TileData>), Error> {
 
         let aabb = octree.get_aabb();
 
@@ -491,11 +361,11 @@ impl Map {
             existing_octree.insert(tile_data).ok();
         });
 
-        if existing_octree.into_iter().collect::<HashSet<TileData>>().symmetric_difference(&octree.clone().into_iter().collect::<HashSet<TileData>>()).count() == 0 {
+        if existing_octree.clone().into_iter().collect::<HashSet<TileData>>().symmetric_difference(&octree.clone().into_iter().collect::<HashSet<TileData>>()).count() == 0 {
             return Err(Error::new(ErrorKind::AlreadyExists, "There is no symmetric difference between existing data and insertion"));
         }
 
-        Ok(octree)
+        Ok((existing_octree, octree))
     }
 }
 
@@ -546,166 +416,34 @@ impl crate::collections::octree::PointData<i32> for TileData {
     }
 }
 
-// /// Takes map changes, determines if they should be added to history (no duplicates), and creates a message if it should
-// pub fn create_map_change_system() -> impl systems::Runnable {
-//     SystemBuilder::new("map_input_system")
-//         // .write_resource::<History>()
-//         .read_resource::<ClientID>()
-//         .read_resource::<Map>()
-//         .read_component::<IsFromHistory>()
-//         .with_query(<(Entity, Read<MapChange>)>::query())
-//         .with_query(<(Entity, Read<MapChunkData>, Read<Point>)>::query())
-//         // .with_query(<(Write<History>, Read<ClientID>)>::query())
-//         .build(|commands, world, (client_id, map), queries| {
+pub fn fill_octree_from_aabb(aabb: AABB, tile_data: Option<TileData>) -> Octree<i32, TileData> {
+    let mut octree = Octree::new(aabb, octree::DEFAULT_MAX);
 
-//             let (map_change_query, map_data_query) = queries;
+    let min = aabb.get_min();
 
-//             let map_changes = map_change_query.iter(world)
-//                 .map(|(entity, map_change)| (*entity, (*map_change).clone()))
-//                 .collect::<Vec<(Entity, MapChange)>>();
+    let dimensions = aabb.dimensions.abs();
 
-//             let map_datas = map_data_query.iter(world)
-//                 .map(|(entity, map_data, pt)| (*entity, (*map_data).clone(), *pt))
-//                 .collect::<Vec<(Entity, MapChunkData, Point)>>();
+    let volume = dimensions.x * dimensions.y * dimensions.z;
 
-//             let mut map_messages: Vec<(MessageSender,)> = Vec::new();
-//             let mut octrees = Vec::new();
+    let (tx, rx) = mpsc::channel::<TileData>();
 
-//             map_changes.into_iter().for_each(|(entity, map_change)| {
-//                 commands.remove(entity);
+    if let Some(tile_data) = tile_data {
+        (0..volume).into_par_iter().for_each_with(tx, move |tx, i| {
+            let x = min.x + i % dimensions.x;
+            let y = min.y + (i / dimensions.x) % dimensions.y;
+            let z = min.z + i / (dimensions.x * dimensions.y);
 
-//                 let aabb = map_change.octree.get_aabb();
+            tx.send(TileData {
+                point: Point::new(x,y,z),
+                ..tile_data
+            }).unwrap();
+        });
+    }
 
-//                 let query_range = map.query_chunk_range(map_datas.clone(), aabb);
+    rx.try_iter().for_each(|item| {
+        octree.insert(item).ok();
+    });
 
-//                 let input_set = map_change.octree.clone().into_iter().collect::<HashSet<TileData>>();
+    octree
 
-//                 //If there is no difference between the input and what is already in the map, just return
-//                 if input_set.symmetric_difference(&query_range.clone().into_iter().collect::<HashSet<TileData>>()).count() == 0 {
-//                     return {}
-//                 }
-
-//                 if let Some(entry) = world.entry_ref(entity) {
-
-//                     // Only add to history if this entity does not contain an IsFromHistory component
-//                     if entry.get_component::<IsFromHistory>().is_err() {
-
-//                     // if let Some((history, _)) = history_query.iter_mut(world).filter(|(_, id)| id.val() == client_id.val() ).next() {
-//                     //     let mut original_state: Octree<i32, TileData> = Octree::new(map_change.octree.get_aabb(), octree::DEFAULT_MAX);
-
-//                     //     for item in query_range {
-//                     //         original_state.insert(item).unwrap();
-//                     //     }
-
-//                         // history.add_step(StepTypes::MapChange(
-//                         //     (
-//                         //         MapChange{ 
-//                         //             octree: original_state,
-//                         //             // store_history: false,
-//                         //             // send: true
-//                         //         },
-//                         //         MapChange{
-//                         //             octree: map_change.octree.clone(),
-//                         //             // store_history: false,
-//                         //             // send: true
-//                         //         }
-//                         //     )
-//                         // ));
-//                     // }                    
-                        
-//                     }
-
-//                     map_messages.push(
-//                         (
-//                             MessageSender {
-//                                 data_type: DataType::MapAddHistory{
-//                                     aabb,
-//                                     client_id: client_id.val()
-//                                 },
-//                                 message_type: MessageType::Ordered,
-//                             },
-//                         )
-//                     );
-
-//                     octrees.push(map_change.octree.clone());
-
-//                 }
-
-
-//                 // let input_as_chunks = map.range_sliced_to_chunks(input_aabb);
-//                 // let num_affected_cols: i32 = input_as_chunks.iter().map(|(_, aabb)| aabb.dimensions.x * aabb.dimensions.z).sum();
-                
-//                 // if map_input.send {
-//                 //     // If we'd have to update more columns than a single chunk would have, let's split that up, otherwise just send the whole map input
-//                 //     if num_affected_cols > map.chunk_dimensions.x * map.chunk_dimensions.z {
-            
-//                 //         input_as_chunks.iter().for_each(|(point, aabb)| {
-            
-//                 //             // let octree = map_input.octree.query_range(*aabb).into_iter().collect::<Octree<i32, TileData>>();
-//                 //             let mut octree = Octree::new(*aabb, octree::DEFAULT_MAX);
-
-//                 //             input_set.iter().for_each(|tile_data| {
-//                 //                 if octree.get_aabb().contains_point(tile_data.get_point()) {
-//                 //                     octree.insert(*tile_data).unwrap();
-//                 //                 }
-//                 //             });
-                            
-//                 //             // Check if there is an existing chunk at the point, and if there is, return if there is no symmetric difference as there's no need to update
-//                 //             if let Some(existing_chunk) = map_datas.clone().into_iter()
-//                 //                 .filter(|(_,_,pt)| **pt == *point)
-//                 //                 .map(|(_, map_data, _)| map_data)
-//                 //                 .next() 
-//                 //             {
-            
-//                 //                 let slice_of_chunk = existing_chunk.octree.query_range(*aabb).into_iter().collect::<HashSet<TileData>>();
-            
-//                 //                 if octree.clone().into_iter().collect::<HashSet<TileData>>().symmetric_difference(&slice_of_chunk).count() == 0 {
-//                 //                     return {}
-//                 //                 }
-//                 //             }
-            
-//                 //             if map_input.send {
-//                 //                 map_messages.push((networking::MessageSender{
-//                 //                     data_type: networking::DataType::MapChange(
-//                 //                         octree
-//                 //                     ),
-//                 //                     message_type: networking::MessageType::Ordered
-//                 //                 },));
-//                 //             } 
-                            
-//                 //         });
-            
-//                 //     } else {
-            
-//                 //         if map_input.send {
-//                 //             map_messages.push((networking::MessageSender{
-//                 //                 data_type: networking::DataType::MapChange(map_input.octree.clone()),
-//                 //                 message_type: networking::MessageType::Ordered
-//                 //             },));
-//                 //         } 
-                        
-//                 //     } 
-//                 // } else {
-
-//                 //     let map = **map;
-//                 //     let octree = map_input.octree.clone();
-
-//                 //     commands.exec_mut(move |world| {
-//                 //         map.change(world, octree.clone());    
-//                 //     });
-//                 // }
-        
-//             });
-
-
-//             let map = **map;
-
-//             commands.exec_mut(move |world| {
-//                 octrees.clone().into_iter().for_each(|octree| {
-//                     map.change(world, octree);
-//                 });
-//             });
-
-//             commands.extend(map_messages);
-//         })
-// }
+}

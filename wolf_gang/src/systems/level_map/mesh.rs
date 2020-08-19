@@ -909,7 +909,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                                 let map_aabb = map_data.octree.get_aabb();
 
                                 //only update if it's adjacent to the changes
-                                if map_aabb.intersects_bounds(*aabb) {
+                                if aabb.intersects_bounds(map_aabb) {
                                     let aabb = aabb.get_intersection(map_aabb);
 
                                     to_change_tx.send((entity, ChangeType::Indirect(aabb))).unwrap();
@@ -928,7 +928,6 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                             if let ChangeType::Indirect(change_aabb) = change {
 
-                                // let change_aabb = change_aabb.get_intersection(map_aabb);
                                 let mut push = true;
                                 for component_change in &manually_change.ranges {
                                     match component_change {

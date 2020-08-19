@@ -161,14 +161,10 @@ pub enum  DataType {
         aabb: AABB
     },
     MapInput(crate::collections::octree::Octree<i32, crate::systems::level_map::TileData>),
-    MapInsertion{
-        aabb: AABB,
-        tile_data: crate::systems::level_map::TileData
-    },
-    MapRemoval(AABB),
-    MapAddHistory{
-        aabb: AABB,
-        client_id: u32,
+    ///Handles changes to map like insertion, removal, cutting, pasting, takes an optional u32 as store_history to store the change in the history for that client_id if need be
+    MapChange{
+        change: crate::systems::level_map::MapChange,
+        store_history: Option<u32>
     },
     HistoryStep{
         amount: i32,
@@ -638,60 +634,40 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
     match data {
         DataType::MapInput(r) => {
             if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
-                map.change(world, resources, r, false);
-            }
-        },  
-        DataType::MapInsertion{ aabb, tile_data } => {
-            if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
-                map.insert(world, resources, tile_data, aabb).ok();
+                map.change(world, r, None);
             }
         },
-        DataType::MapRemoval(aabb) => {
-            if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
-                map.remove(world, resources, aabb).ok();
-            }
-        },
-        DataType::MapAddHistory{ aabb, client_id } => {
+        DataType::MapChange{ change, store_history } => {
 
-            use crate::{
-                collections::{
-                    octree,
-                    octree::Octree
-                },
-                systems::{
-                    history::History,
-                    level_map::{ Map, MapChunkData, TileData }
-                }
+            use crate::systems::{
+                level_map,
+                level_map::MapChange
             };
 
-            if let Some(map) = resources.get::<Map>().map(|map| *map) {
+            if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
 
-                let mut query = <(Entity, Read<MapChunkData>, Read<Point>)>::query();
-                let map_datas = query.iter(world)
-                    .map(|(entity, map_data, pt)| (*entity, (*map_data).clone(), *pt))
-                    .collect::<Vec<(Entity, MapChunkData, Point)>>();
-
-                let mut query = <(Write<History>, Read<ClientID>)>::query();
-                query.iter_mut(world).filter(|(_, id)| id.val() == client_id ).for_each(|(history, _)| {
-                    
-                    // This is the changed value, original should be set when the insert_send is called
-                    let mut octree: Octree<i32, TileData> = Octree::new(aabb, octree::DEFAULT_MAX);
-
-                    let tiles = map.query_chunk_range(map_datas.clone(), aabb);
-
-                    tiles.into_iter().for_each(|tile| {
-                        octree.insert(tile).ok();
-                    })
-
-
-                });
+                match change {
+                    MapChange::MapInsertion { aabb, tile_data } => {
+                        map.change(world, level_map::fill_octree_from_aabb(aabb, Some(tile_data)), store_history);
+                    },
+                    MapChange::MapRemoval(aabb) => {
+                        map.change(world, level_map::fill_octree_from_aabb(aabb, None), store_history)
+                    }
+                }
 
             }
-
         },
         DataType::HistoryStep{ amount, client_id } => {
+            let mut query = <(Write<crate::systems::history::History>, Read<ClientID>)>::query();
 
-        }
+            let mut commands = legion::systems::CommandBuffer::new(world);
+
+            if let Some((history, _)) = query.iter_mut(world).filter(|(_, id)| id.val() == client_id).next() {
+                history.move_by_step(&mut commands, resources, amount);
+            }
+
+            commands.flush(world);
+        },
         DataType::UpdateSelectionBounds{client_id: id, coord_pos, aabb} => {
 
             use crate::systems::selection_box::UpdateBounds;

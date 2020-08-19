@@ -8,7 +8,7 @@ use crate::{
         input::{
             InputActionComponent, Action
         },
-        level_map::TileData,
+        level_map::{Map, TileData,},
         networking::{ 
             ClientID, DataType, MessageSender, MessageType
         },
@@ -16,16 +16,15 @@ use crate::{
     Time
 };
 
-pub enum StepTypes {
-    MapChange(Octree<i32, TileData>)
-}
+use std::io::{ Error, ErrorKind };
 
-/// This component is basically used as a flag to keep track of whether or not a change came from the history, thus blocking the change from being written to history when handled by its system.
-pub struct IsFromHistory{}
+pub enum StepType {
+    MapChange((Octree<i32, TileData>, Octree<i32, TileData>))
+}
 
 /// Resource which holds chnages as a VecDeque
 pub struct History {
-    history: VecDeque<StepTypes>,
+    history: VecDeque<StepType>,
     current_step: i32,
     previous_amount: i32,
 }
@@ -39,7 +38,7 @@ impl History {
         }
     }
 
-    pub fn add_step(&mut self, step: StepTypes) {
+    pub fn add_step(&mut self, step: StepType) {
 
         //if there is a history beyond this step, wipe it out
         if self.current_step > -1 && self.history.len() as i32 > self.current_step {
@@ -54,55 +53,51 @@ impl History {
     }
 
     /// Moves forward or backward in history by the given amount
-    pub fn move_by_step(&mut self, buffer: &mut systems::CommandBuffer, amount: i32) {
+    pub fn move_by_step(&mut self, commands: &mut legion::systems::CommandBuffer, resources: &mut Resources, amount: i32) {
 
-        // let mut next_step = self.current_step as i32 + amount;
+        if let Ok((step, next_step)) = self.determine_move(amount) {
+            match step {
+                StepType::MapChange((undo_map, redo_map)) => {
+                    if let Some(map) = resources.get::<Map>().map(|map| *map) {
+                        let octree = if amount > 0 { redo_map.clone() } else { undo_map.clone() };
 
-        // //since current_step was determined by the previous step, make an adjustment if we've actually changed direction in the history this time
-        // if num::signum(amount) != num::signum(self.previous_amount) {
-        //     next_step -= amount;
-        // }
+                        commands.exec_mut(move |world| {
+                            map.change(world, octree.clone(), None);
+                        })
+                    }
+                }
+            }
 
-        // let step: Option<&StepTypes> = if next_step > -1 && next_step < self.history.len() as i32 {
-        //     Some(&self.history[next_step as usize])
-        // } else if next_step < 0 {
-        //     Some(&self.history[0])
-        // } else if next_step > self.history.len() as i32 -1 {
-        //     Some(&self.history[self.history.len()-1])
-        // } else {
-        //     None
-        // };
+            self.current_step = std::cmp::max(-1, std::cmp::min(self.history.len() as i32, next_step));
+            self.previous_amount = amount;
+        }
+    }
 
-        // if let Some(step) = step {
-        //     match step {
-        //         StepTypes::MapChange((undo_map, redo_map)) => {
-        //             let map_input = if amount > 0 { redo_map } else { undo_map };
+    fn determine_move<'a>(&'a self, amount: i32) -> Result<(&'a StepType, i32), Error> {
+        let mut next_step = self.current_step as i32 + amount;
 
-        //             buffer.push(
-        //                 (
-        //                     (*map_input).clone(),
-        //                     IsFromHistory{}
-        //                 )
-        //             );
-        //         }
-        //     }
-        // }
+        //since current_step was determined by the previous step, make an adjustment if we've actually changed direction in the history this time
+        if num::signum(amount) != num::signum(self.previous_amount) {
+            next_step -= amount;
+        }
 
-        // self.current_step = std::cmp::max(-1, std::cmp::min(self.history.len() as i32, next_step));
-        // self.previous_amount = amount;
-
+        if next_step > -1 && next_step < self.history.len() as i32 {
+            Ok(
+                (&self.history[next_step as usize], next_step)
+            )
+        } else {
+            Err(Error::new(ErrorKind::NotFound, ""))
+        }
     }
 
     /// If there are steps further back than the current step
-    pub fn can_undo (&self) -> bool {
-
-        //todo: need a better way of checking in undos can be done - since the oldest undo is technically at index 0
-        self.current_step > 0 && self.history.len() > 0
+    pub fn can_undo<'a>(&'a self) -> Result<&'a StepType, Error>  {
+        self.determine_move(-1).map(|(x, _)| x)
     }
 
     /// If there are steps ahead of the current step
-    pub fn can_redo(&self) -> bool {
-        self.history.len() > 0 && self.current_step < self.history.len() as i32 - 1
+    pub fn can_redo<'a>(&'a self) -> Result<&'a StepType, Error> {
+        self.determine_move(1).map(|(x, _)| x)
     }
 }
 
@@ -112,7 +107,7 @@ pub fn send_move_by_step(commands: &mut legion::systems::CommandBuffer, client_i
             MessageSender{
                 data_type: DataType::HistoryStep{
                     client_id: client_id,
-                    amount: 1
+                    amount
                 },
                 message_type: MessageType::Ordered
             },

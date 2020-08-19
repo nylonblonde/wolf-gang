@@ -10,7 +10,8 @@ use super::utils;
 
 use crate::{
     systems::{
-        history::History
+        history::History,
+        networking::ClientID,
     }
 };
 
@@ -45,17 +46,21 @@ impl EditMenu {
             self.popup_menu.assume_safe().set_item_disabled(1, true);
         }
         
+        let world_lock = crate::WolfGang::get_world().unwrap();
+        let world = &mut world_lock.write().unwrap();
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.borrow_mut();
 
-        let history = resources.get::<History>().expect("Couldn't retrieve the History resource");
+        if let Some(client_id) = resources.get::<ClientID>().map(|client_id| client_id.val()) {
+            let mut query = <(Read<History>, Read<ClientID>)>::query();
 
-        let popup_menu = unsafe { self.popup_menu.assume_safe() };
+            if let Some((history, _)) = query.iter(&mut **world).filter(|(_, id)| id.val() == client_id).next() {
+                let popup_menu = unsafe { self.popup_menu.assume_safe() };
+                popup_menu.set_item_disabled(0,!history.can_undo().is_ok());
 
-        popup_menu.set_item_disabled(0,!history.can_undo());
-
-        popup_menu.set_item_disabled(1,!history.can_redo());
-
+                popup_menu.set_item_disabled(1,!history.can_redo().is_ok());
+            }
+        }
     }
 
     #[export]
@@ -66,21 +71,25 @@ impl EditMenu {
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.borrow_mut();
 
-        let mut history = resources.get_mut::<History>().expect("Couldn't retrieve History resource!");
+        if let Some(client_id) = resources.get::<ClientID>().map(|client_id| client_id.val()) {
+            let mut query = <(Write<History>, Read<ClientID>)>::query();
 
-        let mut command_buffer = systems::CommandBuffer::new(world);
+            let mut commands = legion::systems::CommandBuffer::new(world);
 
-        match id {
-            0 => { //undo
-                history.move_by_step(&mut command_buffer, -1);
-            },
-            1 => { //redo
-                history.move_by_step(&mut command_buffer, 1);
-            },
-            _ => {}
+            if let Some((history, _)) = query.iter_mut(&mut **world).filter(|(_, id)| id.val() == client_id).next() {
+                match id {
+                    0 => { //undo
+                        history.move_by_step(&mut commands, resources, -1);
+                    },
+                    1 => { //redo
+                        history.move_by_step(&mut commands, resources, 1);
+                    },
+                    _ => {}
+                }
+            }
+
+            commands.flush(world);
         }
-
-        command_buffer.flush(world);
             
     }   
 }

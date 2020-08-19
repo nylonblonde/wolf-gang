@@ -14,7 +14,6 @@ use crate::{
         custom_mesh,
         transform,
         input,
-        history::History,
         level_map,
         networking::{ClientID, DataType, MessageSender, MessageType},
     }
@@ -366,9 +365,6 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
 
             let (selection_box_query, selection_box_moved_query, input_query) = queries;
 
-            let mut to_insert: Option<AABB> = None;
-            let mut to_remove: Option<AABB> = None;
-
             for (input_component, action) in input_query.iter(world).filter(|(_,a)|
                 *a == &insertion ||
                 *a == &removal
@@ -381,30 +377,54 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
                     || (input_component.is_held() && moved) 
                     {
                         if action == &insertion {
-                            godot_print!("Pressed insertion at {:?}!", coord_pos.value);
+                            let map = **map;
+                            let client_id = client_id.val();
+                            let aabb = AABB::new(coord_pos.value, selection_box.aabb.dimensions);
 
-                            to_insert = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
+                            commands.exec_mut(move |world|{
+                
+                                let tile_data = level_map::TileData::new(Point::zeros());
+            
+                                if let Ok(_) = map.can_change(world, level_map::fill_octree_from_aabb(aabb, Some(tile_data))) {
+                                    world.push(
+                                        (
+                                            MessageSender{
+                                                data_type: DataType::MapChange{
+                                                    store_history: Some(client_id),
+                                                    change: level_map::MapChange::MapInsertion{ aabb, tile_data },                               
+                                                },
+                                                message_type: MessageType::Ordered
+                                            },
+                                        ),                  
+                                    );
+                                }
+                            });
+
                         } else if action == &removal {
-                            godot_print!("Pressed removal at {:?}!", coord_pos.value);
+                            let map = **map;
+                            let client_id = client_id.val();
+                            let aabb = AABB::new(coord_pos.value, selection_box.aabb.dimensions);
 
-                            to_remove = Some(AABB::new(coord_pos.value, selection_box.aabb.dimensions));
+                            commands.exec_mut(move |world|{
+                                if let Ok(_) = map.can_change(world, level_map::fill_octree_from_aabb(aabb, None)) {
+                                    world.push(
+                                        (
+                                            MessageSender{
+                                                data_type: DataType::MapChange{
+                                                    store_history: Some(client_id),
+                                                    change: level_map::MapChange::MapRemoval(aabb),                               
+                                                },
+                                                message_type: MessageType::Ordered
+                                            },
+                                        ),                  
+                                    );
+                                }
+                            });
                         }
                         
                     }
                 })
             }
-
-            let map = **map;
-
-            commands.exec_mut(move |world|{
-                if let Some(r) = to_insert {
-                    map.send_insert(world, level_map::TileData::new(Point::zeros()), r).ok();
-                }
-        
-                if let Some(r) = to_remove {
-                    map.send_remove(world, r).ok();
-                }
-            });
         })
 }
 
