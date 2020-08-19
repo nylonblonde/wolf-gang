@@ -82,6 +82,7 @@ impl History {
             next_step -= amount;
         }
 
+        //Just so I don't try and clean this up again, we do the seemingly redundant range checks because next_step can be -1 and will cause a panic if converted to usize
         if next_step > -1 && next_step < self.history.len() as i32 {
             Ok(
                 (&self.history[next_step as usize], next_step)
