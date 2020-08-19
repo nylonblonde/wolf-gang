@@ -79,11 +79,34 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
             .map(|(entity, map_data, point)| (*entity, (*map_data).clone(), *point))
             .collect::<Vec<(Entity, MapChunkData, Point)>>();
 
-        let entities = changed_query.iter(world)
+        let mut entities = changed_query.iter(world)
             .map(|(entity, map_data, change)| (*entity, (*map_data).clone(), (*change).clone()))
             .collect::<Vec<(Entity, MapChunkData, ManuallyChange)>>();
 
         let (map_mesh_tx, map_mesh_rx) = mpsc::channel::<(Entity, HashMap<usize, VertexData>)>();
+        
+        // Cycle through all of our entities, checking if the work would be more than an entire full chunk,
+        // keep popping entities until it isn't.
+        //TODO: This causes each entity to be recalculated, need to come up with a way to inform the other entities to ignore these ones when
+        // adding indirect changes
+        if let Some(map) = resources.get::<Map>() {
+
+            let chunk_volume = map.chunk_dimensions.x * map.chunk_dimensions.y * map.chunk_dimensions.z;
+
+            loop {
+                let combined_volume: i32 = entities.par_iter_mut().map(|(_, map_data, _)| {
+                    let dimensions = map_data.octree.get_aabb().dimensions;
+                    dimensions.x * dimensions.y * dimensions.z
+                }).sum();
+
+                if combined_volume > chunk_volume {
+                    entities.pop();
+                } else {
+                    break;
+                }
+            }
+
+        }
 
         entities.par_iter().for_each_with(map_mesh_tx, |map_mesh_tx, (entity, map_data, change)| {
 
@@ -949,7 +972,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
         entities.into_iter().for_each(|(entity, _, change)| {
             if let Some(mut entry) = world.entry(entity) {
-                //add the custom_mesh ManuallyChange component to tell it to update the mes
+                //add the custom_mesh ManuallyChange component to tell it to update the mesh
                 entry.add_component(custom_mesh::ManuallyChange{});
 
                 //remove the worked on changes so vertices don't get defined again next frame
