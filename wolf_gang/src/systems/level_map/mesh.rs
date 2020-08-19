@@ -95,8 +95,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
             loop {
                 let combined_volume: i32 = entities.par_iter_mut().map(|(_, map_data, _)| {
-                    let dimensions = map_data.octree.get_aabb().dimensions;
-                    dimensions.x * dimensions.y * dimensions.z
+                    map_data.octree.count() as i32
                 }).sum();
 
                 if combined_volume > chunk_volume {
