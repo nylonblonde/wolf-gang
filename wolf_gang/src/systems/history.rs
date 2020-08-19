@@ -41,13 +41,14 @@ impl History {
     pub fn add_step(&mut self, step: StepType) {
 
         //if there is a history beyond this step, wipe it out
-        if self.current_step > -1 && self.history.len() as i32 > self.current_step {
+        if self.current_step > -1 && self.history.len() as i32 > self.current_step + 1 {
             //this will always be shrinking so the generator is unreachable - there's nothing to generate
             self.history.resize_with(self.current_step as usize, || unreachable!());
         }
 
         self.history.push_back(step);
         self.current_step = self.history.len() as i32;
+        self.previous_amount = -1;
 
         println!("Current step is {}", self.current_step);
     }
@@ -68,7 +69,7 @@ impl History {
                 }
             }
 
-            self.current_step = std::cmp::max(-1, std::cmp::min(self.history.len() as i32, next_step));
+            self.current_step = std::cmp::max(0, std::cmp::min(self.history.len() as i32 - 1, next_step));
             self.previous_amount = amount;
         }
     }
