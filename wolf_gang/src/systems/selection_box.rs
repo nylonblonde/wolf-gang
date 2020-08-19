@@ -14,6 +14,7 @@ use crate::{
         custom_mesh,
         transform,
         input,
+        history::History,
         level_map,
         networking::{ClientID, DataType, MessageSender, MessageType},
     }
@@ -397,11 +398,11 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
 
             commands.exec_mut(move |world|{
                 if let Some(r) = to_insert {
-                    map.insert(world, level_map::TileData::new(Point::zeros()), r);
+                    map.send_insert(world, level_map::TileData::new(Point::zeros()), r).ok();
                 }
         
                 if let Some(r) = to_remove {
-                    map.remove(world, r);
+                    map.send_remove(world, r).ok();
                 }
             });
         })

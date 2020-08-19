@@ -103,6 +103,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                     
                     let change_aabb = match change {
                         ChangeType::Direct(aabb) | ChangeType::Indirect(aabb) => {
+                            println!("Change is {:?}", change);
                             get_aabb_change_in_range(*aabb, map_data.octree.get_aabb())
                         },
                     };
@@ -885,7 +886,9 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
             if let Some(map) = resources.get::<Map>() {
 
-                entities.par_iter().for_each_with(to_change_tx, |to_change_tx, (_, _, change)| {
+                entities.par_iter().for_each_with(to_change_tx, |to_change_tx, (_, map_data, change)| {
+
+                    let chunk_pt = map_data.get_chunk_point();
 
                     change.ranges.iter().for_each(|change| {
                             
@@ -897,19 +900,19 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                             let max = aabb.get_max();
 
                             // grab a region below to ensure updates to lower adjacent chunks happen (for the edge lip texture, for instance)
-                            // grab adjacent horizontal spaces because we'd want to update edges that become connected or disconnected
-                            let aabb = AABB::from_extents(min - Point::new(1,5,1), max + Point::new(1,1,1));
+                            let extended_aabb = AABB::from_extents(min - Point::new(1,5,1), max);
 
-                            let neighbors = map.chunks_in_range(map_datas.iter().map(|(entity, map_data, pt)| (entity, map_data, pt)), aabb);
+                            let neighbors = map.chunks_in_range(map_datas.clone(), extended_aabb);
 
-                            neighbors.into_iter().for_each(|(entity, map_data)| {
+                            neighbors.into_iter().filter(|(_, neighbor_data)| neighbor_data.get_chunk_point() != chunk_pt).for_each(|(entity, map_data)| {
                                 
                                 let map_aabb = map_data.octree.get_aabb();
 
                                 //only update if it's adjacent to the changes
-                                if map_aabb.intersects_bounds(aabb) {
-                                    let aabb = map_aabb.get_intersection(aabb);
-                                    to_change_tx.send((*entity, ChangeType::Indirect(aabb))).unwrap();
+                                if map_aabb.intersects_bounds(*aabb) {
+                                    let aabb = aabb.get_intersection(map_aabb);
+
+                                    to_change_tx.send((entity, ChangeType::Indirect(aabb))).unwrap();
                                 }
                             });
                         }
@@ -924,10 +927,13 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                         Ok(manually_change) => { 
 
                             if let ChangeType::Indirect(change_aabb) = change {
+
+                                // let change_aabb = change_aabb.get_intersection(map_aabb);
                                 let mut push = true;
                                 for component_change in &manually_change.ranges {
                                     match component_change {
                                         ChangeType::Direct(range) | ChangeType::Indirect(range) => {
+
                                             // If the change is the same as another change that has already been processed, forget it
                                             if change_aabb.get_intersection(*range) == change_aabb {
                                                 push = false;

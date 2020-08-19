@@ -160,7 +160,20 @@ pub enum  DataType {
         coord_pos: Point,
         aabb: AABB
     },
-    MapInput(crate::systems::level_map::MapInput),
+    MapInput(crate::collections::octree::Octree<i32, crate::systems::level_map::TileData>),
+    MapInsertion{
+        aabb: AABB,
+        tile_data: crate::systems::level_map::TileData
+    },
+    MapRemoval(AABB),
+    MapAddHistory{
+        aabb: AABB,
+        client_id: u32,
+    },
+    HistoryStep{
+        amount: i32,
+        client_id: u32,
+    },
     /// Handles movement and expansion of selection boxes since the selection box moves when expanded anyway
     UpdateSelectionBounds{
         client_id: u32,
@@ -624,10 +637,61 @@ fn client_handle_fragments(
 fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resources) {
     match data {
         DataType::MapInput(r) => {
-            if let Some(map) = resources.get::<crate::systems::level_map::Map>() {
-                map.change(world, r.get_octree())
+            if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
+                map.change(world, resources, r, false);
             }
         },  
+        DataType::MapInsertion{ aabb, tile_data } => {
+            if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
+                map.insert(world, resources, tile_data, aabb).ok();
+            }
+        },
+        DataType::MapRemoval(aabb) => {
+            if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
+                map.remove(world, resources, aabb).ok();
+            }
+        },
+        DataType::MapAddHistory{ aabb, client_id } => {
+
+            use crate::{
+                collections::{
+                    octree,
+                    octree::Octree
+                },
+                systems::{
+                    history::History,
+                    level_map::{ Map, MapChunkData, TileData }
+                }
+            };
+
+            if let Some(map) = resources.get::<Map>().map(|map| *map) {
+
+                let mut query = <(Entity, Read<MapChunkData>, Read<Point>)>::query();
+                let map_datas = query.iter(world)
+                    .map(|(entity, map_data, pt)| (*entity, (*map_data).clone(), *pt))
+                    .collect::<Vec<(Entity, MapChunkData, Point)>>();
+
+                let mut query = <(Write<History>, Read<ClientID>)>::query();
+                query.iter_mut(world).filter(|(_, id)| id.val() == client_id ).for_each(|(history, _)| {
+                    
+                    // This is the changed value, original should be set when the insert_send is called
+                    let mut octree: Octree<i32, TileData> = Octree::new(aabb, octree::DEFAULT_MAX);
+
+                    let tiles = map.query_chunk_range(map_datas.clone(), aabb);
+
+                    tiles.into_iter().for_each(|tile| {
+                        octree.insert(tile).ok();
+                    })
+
+
+                });
+
+            }
+
+        },
+        DataType::HistoryStep{ amount, client_id } => {
+
+        }
         DataType::UpdateSelectionBounds{client_id: id, coord_pos, aabb} => {
 
             use crate::systems::selection_box::UpdateBounds;

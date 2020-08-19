@@ -177,14 +177,13 @@ impl WolfGang {
                         .add_system(systems::level_map::mesh::create_add_components_system())
                         .flush()
                         .add_thread_local_fn(systems::level_map::mesh::create_drawing_system())
-                        // .flush() //need to flush before drawing custom meshes
                         
                         .add_thread_local(systems::custom_mesh::create_draw_system())
 
                         .add_thread_local(systems::transform::rotation::create_system())
                         .add_thread_local(systems::transform::position::create_system())
                         
-                        .add_system(systems::level_map::create_map_input_system())
+                        // .add_system(systems::level_map::create_map_change_system())
                         .add_system(systems::history::create_history_input_system())
 
                         .build(),

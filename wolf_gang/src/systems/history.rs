@@ -3,17 +3,21 @@ use std::collections::VecDeque;
 use legion::*;
 
 use crate::{
+    collections::octree::Octree,
     systems::{ 
         input::{
             InputActionComponent, Action
         },
-        level_map::MapInput,
+        level_map::TileData,
+        networking::{ 
+            ClientID, DataType, MessageSender, MessageType
+        },
     },
     Time
 };
 
 pub enum StepTypes {
-    MapInput((MapInput, MapInput))
+    MapChange(Octree<i32, TileData>)
 }
 
 /// This component is basically used as a flag to keep track of whether or not a change came from the history, thus blocking the change from being written to history when handled by its system.
@@ -52,40 +56,40 @@ impl History {
     /// Moves forward or backward in history by the given amount
     pub fn move_by_step(&mut self, buffer: &mut systems::CommandBuffer, amount: i32) {
 
-        let mut next_step = self.current_step as i32 + amount;
+        // let mut next_step = self.current_step as i32 + amount;
 
-        //since current_step was determined by the previous step, make an adjustment if we've actually changed direction in the history this time
-        if num::signum(amount) != num::signum(self.previous_amount) {
-            next_step -= amount;
-        }
+        // //since current_step was determined by the previous step, make an adjustment if we've actually changed direction in the history this time
+        // if num::signum(amount) != num::signum(self.previous_amount) {
+        //     next_step -= amount;
+        // }
 
-        let step: Option<&StepTypes> = if next_step > -1 && next_step < self.history.len() as i32 {
-            Some(&self.history[next_step as usize])
-        } else if next_step < 0 {
-            Some(&self.history[0])
-        } else if next_step > self.history.len() as i32 -1 {
-            Some(&self.history[self.history.len()-1])
-        } else {
-            None
-        };
+        // let step: Option<&StepTypes> = if next_step > -1 && next_step < self.history.len() as i32 {
+        //     Some(&self.history[next_step as usize])
+        // } else if next_step < 0 {
+        //     Some(&self.history[0])
+        // } else if next_step > self.history.len() as i32 -1 {
+        //     Some(&self.history[self.history.len()-1])
+        // } else {
+        //     None
+        // };
 
-        if let Some(step) = step {
-            match step {
-                StepTypes::MapInput((undo_map, redo_map)) => {
-                    let map_input = if amount > 0 { redo_map } else { undo_map };
+        // if let Some(step) = step {
+        //     match step {
+        //         StepTypes::MapChange((undo_map, redo_map)) => {
+        //             let map_input = if amount > 0 { redo_map } else { undo_map };
 
-                    buffer.push(
-                        (
-                            (*map_input).clone(),
-                            IsFromHistory{}
-                        )
-                    );
-                }
-            }
-        }
+        //             buffer.push(
+        //                 (
+        //                     (*map_input).clone(),
+        //                     IsFromHistory{}
+        //                 )
+        //             );
+        //         }
+        //     }
+        // }
 
-        self.current_step = std::cmp::max(-1, std::cmp::min(self.history.len() as i32, next_step));
-        self.previous_amount = amount;
+        // self.current_step = std::cmp::max(-1, std::cmp::min(self.history.len() as i32, next_step));
+        // self.previous_amount = amount;
 
     }
 
@@ -102,16 +106,30 @@ impl History {
     }
 }
 
+pub fn send_move_by_step(commands: &mut legion::systems::CommandBuffer, client_id: u32, amount: i32) {
+    commands.push(
+        (
+            MessageSender{
+                data_type: DataType::HistoryStep{
+                    client_id: client_id,
+                    amount: 1
+                },
+                message_type: MessageType::Ordered
+            },
+        )
+    );
+}
+
 pub fn create_history_input_system() -> impl systems::Runnable {
 
     let undo = Action("undo".to_string());
     let redo = Action("redo".to_string());
 
     SystemBuilder::new("history_input_system")
+        .read_resource::<ClientID>()
         .read_resource::<Time>()
-        .write_resource::<History>()
         .with_query(<(Read<InputActionComponent>, Read<Action>)>::query())
-        .build(move |commands, world, (time, history), query| {
+        .build(move |commands, world, (client_id, time), query| {
 
             for (input_component, action) in query.iter(world).filter(|(_,a)|
                 *a == &undo ||
@@ -119,9 +137,9 @@ pub fn create_history_input_system() -> impl systems::Runnable {
             ) {
                 if input_component.repeated(time.delta, 0.25) {
                     if action == &undo {
-                        history.move_by_step(commands, -1);
+                        send_move_by_step(commands, client_id.val(), -1);
                     } else if action == &redo {
-                        history.move_by_step(commands, 1);
+                        send_move_by_step(commands, client_id.val(), 1);
                     }
                 }
             }

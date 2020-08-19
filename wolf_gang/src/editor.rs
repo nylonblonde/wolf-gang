@@ -30,13 +30,11 @@ impl GameStateTraits for Editor {
 
     fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
         self.camera = camera::initialize_camera(world);
-        resources.insert(History::new());
         resources.insert(self.map);    
         resources.insert(level_map::document::Document::default());
     }
 
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
-        resources.remove::<History>();
         resources.remove::<level_map::document::Document>();
 
         node::free(world, &self.camera);
@@ -53,6 +51,11 @@ impl GameStateTraits for Editor {
             _ => None
         };
         
+        world.push((
+           ClientID::new(connection_id),
+           History::new() 
+        ));
+
         selection_box::initialize_selection_box(world, connection_id, camera);
 
     }
@@ -68,6 +71,13 @@ impl GameStateTraits for Editor {
         if let Some(name) = name.next() {
             node::free(world, &name.0);
         }
+
+        let mut query = <(Entity, Read<ClientID>)>::query().filter(component::<History>());
+        query.iter(world).filter(|(_, id)| id.val() == connection_id)
+            .map(|(entity, _)| *entity)
+            .collect::<Vec<Entity>>().into_iter()
+            .for_each(|entity| {world.remove(entity);});
+
     }
 
     fn on_client_connected(&self, connection_id: u32, world: &mut World, _: &mut Resources) {
@@ -112,7 +122,7 @@ impl GameStateTraits for Editor {
                 (
                     ServerMessageSender {
                         client_id: connection_id,
-                        data_type: DataType::MapInput(level_map::MapInput::new(octree)),
+                        data_type: DataType::MapInput(octree),
                         message_type: MessageType::Ordered,
                     },
                 )

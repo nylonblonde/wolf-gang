@@ -65,9 +65,7 @@ impl Document {
             world.push(
                 (
                     MessageSender{
-                        data_type: DataType::MapInput(level_map::MapInput{
-                            octree: octree.clone()
-                        }),
+                        data_type: DataType::MapInput(octree.clone()),
                         message_type: MessageType::Ordered
                     },
                 )
