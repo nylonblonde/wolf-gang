@@ -37,7 +37,7 @@ type Vector3D = nalgebra::Vector3<f32>;
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ChangeType {
     Direct(AABB),
-    Indirect(AABB)
+    Indirect(AABB),
 }
 
 ///ManuallyChange tells the map chunks to update, and the AABB gives us more information about which columns we will be updating so that we don't have to update all of them. 

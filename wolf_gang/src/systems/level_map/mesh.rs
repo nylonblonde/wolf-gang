@@ -44,6 +44,9 @@ lazy_static!{
         ];
 }
 
+#[derive(Copy, Clone, PartialEq)]
+struct Batched(u32);
+
 /// Adds additional required components
 pub fn create_add_components_system() -> impl systems::Runnable {
     
@@ -69,7 +72,10 @@ pub fn create_add_components_system() -> impl systems::Runnable {
 
 pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
-    let mut changed_query = <(Entity, Read<MapChunkData>, Read<ManuallyChange>)>::query();
+    let mut batch_index: u32 = 0;
+
+    let mut changed_query = <Entity>::query().filter(!component::<Batched>() & component::<MapChunkData>() & component::<ManuallyChange>());
+    let mut batched_query = <(Entity, Read<MapChunkData>, Read<ManuallyChange>, Read<Batched>)>::query();
     let mut map_query = <(Entity, Read<MapChunkData>, Read<Point>)>::query();
     let mut write_mesh_query = <(Entity, Write<MapMeshData>, Write<custom_mesh::MeshData>, Read<ManuallyChange>)>::query();
 
@@ -79,9 +85,38 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
             .map(|(entity, map_data, point)| (*entity, (*map_data).clone(), *point))
             .collect::<Vec<(Entity, MapChunkData, Point)>>();
 
-        let mut entities = changed_query.iter(world)
-            .map(|(entity, map_data, change)| (*entity, (*map_data).clone(), (*change).clone()))
-            .collect::<Vec<(Entity, MapChunkData, ManuallyChange)>>();
+        let unbatched_entities = changed_query.iter(world)
+            .map(|entity| *entity)
+            .collect::<Vec<Entity>>();
+
+        let unbatched_iter = unbatched_entities.into_iter();
+
+        let add = unbatched_iter.size_hint();
+
+        unbatched_iter.for_each(|entity| {
+            if let Some(mut entry) = world.entry(entity) {
+                entry.add_component(Batched(batch_index));
+            }
+        });
+
+        if add.0 > 0 {
+            batch_index += 1;
+        }
+
+        let mut batched_entities = batched_query.iter(world)
+            .collect::<Vec<(&Entity, &MapChunkData, &ManuallyChange, &Batched)>>();
+
+        batched_entities.sort_by(|(_,_,_,a), (_,_,_,b)| a.0.cmp(&b.0));  
+        
+        let mut batched_iter = batched_entities.into_iter();
+
+        let mut entities: Vec<(Entity, MapChunkData, ManuallyChange)> = Vec::new();
+
+        if let Some((entity, map_data, change, batch)) = batched_iter.next().map(|(entity, map_data, change, batch)| (*entity, (*map_data).clone(), (*change).clone(), *batch)) {
+            entities.push((entity, map_data, change));
+
+            entities.extend(batched_iter.filter(|(_,_,_,b)| **b == batch).map(|(entity, map_data, change, _)| (*entity, (*map_data).clone(), (*change).clone())));
+        }
 
         let (map_mesh_tx, map_mesh_rx) = mpsc::channel::<(Entity, HashMap<usize, VertexData>)>();
         
@@ -98,13 +133,12 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                     map_data.octree.count() as i32
                 }).sum();
 
-                if combined_volume > chunk_volume {
+                if entities.len() > 1 && combined_volume > chunk_volume {
                     entities.pop();
                 } else {
                     break;
                 }
             }
-
         }
 
         entities.par_iter().for_each_with(map_mesh_tx, |map_mesh_tx, (entity, map_data, change)| {
@@ -119,7 +153,8 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                     ChangeType::Direct(aabb) | ChangeType::Indirect(aabb) => {
                         println!("Change is {:?}", change);
                         get_aabb_change_in_range(*aabb, map_data.octree.get_aabb())
-                    },
+                    }
+                    // ChangeType::Changed(_) => continue
                 };
 
                 let aabb = map_data.octree.get_aabb();
@@ -906,9 +941,8 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                 change.ranges.iter().for_each(|change| {
                         
-                    //only manually change neighbors if it is a direct change
+                    //only manually change neighbors if it comes from a direct change
                     if let ChangeType::Direct(aabb) = change {
-                        // map.chunks_in_range()
 
                         let min = aabb.get_min();
                         let max = aabb.get_max();
@@ -918,13 +952,11 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                         let neighbors = map.chunks_in_range(map_datas.clone(), extended_aabb);
 
-                        println!("Checking neighbors");
-
-                        neighbors.into_iter().filter(|(_, neighbor_data)| neighbor_data.get_chunk_point() != chunk_pt).for_each(|(entity, map_data)| {
+                        neighbors.into_iter().filter(|(_, neighbor_data)| neighbor_data.get_chunk_point() != chunk_pt).for_each(|(neighbor_entity, map_data)| {
                             
                             let map_aabb = map_data.octree.get_aabb();
 
-                            to_change_tx.send((entity, map_aabb, ChangeType::Indirect(*aabb))).unwrap();
+                            to_change_tx.send((neighbor_entity, map_aabb, ChangeType::Indirect(*aabb))).unwrap();
                         });
                     }
                 });
@@ -932,19 +964,30 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
         }
 
         //Push indirect changes to their entities
-        to_change_rx.into_iter().for_each(|(entity, map_aabb, change)| {
-            if let Some(mut entry) = world.entry(entity) {
-                match entry.get_component_mut::<ManuallyChange>() {
-                    Ok(manually_change) => { 
+        to_change_rx.into_iter().for_each(|(neighbor_entity, map_aabb, change)| {
 
-                        if let ChangeType::Indirect(change_aabb) = change {
+            if let ChangeType::Indirect(change_aabb) = change {
+
+                if let Some(mut neighbor_entry) = world.entry(neighbor_entity) {
+                    
+                    let batched = neighbor_entry.get_component::<Batched>().map(|batch| *batch);
+
+                    match neighbor_entry.get_component_mut::<ManuallyChange>() {
+                        Ok(manually_change) => { 
+
+                            if manually_change.ranges.iter().any(|r| if let ChangeType::Direct(_) = r { true } else { false }) {
+                                if let Ok(_) = batched {
+                                    return {}
+                                }
+                            }
 
                             let change_aabb = change_aabb.get_intersection(map_aabb);
 
                             let mut push = true;
+
                             for component_change in &manually_change.ranges {
                                 match component_change {
-                                    ChangeType::Direct(range) | ChangeType::Indirect(range) => {
+                                    ChangeType::Indirect(range) | ChangeType::Direct(range) => {
 
                                         let range = range.get_intersection(map_aabb);
 
@@ -953,18 +996,16 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                                             push = false;
                                             break;
                                         }
-                                    }
+                                    },
                                 }
-                                
                             }
-
+                                    
                             if push {
                                 manually_change.ranges.push(change);
                             }
-
-                        } 
-                    },
-                    _ => entry.add_component(ManuallyChange{ ranges: vec![change] })
+                        },
+                        _ => neighbor_entry.add_component(ManuallyChange{ ranges: vec![change] })
+                    }
                 }
             }
         });
@@ -988,7 +1029,13 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                         ret_val
                     });
 
-                    if manually_change.ranges.len() == 0 {
+                    let mut ranges_iter = manually_change.ranges.clone().into_iter();
+                    
+                    if ranges_iter.any(|range| if let ChangeType::Direct(_) = range { true } else { false }) {
+                        entry.remove_component::<Batched>();
+                    }
+                    
+                    if ranges_iter.size_hint().0 == 0 {
                         entry.remove_component::<ManuallyChange>();
                     }
                 }
