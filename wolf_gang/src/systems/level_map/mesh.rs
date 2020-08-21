@@ -975,11 +975,9 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                     match neighbor_entry.get_component_mut::<ManuallyChange>() {
                         Ok(manually_change) => { 
 
-                            if manually_change.ranges.iter().any(|r| if let ChangeType::Direct(_) = r { true } else { false }) {
-                                if let Ok(_) = batched {
-                                    return {}
-                                }
-                            }
+                            if manually_change.ranges.iter().any(|r| if let ChangeType::Direct(_) = r { true } else { false }) || batched.is_ok() {
+                                return {}
+                            } 
 
                             let change_aabb = change_aabb.get_intersection(map_aabb);
 
