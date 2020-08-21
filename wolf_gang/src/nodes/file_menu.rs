@@ -9,10 +9,13 @@ use gdnative::api::{
 use super::utils;
 use crate::{
     node,
-    game_state::GameStateTraits,
-    systems::level_map::{
-        document::Document
-    }
+    systems::{
+        level_map,
+        level_map::{
+            document::Document,
+        },
+    },
+    networking::{Connection, ConnectionType},
 };
 
 #[derive(NativeClass)]
@@ -101,6 +104,31 @@ impl FileMenu {
     #[export]
     fn _pressed(&mut self, _: &MenuButton) {
 
+        let popup_menu = unsafe { self.popup_menu.assume_safe() };
+    
+        popup_menu.set_item_disabled(0, true);
+        popup_menu.set_item_disabled(1, true);
+        popup_menu.set_item_disabled(2, true);
+        popup_menu.set_item_disabled(3, true);
+        
+        let world_lock = crate::WolfGang::get_world().unwrap();
+        let world = &mut world_lock.write().unwrap();
+        let resources = crate::WolfGang::get_resources().unwrap();
+        let resources = &mut resources.borrow_mut();
+
+        let is_host = resources.get::<Connection>().map_or(false, |conn| {
+            ConnectionType::Host == conn.get_type()
+        });
+
+        let can_quick_save = resources.get_mut::<Document>().map_or(false, |mut doc| {
+            doc.update_data(world);
+            doc.file_path != None && doc.has_unsaved_changes()
+        });
+
+        popup_menu.set_item_disabled(0, !is_host);
+        popup_menu.set_item_disabled(1, !is_host);
+        popup_menu.set_item_disabled(2, !is_host || is_host && !can_quick_save);
+        popup_menu.set_item_disabled(3, !is_host);
     }
 
     #[export]
@@ -111,88 +139,51 @@ impl FileMenu {
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.borrow_mut();
 
-        let mut doc = match resources.get::<Document>() {
-            Some(document) => document.clone(),
-            None => panic!("Couldn't retrieve document Resource")
-        };
-
         match id {
             0 => { //new
 
                 godot_print!("New");
-                
-                match &doc.file_path {
-                    Some(file_path) => {
-                        let saved = Document::raw_from_file(file_path);
-
+                match resources.get_mut::<Document>() {
+                    Some(mut doc) => {
                         doc.update_data(world);
-                        let current = doc.to_raw();
-
-                        if saved != current {
+                        if doc.has_unsaved_changes() {
                             menu_button.emit_signal("confirmation_popup", &[]);
                             return
                         }
                     },
-                    None => {
-
-                        doc.update_data(world);
-
-                        if doc != Document::default() {
-                            //Emit signal to confirm if you want new document despite unsaved changes
-                            menu_button.emit_signal("confirmation_popup", &[]);
-                        }
-
-                        //get outta here, we're done
-                        return
-                    }
-                    
+                    _ => {} //TODO: error handling
                 }
 
-                crate::STATE_MACHINE.with(|s| {
-
-                    for state in &mut s.borrow_mut().states {
-
-                        let state: &mut (dyn GameStateTraits) = std::borrow::BorrowMut::borrow_mut(state);
-
-                        //clear the world of related entities and free related nodes before re-initializing
-                        state.free(world, resources);
-                        state.initialize(world, resources);
-                    }
-                    
-                });
+                level_map::send_reset_message(world);
 
             },
             1 => { //open
 
-                let file_dialog = self.file_dialog.unwrap();
-
-                //If working from a saved document, check to see if the current document is up to date with the saved one
-                match &doc.file_path {
-                    Some(file_path) => {
-                        let saved = Document::raw_from_file(file_path);
-
-                        doc.update_data(world);
-                        let current = doc.to_raw();
-
-                        if saved != current {
-                            unsafe { file_dialog.assume_safe().emit_signal("confirmation_popup", &[]); }
-                            return
+                match resources.get_mut::<Document>() {
+                    Some(mut doc) => {
+                        if let Some(file_dialog) = self.file_dialog {
+                            doc.update_data(world);
+                            if doc.has_unsaved_changes() {
+                                unsafe { file_dialog.assume_safe().emit_signal("confirmation_popup", &[]); }
+                                return
+                            }
                         }
                     },
-                    None => {
-                        doc.update_data(world);
-
-                        if doc != Document::default() {
-                            unsafe { file_dialog.assume_safe().emit_signal("confirmation_popup", &[]); }
-                            return
-                        }
-                    }
+                    _ => {} //TODO: error handling
                 }
 
                 menu_button.emit_signal("save_load_popup", &[Variant::from_i64(0)]); 
 
             },
             2 => { //save
+
+                match resources.get_mut::<Document>() {
+                    Some(mut doc) => {
+                        doc.update_data(world);
+                        doc.save();
+                    },
+                    _ => {} //TODO: error handling
+                }
 
             },
             3 => { //save-as

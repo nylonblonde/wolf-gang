@@ -169,53 +169,37 @@ impl SaveLoadDialog {
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.borrow_mut();
 
-        let mut doc = match resources.get_mut::<level_map::document::Document>() {
-            Some(document) => document.clone(),
-            None => panic!("Couldn't retrieve document Resource")
-        };
-
         unsafe {
             match file_dialog.mode() {
                 Mode::OPEN_FILE => {
+                    
+                    if let Ok(doc) = Document::from_file(path) {
+                        level_map::send_reset_message(world);
+                        doc.populate_world(world, resources);
 
-                    godot_print!("Opening...");
-
-                    crate::STATE_MACHINE.with(|s| {
-                        let mut state_machine = s.borrow_mut();
-                        
-                        match state_machine.get_state_mut("MapEditor") {
-                            Some(editor_state) => {
-
-                                editor_state.free(world, resources);
-                                editor_state.initialize(world, resources);
-
-                                let doc = Document::from_file(path).unwrap();
-
-                                doc.populate_world(world, resources);
-
-                                //Overwrite Document resource with loaded one
-                                resources.insert(doc);
-
-                            },
-                            None => panic!("Couldn't retrieve MapEditor state while trying to open document")
-                        }
-
-                    });
-
+                        //Overwrite Document resource with loaded one
+                        resources.insert(doc);
+                    }
                 },
                 Mode::SAVE_FILE => {
 
-                    godot_print!("Saving...");
+                    match resources.get_mut::<level_map::document::Document>() {
+                        Some(mut doc) => { 
+                        
+                            godot_print!("Saving...");
 
-                    let suffix = ".wgm";
-                    if !path.ends_with(&GodotString::from(suffix)) {
-                        path = GodotString::from(path.to_string() + suffix);
-                    }
+                            let suffix = ".wgm";
+                            if !path.ends_with(&GodotString::from(suffix)) {
+                                path = GodotString::from(path.to_string() + suffix);
+                            }
 
-                    doc.file_path = Some(path.to_string());
-                    doc.update_data(world);
+                            doc.file_path = Some(path.to_string());
+                            doc.update_data(world);
 
-                    doc.save();
+                            doc.save();
+                        },
+                        None => panic!("Couldn't retrieve document Resource") //TODO: error handling
+                    };
 
                 },
                 _ => {}

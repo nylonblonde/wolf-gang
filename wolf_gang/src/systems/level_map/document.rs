@@ -4,12 +4,11 @@ use crate::{
         level_map,
         networking::{
             DataType, MessageSender, MessageType
-        }
-    }
+        },
+    },
 };
 
 use legion::*;
-
 use gdnative::prelude::*;
 use gdnative::api::{
     File,
@@ -19,7 +18,11 @@ use bincode;
 
 use serde::{Serialize, Deserialize};
 
+use std::collections::HashSet;
+
 type Octree = octree::Octree<i32, level_map::TileData>;
+
+pub struct ResetMap{}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Document {
@@ -91,7 +94,7 @@ impl Document {
         byte_array
     }
 
-    pub fn save(self) {
+    pub fn save(&self) {
 
         match self.file_path.clone() {
 
@@ -114,6 +117,47 @@ impl Document {
                     file.close();
                 }
             }
+        }
+    }
+
+    /// Returns true if there are unsaved changes to this file, including if a saved file doesn't exist. Remember to call update_data before calling
+    pub fn has_unsaved_changes(&self) -> bool {
+        match &self.file_path {
+            Some(file_path) => {
+
+                let working_file = Document {
+                    file_path: self.file_path.clone(),
+                    title: self.title.clone(),
+                    ..Default::default()
+                };
+
+                match Document::from_file(file_path) {
+                    Ok(opened_file) => {
+                        let opened_file = Document {
+                            file_path: opened_file.file_path,
+                            title: opened_file.title,
+                            ..Default::default()
+                        };
+
+                        let mut working_data = HashSet::new();
+
+                        working_file.data.iter().for_each(|octree| {
+                            working_data.extend(octree.clone().into_iter())
+                        });
+
+                        let mut opened_data = HashSet::new();
+
+                        opened_file.data.iter().for_each(|octree| {
+                            opened_data.extend(octree.clone().into_iter())
+                        });
+
+                        opened_file == working_file && opened_data.symmetric_difference(&working_data).count() == 0
+                    },
+                    _ => self != &Document::default()
+                }
+        
+            },
+            None => self != &Document::default()
         }
     }
 
@@ -149,10 +193,6 @@ impl Document {
         let raw = Self::raw_from_file(file_path);
 
         let result = bincode::deserialize::<Self>(&raw);
-
-        for octree in &result.as_ref().unwrap().data {
-            godot_print!("{:?}", octree.query_range(octree.get_aabb()));
-        }
 
         result 
         

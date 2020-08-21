@@ -38,16 +38,9 @@ static mut OWNER_NODE: Option<Ref<Node>> = None;
 
 thread_local! {
    pub static STATE_MACHINE: RefCell<game_state::StateMachine> = RefCell::new(
-        game_state::StateMachine{
-            states: Vec::new()
-        }
+        game_state::StateMachine::new()
     );
 }
-
-pub struct GameUniverse {
-    pub world: legion::world::World,
-}
-
 
 pub struct Time {
     delta: f32
@@ -127,7 +120,7 @@ impl WolfGang {
             let mut state_machine = s.borrow_mut();
 
             state_machine.add_state(
-                networking::Networking::new("Networking", 
+                networking::Networking::new("Networking", true), 
                     Schedule::builder()
                         .add_system(systems::networking::create_client_multicast_connection_system())
                         .add_system(systems::networking::create_server_system())
@@ -138,57 +131,52 @@ impl WolfGang {
                         .add_thread_local_fn(systems::networking::create_disconnection_thread_local_fn())
                         .add_thread_local_fn(systems::networking::create_data_handler_threal_local_fn())
                         .build(),
-                    true
-                ),
-                world, resources
+                    world, resources
             );
             
             state_machine.add_state(
-                editor::Editor::new("MapEditor", 
-                    Schedule::builder()
+                editor::Editor::new("MapEditor", true),
+                Schedule::builder()
 
-                        // Anything that works on Godot nodes directly should be thread_local, there is way too much instability with Godot
-                        // when dealing with separate threads right now
+                    // Anything that works on Godot nodes directly should be thread_local, there is way too much instability with Godot
+                    // when dealing with separate threads right now
 
-                        .add_system(systems::input::create_input_system())                             
-                        .flush() //flush to avoid accidental double inputs
+                    .add_system(systems::input::create_input_system())                             
+                    .flush() //flush to avoid accidental double inputs
 
-                        .add_system(systems::smoothing::create_system())
-                        .add_system(systems::camera::create_movement_system())
-                        .add_system(systems::camera::create_rotation_system())
-                        .add_system(systems::selection_box::create_coord_to_pos_system())
-                        .add_system(systems::selection_box::create_system())
-                        .flush()
-                        .add_system(systems::selection_box::create_update_bounds_system())
-                        .flush()
-                        
-                        .add_system(systems::selection_box::create_tile_tool_system())
+                    .add_system(systems::smoothing::create_system())
+                    .add_system(systems::camera::create_movement_system())
+                    .add_system(systems::camera::create_rotation_system())
+                    .add_system(systems::selection_box::create_coord_to_pos_system())
+                    .add_system(systems::selection_box::create_system())
+                    .flush()
+                    .add_system(systems::selection_box::create_update_bounds_system())
+                    .flush()
+                    
+                    .add_system(systems::selection_box::create_tile_tool_system())
 
-                        .add_thread_local(systems::custom_mesh::create_tag_system())
+                    .add_thread_local(systems::custom_mesh::create_tag_system())
 
-                        .add_system(systems::camera::create_camera_angle_system())
-                        .add_system(systems::camera::create_focal_point_system())
-                        .add_system(systems::camera::create_follow_selection_box_system())
+                    .add_system(systems::camera::create_camera_angle_system())
+                    .add_system(systems::camera::create_focal_point_system())
+                    .add_system(systems::camera::create_follow_selection_box_system())
 
-                        .add_system(systems::selection_box::create_orthogonal_dir_system())
-                        .add_system(systems::selection_box::create_movement_system()) 
-                        .add_system(systems::selection_box::create_expansion_system())
+                    .add_system(systems::selection_box::create_orthogonal_dir_system())
+                    .add_system(systems::selection_box::create_movement_system()) 
+                    .add_system(systems::selection_box::create_expansion_system())
 
-                        .add_system(systems::level_map::mesh::create_add_components_system())
-                        .flush()
-                        .add_thread_local_fn(systems::level_map::mesh::create_drawing_system())
-                        
-                        .add_thread_local(systems::custom_mesh::create_draw_system())
+                    .add_system(systems::level_map::mesh::create_add_components_system())
+                    .flush()
+                    .add_thread_local_fn(systems::level_map::mesh::create_drawing_system())
+                    
+                    .add_thread_local(systems::custom_mesh::create_draw_system())
 
-                        .add_thread_local(systems::transform::rotation::create_system())
-                        .add_thread_local(systems::transform::position::create_system())
-                        
-                        // .add_system(systems::level_map::create_map_change_system())
-                        .add_system(systems::history::create_history_input_system())
+                    .add_thread_local(systems::transform::rotation::create_system())
+                    .add_thread_local(systems::transform::position::create_system())
+                    
+                    .add_system(systems::history::create_history_input_system())
 
-                        .build(),
-                    true
-                ), 
+                    .build(),
                 world, resources
             );
 
@@ -206,12 +194,15 @@ impl WolfGang {
         });
 
         STATE_MACHINE.with(|s| {
-            for state in &s.borrow().states {
-                let state = state.as_ref();
+            let state_machine = s.borrow();
+            for state in state_machine.get_states() {
+                let state = state.borrow();
 
-                let game_state: &GameState = state.as_ref();
+                let game_state: &GameState = state.as_ref().as_ref();
                 if game_state.is_active() {
-                    game_state.schedule.borrow_mut().execute(&mut world, &mut resources);
+                    if let Some(sched) = state_machine.get_schedule(game_state.get_name()) {
+                        sched.borrow_mut().execute(&mut world, &mut resources);
+                    }
                 }
             }
         });

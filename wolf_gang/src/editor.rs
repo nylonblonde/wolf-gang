@@ -146,11 +146,11 @@ impl AsRef<GameState> for Editor {
 }
 
 impl NewState for Editor {
-    fn new(name: &'static str, schedule: Schedule, active: bool) -> Self {
+    fn new(name: &'static str, active: bool) -> Self {
 
         Self {
             camera: String::default(),
-            game_state: GameState::new(name, schedule, active),
+            game_state: GameState::new(name, active),
             map: level_map::Map::default()
         }
     }

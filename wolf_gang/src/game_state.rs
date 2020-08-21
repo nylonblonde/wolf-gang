@@ -2,11 +2,12 @@ use legion::*;
 
 use std::{
     cell::RefCell,
+    collections::HashMap,
 };
 
 pub struct GameState {
     name: &'static str,
-    pub schedule: RefCell<Schedule>,
+    // pub schedule: RefCell<Schedule>,
     active: bool,
 }
 
@@ -37,14 +38,14 @@ pub trait GameStateTraits: NewState + AsMut<GameState> + AsRef<GameState> {
 }
 
 pub trait NewState {
-    fn new(name: &'static str, schedule: Schedule, active: bool) -> Self where Self: Sized;
+    fn new(name: &'static str, active: bool) -> Self where Self: Sized;
 }
 
 impl NewState for GameState {  
-    fn new(name: &'static str, schedule: Schedule, active: bool) -> Self {
+    fn new(name: &'static str, active: bool) -> Self {
         GameState {
             name,
-            schedule: RefCell::new(schedule),
+            // schedule: RefCell::new(schedule),
             active,
         }
     }
@@ -62,25 +63,61 @@ impl AsRef<GameState> for GameState {
     }
 }
 
+pub struct Schedules {
+    schedules: Vec<(&'static str, RefCell<Schedule>)>,
+}
+
+impl Schedules {
+    fn new() -> Self {
+        Schedules {
+            schedules: Vec::new()
+        }
+    }
+
+    pub fn get(&self, name: &'static str) -> Option<&RefCell<Schedule>> {
+        self.schedules.iter().find(|(n, _)| n == &name).map(|(_, sched)| sched)
+    }
+
+    pub fn push(&mut self, item: (&'static str, RefCell<Schedule>)) {
+        self.schedules.push(item);
+    }
+}
+
 pub struct StateMachine {
-    pub states: Vec<Box<dyn GameStateTraits>>
+    states: Vec<RefCell<Box<dyn GameStateTraits>>>,
+    schedules: Schedules
 }
 
 impl StateMachine {
 
-    pub fn add_state(&mut self, mut game_state: impl GameStateTraits + 'static, world: &mut World, resources: &mut Resources) -> &Box<dyn GameStateTraits> {
+    pub fn new() -> Self {
+        StateMachine {
+            states: Vec::new(),
+            schedules: Schedules::new(),
+        }
+    }
+
+    pub fn add_state(&mut self, mut game_state: impl GameStateTraits + 'static, schedule: Schedule, world: &mut World, resources: &mut Resources) -> &RefCell<Box<dyn GameStateTraits>> {
 
         game_state.initialize(world, resources);
 
-        self.states.push(Box::new(game_state));
+        self.schedules.push((game_state.as_ref().get_name(), RefCell::new(schedule)));
+
+        self.states.push(RefCell::new(Box::new(game_state)));
         self.states.last().unwrap()
     }
 
-    pub fn get_state(&self, name: &'static str) -> Option<&Box<dyn GameStateTraits>> {
+    pub fn get_states(&self) -> &Vec<RefCell<Box<dyn GameStateTraits>>> {
+        &self.states
+    }
+
+    pub fn get_state(&self, name: &'static str) -> Option<&RefCell<Box<dyn GameStateTraits>>> {
 
         for state in &self.states {
 
-            let game_state: &GameState = state.as_ref().as_ref();
+            let borrowed = state.borrow();
+
+            let game_state: &GameState = borrowed.as_ref().as_ref();
             if game_state.get_name() == name {
                 return Some(state);
             }
@@ -89,24 +126,15 @@ impl StateMachine {
         None
     }
 
-    pub fn get_state_mut(&mut self, name: &'static str) -> Option<&mut Box<dyn GameStateTraits>> {
-
-        for state in &mut self.states {
-
-            let game_state: &GameState = state.as_mut().as_mut();
-            if game_state.get_name() == name {
-                return Some(state);
-            }
-        }
-
-        None
+    pub fn get_schedule(&self, name: &'static str) -> Option<&RefCell<Schedule>> {
+        self.schedules.get(name)
     }
 
-
-    pub fn set_state_active(&mut self, name: &'static str, active: bool) {
+    pub fn set_state_active(&self, name: &'static str, active: bool) {
         
-        for state in &mut self.states.iter_mut() {
-            let state = state.as_mut();
+        for state in &self.states {
+            let mut borrowed = state.borrow_mut();
+            let state = borrowed.as_mut();
 
             let game_state: &mut GameState = state.as_mut();
 

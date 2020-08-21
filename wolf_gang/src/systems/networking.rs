@@ -166,6 +166,7 @@ pub enum  DataType {
         change: crate::systems::level_map::MapChange,
         store_history: Option<u32>
     },
+    MapNew,
     HistoryStep{
         amount: i32,
         client_id: u32,
@@ -504,18 +505,18 @@ pub fn create_new_connection_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut
             .map(|(entity, new_connection)| (*entity, *new_connection))
             .collect::<Vec<(Entity, NewConnection)>>();
         
-        for (entity, new_connection) in results {
-            crate::STATE_MACHINE.with(|s| {
-                let state_machine = & *s.borrow();
-
-                for state in &state_machine.states {
-                    state.on_connection(new_connection.0, world, resources);
-                }
+            results.into_iter().for_each(|(entity, connection)| {
+                crate::STATE_MACHINE.with(|s| {
+                    let state_machine = & *s.borrow();
+    
+                    state_machine.get_states().iter().for_each(|state| {
+                        state.borrow().on_connection(connection.0, world, resources);
+                    });
+                });
+    
+                //only need to act on a connection once, get rid of the entity
+                world.remove(entity);
             });
-
-            //only need to act on a new connection once, get rid of the entity
-            world.remove(entity);
-        }
     })
 }
 
@@ -529,18 +530,18 @@ pub fn create_disconnection_thread_local_fn() -> Box<dyn FnMut(&mut World, &mut 
             .map(|(entity, disconnection)| (*entity, *disconnection))
             .collect::<Vec<(Entity, Disconnection)>>();
         
-        for (entity, disconnection) in results {
+        results.into_iter().for_each(|(entity, disconnection)| {
             crate::STATE_MACHINE.with(|s| {
                 let state_machine = & *s.borrow();
 
-                for state in &state_machine.states {
-                    state.on_disconnection(disconnection.0, world, resources);
-                }
+                state_machine.get_states().iter().for_each(|state| {
+                    state.borrow().on_disconnection(disconnection.0, world, resources);
+                });
             });
 
             //only need to act on a disconnection once, get rid of the entity
             world.remove(entity);
-        }
+        });
     })
 }
 
@@ -559,8 +560,8 @@ pub fn create_on_client_connection_thread_local_fn() -> Box<dyn FnMut(&mut World
             crate::STATE_MACHINE.with(|s| {
                 let state_machine = & *s.borrow();
 
-                state_machine.states.iter().for_each(|state| {
-                    state.on_client_connected(on_connected.0, world, resources);
+                state_machine.get_states().iter().for_each(|state| {
+                    state.borrow().on_client_connected(on_connected.0, world, resources);
                 })
             });
 
@@ -656,6 +657,9 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 }
 
             }
+        },
+        DataType::MapNew => {
+            crate::systems::level_map::map_reset(world, resources);
         },
         DataType::HistoryStep{ amount, client_id } => {
             let mut query = <(Write<crate::systems::history::History>, Read<ClientID>)>::query();

@@ -7,6 +7,9 @@ use std::collections::HashMap;
 use legion::*;
 use serde::{Serialize, Deserialize};
 use rayon::prelude::*;
+use cobalt::{
+    BinaryRateLimiter, NoopPacketModifier, Server
+};
 
 use std::io::{Error, ErrorKind};
 
@@ -19,9 +22,10 @@ use crate::{
     },
     systems::{
         custom_mesh,
-        networking::ClientID,
+        networking::{ClientID, ServerMessageSender, DataType, MessageType},
         history::{History, StepType},
     },
+    networking::UdpSocket,
     node::{NodeName}
 };
 
@@ -445,5 +449,36 @@ pub fn fill_octree_from_aabb(aabb: AABB, tile_data: Option<TileData>) -> Octree<
     });
 
     octree
+
+}
+
+pub fn send_reset_message(world: &mut World) {
+    let connections = <Write<Server<UdpSocket, BinaryRateLimiter, NoopPacketModifier>>>::query().iter_mut(world).next().and_then(|server|
+        Some(server.connections().iter().map(|(conn_id, _)| conn_id.0))
+    );
+
+    let mut extension = Vec::new();
+
+    if let Some(connections) = connections {
+
+        connections.for_each(|conn| {
+            extension.push(
+                (ServerMessageSender{
+                    client_id: conn,
+                    data_type: DataType::MapNew,
+                    message_type: MessageType::Ordered
+                },)
+            );
+        });
+    }
+
+    world.extend(extension);
+}
+
+pub fn map_reset(world: &mut World, resources: &mut Resources) {
+
+    if let Some(map) = resources.get::<Map>() {
+        map.free(world);
+    }
 
 }

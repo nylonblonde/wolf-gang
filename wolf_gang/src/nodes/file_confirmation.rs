@@ -5,6 +5,8 @@ use gdnative::api::{
     MenuButton,
 };
 
+use crate::systems::level_map;
+
 use super::utils;
 
 #[derive(NativeClass)]
@@ -65,20 +67,8 @@ impl FileConfirmation {
 
         let world_lock = crate::WolfGang::get_world().unwrap();
         let world = &mut world_lock.write().unwrap();
-        let resources = crate::WolfGang::get_resources().unwrap();
-        let resources = &mut resources.borrow_mut();
 
-        crate::STATE_MACHINE.with(|s| {
-            let mut state_machine = s.borrow_mut();
-
-            match state_machine.get_state_mut("MapEditor") {
-                Some(editor_state) => {
-                    editor_state.free(world, resources);
-                    editor_state.initialize(world, resources);
-                },
-                None => panic!("Couldn't get the MapEditor state")
-            }
-        });
+        level_map::send_reset_message(&mut **world);
     }
 
     #[export]

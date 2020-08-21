@@ -35,7 +35,7 @@ pub const MULTICAST_ADDR_V4: &'static str = "234.2.2.2:12345";
 pub const LOOPBACK_ADDR_V4: &'static str = "127.0.0.1:12345";
 // const LOBBY_ADDR_V4: &'static str = "";
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Scope{
     Online(SocketAddr),
     Multicast,
@@ -57,6 +57,14 @@ impl Connection {
             ..Default::default()
         }
     }
+
+    pub fn get_type(&self) -> ConnectionType {
+        self.conn_type
+    }
+
+    pub fn get_scope(&self) -> Scope {
+        self.scope
+    }
 }
 
 impl Default for Connection {
@@ -69,7 +77,7 @@ impl Default for Connection {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ConnectionType {
     Join,
     Host,
@@ -397,12 +405,11 @@ impl GameStateTraits for Networking {
 
 impl NewState for Networking {
 
-    fn new(name: &'static str, schedule: Schedule, active: bool) -> Self {
+    fn new(name: &'static str, active: bool) -> Self {
 
         Self {
             game_state: GameState::new(
                 name,
-                schedule,
                 active,
             ),
             

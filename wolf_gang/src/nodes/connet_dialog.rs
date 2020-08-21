@@ -55,7 +55,8 @@ impl ConnectDialog {
             let state_machine = &mut *s.borrow_mut();
             state_machine.set_state_active("MapEditor", true);
 
-            let network_state = state_machine.get_state_mut("Networking").expect("Failed to get the Networking state");
+            let network_state = state_machine.get_state("Networking").expect("Failed to get the Networking state");
+            let mut network_state = network_state.borrow_mut();
             
             let world_lock = crate::WolfGang::get_world().unwrap();
             let world = &mut world_lock.write().unwrap();
@@ -81,7 +82,8 @@ impl ConnectDialog {
             let state_machine = &mut *s.borrow_mut();
             state_machine.set_state_active("MapEditor", true);
 
-            let network_state = state_machine.get_state_mut("Networking").expect("Failed to get the Networking state");
+            let network_state = state_machine.get_state("Networking").expect("Failed to get the Networking state");
+            let mut network_state = network_state.borrow_mut();
             
             let world_lock = crate::WolfGang::get_world().unwrap();
             let world = &mut world_lock.write().unwrap();
