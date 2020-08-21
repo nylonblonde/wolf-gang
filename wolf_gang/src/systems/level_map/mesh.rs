@@ -119,6 +119,8 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
         }
 
         let (map_mesh_tx, map_mesh_rx) = mpsc::channel::<(Entity, HashMap<usize, VertexData>)>();
+
+        let (done_changes_tx, done_changes_rx) = mpsc::channel::<(Entity, ChangeType)>();
         
         // Cycle through all of our entities, checking if the work would be more than an entire full chunk,
         // keep popping entities until it isn't.
@@ -141,20 +143,21 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
             }
         }
 
-        entities.par_iter().for_each_with(map_mesh_tx, |map_mesh_tx, (entity, map_data, change)| {
+        entities.par_iter().for_each_with((map_mesh_tx, done_changes_tx), |(map_mesh_tx, done_changes_tx), (entity, map_data, change)| {
 
             let now = std::time::Instant::now();
 
-            for i in 0..change.ranges.len() {
+            let (combined_vert_data_tx, combined_vert_data_rx) = mpsc::channel::<(usize, VertexData)>();
 
-                let change = &change.ranges[i];
+            let (done_changes_pass_tx, done_changes_pass_rx) = mpsc::channel::<(Entity, ChangeType)>();
+
+            change.ranges.par_iter().for_each_with((done_changes_pass_tx, combined_vert_data_tx), |(done_changes_pass_tx, combined_vert_data_tx), change_type| {
                 
-                let change_aabb = match change {
+                let change_aabb = match change_type {
                     ChangeType::Direct(aabb) | ChangeType::Indirect(aabb) => {
-                        println!("Change is {:?}", change);
+                        done_changes_pass_tx.send((*entity, *change_type)).ok();
                         get_aabb_change_in_range(*aabb, map_data.octree.get_aabb())
                     }
-                    // ChangeType::Changed(_) => continue
                 };
 
                 let aabb = map_data.octree.get_aabb();
@@ -891,13 +894,22 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                     let (x, z) = (x - min.x, z - min.z);
                     let i = x + aabb.dimensions.x * z;
 
-                    vert_data_tx.send((i as usize, vertex_data)).unwrap();
+                    vert_data_tx.send((i as usize, vertex_data)).ok();
                     checked.lock().unwrap().extend(checked_rx.into_iter());
                 }); //end of iterating through rows
 
-                map_mesh_tx.send((*entity, vert_data_rx.into_iter().collect())).unwrap();
+                vert_data_rx.iter().for_each(|vert_data| {
+                    combined_vert_data_tx.send(vert_data).ok();
+                });
 
-            }
+                
+            });
+
+            done_changes_pass_rx.iter().for_each(|done_change| {
+                done_changes_tx.send(done_change).ok();
+            });
+
+            map_mesh_tx.send((*entity, combined_vert_data_rx.into_iter().collect())).ok();
 
             #[cfg(debug_assertions)]
             println!("Took {:?} milliseconds to complete", now.elapsed().as_millis());
@@ -948,13 +960,13 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                         let max = aabb.get_max();
 
                         // grab a region below to ensure updates to lower adjacent chunks happen (for the edge lip texture, for instance)
-                        let extended_aabb = AABB::from_extents(min - Point::new(1,1,1) - Point::new(1,5,1), max + Point::new(1,1,1));
+                        let extended_aabb = AABB::from_extents(min - Point::new(1,5,1), max + Point::new(1,1,1));
 
                         let neighbors = map.chunks_in_range(map_datas.clone(), extended_aabb);
 
-                        neighbors.into_iter().filter(|(_, neighbor_data)| neighbor_data.get_chunk_point() != chunk_pt).for_each(|(neighbor_entity, map_data)| {
+                        neighbors.into_iter().filter(|(_, neighbor_data)| neighbor_data.get_chunk_point() != chunk_pt).for_each(|(neighbor_entity, neighbor_data)| {
                             
-                            let map_aabb = map_data.octree.get_aabb();
+                            let map_aabb = neighbor_data.octree.get_aabb();
 
                             to_change_tx.send((neighbor_entity, map_aabb, ChangeType::Indirect(*aabb))).unwrap();
                         });
@@ -963,21 +975,17 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
             });
         }
 
+        let done_changes = done_changes_rx.into_iter().collect::<Vec<(Entity, ChangeType)>>();
+
         //Push indirect changes to their entities
         to_change_rx.into_iter().for_each(|(neighbor_entity, map_aabb, change)| {
 
             if let ChangeType::Indirect(change_aabb) = change {
 
                 if let Some(mut neighbor_entry) = world.entry(neighbor_entity) {
-                    
-                    let batched = neighbor_entry.get_component::<Batched>().map(|batch| *batch);
-
+                                        
                     match neighbor_entry.get_component_mut::<ManuallyChange>() {
                         Ok(manually_change) => { 
-
-                            if manually_change.ranges.iter().any(|r| if let ChangeType::Direct(_) = r { true } else { false }) || batched.is_ok() {
-                                return {}
-                            } 
 
                             let change_aabb = change_aabb.get_intersection(map_aabb);
 
@@ -986,15 +994,15 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                             for component_change in &manually_change.ranges {
                                 match component_change {
                                     ChangeType::Indirect(range) | ChangeType::Direct(range) => {
-
                                         let range = range.get_intersection(map_aabb);
 
                                         // If the change is the same as another change that has already been processed, forget it
                                         if change_aabb.get_intersection(range) == change_aabb {
+
                                             push = false;
                                             break;
                                         }
-                                    },
+                                    }, _ => {}
                                 }
                             }
                                     
@@ -1008,7 +1016,8 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
             }
         });
 
-        entities.into_iter().for_each(|(entity, _, change)| {
+        entities.into_iter().for_each(|(entity, _, _)| {
+
             if let Some(mut entry) = world.entry(entity) {
                 //add the custom_mesh ManuallyChange component to tell it to update the mesh
                 entry.add_component(custom_mesh::ManuallyChange{});
@@ -1016,9 +1025,11 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                 //remove the worked on changes so vertices don't get defined again next frame
                 if let Ok(manually_change) = entry.get_component_mut::<ManuallyChange>() {
                     manually_change.ranges.retain(|range| {
+                        let done_changes = done_changes.iter().filter(|(e, _)| *e == entity).map(|(_, change)| change);
 
                         let mut ret_val = true; 
-                        change.ranges.iter().for_each(|done_range| {
+                        done_changes.for_each(|done_range| {
+                            
                             if range == done_range {
                                 ret_val = false;
                             }
@@ -1029,11 +1040,8 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                     let mut ranges_iter = manually_change.ranges.clone().into_iter();
                     
-                    if ranges_iter.any(|range| if let ChangeType::Direct(_) = range { true } else { false }) {
-                        entry.remove_component::<Batched>();
-                    }
-                    
                     if ranges_iter.size_hint().0 == 0 {
+                        entry.remove_component::<Batched>();
                         entry.remove_component::<ManuallyChange>();
                     }
                 }
