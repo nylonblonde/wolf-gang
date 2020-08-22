@@ -1021,7 +1021,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                             for component_change in &manually_change.ranges {
                                 match component_change {
-                                    ChangeType::Indirect(range) | ChangeType::Direct(range) | ChangeType::Changed(range) => {
+                                    ChangeType::Indirect(range) | ChangeType::Direct(range) => {
                                         let range = range.get_intersection(map_aabb);
 
                                         // If the change is the same as another change that has already been processed, forget it
@@ -1030,7 +1030,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                                             push = false;
                                             break;
                                         }
-                                    }
+                                    }, _ => {}
                                 }
                             }
                                     
