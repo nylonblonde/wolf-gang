@@ -2,7 +2,6 @@ use legion::*;
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
 };
 
 pub struct GameState {
