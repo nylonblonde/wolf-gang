@@ -185,6 +185,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                             |(checked, checked_tx, vertex_tx), tile| {
 
                                 let point = tile.get_point();
+                                let tile_selection = tile.get_tile();
 
                                 let checked = {
                                     let mut checked_lock = checked.lock().unwrap();
@@ -352,6 +353,12 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                                 
                                 let mut vertex_data = VertexData::default();
 
+                                let tile_cell_col = tile_selection % 16;
+                                let tile_cell_row = tile_selection / 16;
+
+                                let tile_col_offset = tile_cell_col as f32 * TILE_SIZE;
+                                let tile_row_offset = tile_cell_row as f32 * TILE_SIZE;
+
                                 // if there are no open sides, all we have to draw is a simple 2 triangle face
                                 if point_sides.is_empty() {
 
@@ -365,10 +372,10 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                                         ]);
 
                                         vertex_data.uvs.extend(&[
-                                            Vector2::new(TILE_SIZE, TILE_SIZE),
-                                            Vector2::new(0., TILE_SIZE),
-                                            Vector2::new(0.,0.),
-                                            Vector2::new(TILE_SIZE, 0.)
+                                            Vector2::new(TILE_SIZE + tile_col_offset, TILE_SIZE + tile_row_offset),
+                                            Vector2::new(tile_col_offset, TILE_SIZE + tile_row_offset),
+                                            Vector2::new(tile_col_offset, tile_row_offset),
+                                            Vector2::new(TILE_SIZE + tile_col_offset, tile_row_offset)
                                         ]);
 
                                         vertex_data.uv2s.extend(&[
@@ -438,7 +445,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                                     }
 
                                     vertex_data.verts.push(center);
-                                    vertex_data.uvs.push(Vector2::new(TILE_SIZE / 2., TILE_SIZE / 2.));
+                                    vertex_data.uvs.push(Vector2::new(TILE_SIZE / 2. + tile_col_offset, TILE_SIZE / 2. + tile_row_offset));
                                     vertex_data.uv2s.push(Vector2::default());
                                     vertex_data.normals.push(Vector3::new(0.,1.,0.));
                                     offset += 1;
@@ -455,7 +462,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                                         if draw_top {
                                             vertex_data.verts.push(right);
-                                            vertex_data.uvs.push(Vector2::new(u, v));
+                                            vertex_data.uvs.push(Vector2::new(u + tile_col_offset, v + tile_row_offset));
                                             vertex_data.uv2s.push(Vector2::default());
                                             vertex_data.normals.push(Vector3::new(0., 1., 0.));
 
@@ -554,7 +561,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                                             let v = (scaled_right.z - world_point.z).abs() * TILE_SIZE;
 
                                             vertex_data.verts.push(scaled_right);
-                                            vertex_data.uvs.push(Vector2::new(u, v));
+                                            vertex_data.uvs.push(Vector2::new(u + tile_col_offset, v + tile_row_offset));
                                             vertex_data.uv2s.push(Vector2::default());
 
                                             let mut normal = (scaled_right + scaled_left) / 2.;

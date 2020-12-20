@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=2]
+[gd_scene load_steps=14 format=2]
 
 [ext_resource path="res://EditMenu.gdns" type="Script" id=1]
 [ext_resource path="res://FileMenu.gdns" type="Script" id=2]
@@ -6,7 +6,7 @@
 [ext_resource path="res://FileConfirmation.gdns" type="Script" id=4]
 [ext_resource path="res://ConnectMenu.gdns" type="Script" id=5]
 [ext_resource path="res://ConnectDialog.gdns" type="Script" id=6]
-[ext_resource path="res://tool_buttongroup.tres" type="ButtonGroup" id=8]
+[ext_resource path="res://Palette.gdns" type="Script" id=7]
 [ext_resource path="res://ToolList.gdns" type="Script" id=9]
 
 [sub_resource type="StreamTexture" id=5]
@@ -16,6 +16,8 @@
 [sub_resource type="StreamTexture" id=3]
 
 [sub_resource type="StreamTexture" id=4]
+
+[sub_resource type="ButtonGroup" id=6]
 
 [node name="EditorUI" type="Control"]
 anchor_right = 1.0
@@ -178,7 +180,7 @@ visible = false
 margin_right = 24.0
 margin_bottom = 24.0
 keep_pressed_outside = true
-group = ExtResource( 8 )
+group = SubResource( 6 )
 
 [node name="WaterButton" type="CheckBox" parent="VBoxContainer/MainToolsHBox/ToolSelectorVBox"]
 visible = false
@@ -186,7 +188,7 @@ margin_top = 28.0
 margin_right = 24.0
 margin_bottom = 52.0
 keep_pressed_outside = true
-group = ExtResource( 8 )
+group = SubResource( 6 )
 
 [node name="ActorButton" type="CheckBox" parent="VBoxContainer/MainToolsHBox/ToolSelectorVBox"]
 visible = false
@@ -194,7 +196,7 @@ margin_top = 56.0
 margin_right = 24.0
 margin_bottom = 80.0
 keep_pressed_outside = true
-group = ExtResource( 8 )
+group = SubResource( 6 )
 
 [node name="PaletteScroll" type="ScrollContainer" parent="VBoxContainer/MainToolsHBox"]
 visible = false
@@ -219,3 +221,4 @@ max_columns = 0
 fixed_column_width = 32
 icon_mode = 0
 fixed_icon_size = Vector2( 32, 32 )
+script = ExtResource( 7 )

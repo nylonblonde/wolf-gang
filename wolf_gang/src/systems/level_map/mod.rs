@@ -400,21 +400,26 @@ impl MapChunkData {
 
 #[derive(Serialize, Deserialize, Eq, Hash, PartialEq, Clone, Debug)]
 pub struct TileData {
+    tile: i64,
     point: Point
 }
 
 impl Copy for TileData {}
 
 impl TileData {
-    pub fn new(point: Point) -> Self {
+    pub fn new(tile: i64, point: Point) -> Self {
         TileData {
+            tile,
             point
         }
+    }
+
+    pub fn get_tile(&self) -> i64 {
+        self.tile
     }
 }
 
 impl crate::collections::octree::PointData<i32> for TileData {
-
     fn get_point(&self) -> Point {
         self.point
     }

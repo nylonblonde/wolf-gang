@@ -30,8 +30,9 @@ impl GameStateTraits for Editor {
 
     fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
         self.camera = camera::initialize_camera(world);
-        resources.insert(self.map);    
+        resources.insert(self.map);
         resources.insert(level_map::document::Document::default());
+        resources.insert(PaletteSelection(0));
     }
 
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
@@ -155,3 +156,6 @@ impl NewState for Editor {
         }
     }
 }
+
+#[derive(Copy, Clone)]
+pub struct PaletteSelection(pub i64);

@@ -46,7 +46,7 @@ impl ToolList {
             populate_palette(&palette);
         }
         item_list.emit_signal("item_selected", &[Variant::from_i64(0)]);
-        
+
     }
 }
 
@@ -58,31 +58,12 @@ unsafe fn get_palette(item_list: &ItemList) -> TRef<ItemList> {
     palette.assume_safe()
 }
 
-// unsafe fn get_button_group(palette: &VBoxContainer) -> Ref<ButtonGroup> {
-//     //Get the button group for the palette by grabbing a child button
-//     let button_group = node::get_child_by_type::<Button>(&palette, true).unwrap().assume_safe()
-//     .button_group().unwrap();
-
-//     button_group
-// }
-
 unsafe fn populate_palette(palette: &ItemList) {
-    // let button_group = get_button_group(palette);
-
-    // let buttons = button_group.assume_safe().get_buttons();
-
-    // let len = buttons.len();
 
     let texture_resource = ResourceLoader::godot_singleton().load("res://images/ground.png", "StreamTexture", false).unwrap();
     let texture = texture_resource.cast::<StreamTexture>().unwrap();
 
     for i in 0..64 {
-
-        // let button = buttons.get(i).try_to_object::<Button>().unwrap();
-        // let button = button.assume_safe();
-
-        // let button_icon = button.button_icon().unwrap();
-        // let button_icon = button_icon.assume_safe();
 
         let x = i % 16;
         let y = i / 16;
@@ -94,7 +75,5 @@ unsafe fn populate_palette(palette: &ItemList) {
 
         palette.add_icon_item(icon, true);
 
-        // godot_print!("size: {:?}", button_icon.get_size());
     }
 }
-

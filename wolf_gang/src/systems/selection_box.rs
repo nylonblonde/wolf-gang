@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 
 use crate::{
     geometry::aabb,
+    editor,
     node,
     systems::{
         camera,
@@ -357,13 +358,15 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
     SystemBuilder::new("tile_tool_system")
         .read_resource::<ClientID>()
         .read_resource::<level_map::Map>()
+        .read_resource::<editor::PaletteSelection>()
         .with_query(<(Read<SelectionBox>, Read<level_map::CoordPos>, Read<ClientID>)>::query()) //all selection_boxes
         .with_query(<(Read<SelectionBox>, Read<level_map::CoordPos>, Read<ClientID>)>::query() //only moved selection_boxes
             .filter(maybe_changed::<level_map::CoordPos>()))
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
-        .build(move |commands, world, (client_id, map), queries| {
+        .build(move |commands, world, resources, queries| {
 
             let (selection_box_query, selection_box_moved_query, input_query) = queries;
+            let (client_id, map, tile_selection) = resources;
 
             for (input_component, action) in input_query.iter(world).filter(|(_,a)|
                 *a == &insertion ||
@@ -378,12 +381,14 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
                     {
                         if action == &insertion {
                             let map = **map;
+                            let tile_selection = **tile_selection;
+
                             let client_id = client_id.val();
                             let aabb = AABB::new(coord_pos.value, selection_box.aabb.dimensions);
 
                             commands.exec_mut(move |world|{
                 
-                                let tile_data = level_map::TileData::new(Point::zeros());
+                                let tile_data = level_map::TileData::new(tile_selection.0, Point::zeros());
             
                                 if let Ok(_) = map.can_change(world, level_map::fill_octree_from_aabb(aabb, Some(tile_data))) {
                                     world.push(

@@ -11,7 +11,7 @@ type AABB = aabb::AABB<i32>;
 #[test]
 fn from_iter() {
     let pts: Vec<TileData> = vec![
-        TileData::new(Point::zeros())
+        TileData::new(0, Point::zeros())
     ];
 
     let mut oct_a: Octree<i32, TileData> = Octree::new(AABB::from_extents(Point::zeros(), Point::zeros()), octree::DEFAULT_MAX);
@@ -153,7 +153,7 @@ fn overwrite_element() {
     let mut count = 0;
     fill_octree(aabb, &mut octree, &mut count);
 
-    assert!(octree.insert(TileData::new(Point::zeros())).is_ok());
+    assert!(octree.insert(TileData::new(0, Point::zeros())).is_ok());
 }
 
 #[test]
@@ -340,12 +340,12 @@ fn serialize_deserialize() {
 
     let mut octree = Octree::<i32, TileData>::new(AABB::from_extents(Point::new(-5,-5,-5), Point::new(5,5,5)), octree::DEFAULT_MAX);
 
-    octree.insert(TileData::new(Point::new(1,0,0))).unwrap();
-    octree.insert(TileData::new(Point::new(0,1,0))).unwrap();
-    octree.insert(TileData::new(Point::new(0,0,1))).unwrap();
-    octree.insert(TileData::new(Point::new(-1,0,0))).unwrap();
-    octree.insert(TileData::new(Point::new(0,-1,0))).unwrap();
-    octree.insert(TileData::new(Point::new(0,0,-1))).unwrap();
+    octree.insert(TileData::new(0, Point::new(1,0,0))).unwrap();
+    octree.insert(TileData::new(0, Point::new(0,1,0))).unwrap();
+    octree.insert(TileData::new(0, Point::new(0,0,1))).unwrap();
+    octree.insert(TileData::new(0, Point::new(-1,0,0))).unwrap();
+    octree.insert(TileData::new(0, Point::new(0,-1,0))).unwrap();
+    octree.insert(TileData::new(0, Point::new(0,0,-1))).unwrap();
 
     let octree_clone = octree.clone();
 
@@ -375,7 +375,7 @@ fn fill_octree(aabb: AABB, octree: &mut Octree<i32, TileData>, count: &mut usize
         for y in min.y..max.y+1 {
             for x in min.x..max.x+1 { 
                 *count += 1;
-                match octree.insert(TileData::new(Point::new(x,y,z))) {
+                match octree.insert(TileData::new(0, Point::new(x,y,z))) {
                     Ok(_) => {},
                     Err(err) => {
                         panic!("{:?}", err);

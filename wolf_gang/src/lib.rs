@@ -220,6 +220,7 @@ fn init(handle: InitHandle) {
     handle.add_class::<nodes::connect_menu::ConnectMenu>();
     handle.add_class::<nodes::connet_dialog::ConnectDialog>();
     handle.add_class::<nodes::tool_list::ToolList>();
+    handle.add_class::<nodes::palette::Palette>();
 }
 
 godot_init!(init);
