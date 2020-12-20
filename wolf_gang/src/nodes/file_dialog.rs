@@ -82,7 +82,7 @@ impl SaveLoadDialog {
         unsafe {
             match file_dialog.get_parent() {
                 Some(parent) => {
-                    match node::get_child_by_type::<ConfirmationDialog>(parent.assume_safe().as_ref()) {
+                    match node::get_child_by_type::<ConfirmationDialog>(&parent.assume_safe(), false) {
                         Some(confirm_dialog) => {
 
                             match file_dialog.connect("confirmation_popup", confirm_dialog, "open_confirmation_handler", VariantArray::new_shared(), 0) {

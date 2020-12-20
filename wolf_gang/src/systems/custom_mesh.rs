@@ -105,7 +105,7 @@ pub fn create_draw_system() -> impl systems::Runnable {
                 let indices = &mesh_data.indices;
                 
                 let immediate_geometry: Option<Ref<ImmediateGeometry>> = unsafe { 
-                    match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), mesh_name.0.clone()) {
+                    match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), mesh_name.0.clone(), false) {
                         Some(r) => {
                             Some(r.assume_safe().cast::<ImmediateGeometry>().unwrap().assume_shared())
                         },
@@ -152,13 +152,13 @@ pub fn create_draw_system() -> impl systems::Runnable {
                 commands.exec_mut(move |world| {
                     if let Some(mut entry) = world.entry(entity) {
                         if let Ok(material) = entry.get_component::<Material>() {
-                            let resource = ResourceLoader::godot_singleton().load(GodotString::from_str(match material.name {
+                            let resource = ResourceLoader::godot_singleton().load(match material.name {
                                 Some(r) => r,
                                 None => { 
                                     //TODO: make it so it grabs a default material if no name value is set.
                                     panic!("Material name returned None");
                                 }
-                            }), GodotString::from_str("Material"), false);
+                            }, "Material", false);
                 
                             unsafe {
                                 immediate_geometry.assume_safe().upcast::<GeometryInstance>().set_material_override(match resource {

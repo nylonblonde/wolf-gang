@@ -31,7 +31,7 @@ pub fn create_system() -> impl systems::Runnable {
 
             let spatial_node : Option<Ref<Spatial>> = {
                     unsafe {
-                        match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0.clone()) {
+                        match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0.clone(), false) {
                             Some(r) => {
                                 Some(r.assume_safe().cast::<Spatial>().unwrap().as_ref().assume_shared())
                             },

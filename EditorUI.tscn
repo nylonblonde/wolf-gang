@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=2]
+[gd_scene load_steps=13 format=2]
 
 [ext_resource path="res://EditMenu.gdns" type="Script" id=1]
 [ext_resource path="res://FileMenu.gdns" type="Script" id=2]
@@ -6,6 +6,16 @@
 [ext_resource path="res://FileConfirmation.gdns" type="Script" id=4]
 [ext_resource path="res://ConnectMenu.gdns" type="Script" id=5]
 [ext_resource path="res://ConnectDialog.gdns" type="Script" id=6]
+[ext_resource path="res://tool_buttongroup.tres" type="ButtonGroup" id=8]
+[ext_resource path="res://ToolList.gdns" type="Script" id=9]
+
+[sub_resource type="StreamTexture" id=5]
+
+[sub_resource type="StreamTexture" id=2]
+
+[sub_resource type="StreamTexture" id=3]
+
+[sub_resource type="StreamTexture" id=4]
 
 [node name="EditorUI" type="Control"]
 anchor_right = 1.0
@@ -18,14 +28,23 @@ __meta__ = {
 "_edit_use_anchors_": false
 }
 
-[node name="HBoxContainer" type="HBoxContainer" parent="."]
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+anchor_top = 0.000589243
 anchor_right = 1.0
+anchor_bottom = 1.00059
+margin_right = -20.0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="FileUtilsHBox" type="HBoxContainer" parent="VBoxContainer"]
+margin_right = 1004.0
 margin_bottom = 20.0
 __meta__ = {
 "_edit_use_anchors_": false
 }
 
-[node name="File" type="MenuButton" parent="HBoxContainer"]
+[node name="File" type="MenuButton" parent="VBoxContainer/FileUtilsHBox"]
 margin_right = 35.0
 margin_bottom = 20.0
 text = "File"
@@ -37,9 +56,10 @@ __meta__ = {
 "_edit_use_anchors_": false
 }
 
-[node name="ConfirmationDialog" type="ConfirmationDialog" parent="HBoxContainer/File"]
+[node name="ConfirmationDialog" type="ConfirmationDialog" parent="VBoxContainer/FileUtilsHBox/File"]
 margin_right = 200.0
 margin_bottom = 110.0
+rect_min_size = Vector2( 400, 140 )
 dialog_text = "There are unsaved changes to this document, are you sure you would like to continue?"
 dialog_autowrap = true
 script = ExtResource( 4 )
@@ -47,11 +67,12 @@ __meta__ = {
 "_edit_use_anchors_": false
 }
 
-[node name="FileDialog" type="FileDialog" parent="HBoxContainer/File"]
+[node name="FileDialog" type="FileDialog" parent="VBoxContainer/FileUtilsHBox/File"]
 margin_left = 1.43201
 margin_top = -1.43201
 margin_right = 645.432
 margin_bottom = 428.568
+rect_min_size = Vector2( 400, 140 )
 resizable = true
 access = 1
 filters = PoolStringArray( "*.wgm" )
@@ -62,7 +83,7 @@ __meta__ = {
 "_edit_use_anchors_": false
 }
 
-[node name="Edit" type="MenuButton" parent="HBoxContainer"]
+[node name="Edit" type="MenuButton" parent="VBoxContainer/FileUtilsHBox"]
 margin_left = 39.0
 margin_right = 75.0
 margin_bottom = 20.0
@@ -72,7 +93,7 @@ items = [ "Undo", null, 0, false, true, 0, 0, null, "", false, "Redo", null, 0, 
 switch_on_hover = true
 script = ExtResource( 1 )
 
-[node name="Connect" type="MenuButton" parent="HBoxContainer"]
+[node name="Connect" type="MenuButton" parent="VBoxContainer/FileUtilsHBox"]
 margin_left = 79.0
 margin_right = 143.0
 margin_bottom = 20.0
@@ -82,7 +103,7 @@ items = [ "Join", null, 0, false, false, 0, 0, null, "", false, "Host", null, 0,
 switch_on_hover = true
 script = ExtResource( 5 )
 
-[node name="ConfirmationDialog" type="ConfirmationDialog" parent="HBoxContainer/Connect"]
+[node name="ConfirmationDialog" type="ConfirmationDialog" parent="VBoxContainer/FileUtilsHBox/Connect"]
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
@@ -91,21 +112,22 @@ margin_left = -97.0
 margin_top = -16.0
 margin_right = 103.0
 margin_bottom = 79.0
+rect_min_size = Vector2( 400, 140 )
 window_title = "Join Online Game"
 script = ExtResource( 6 )
 __meta__ = {
 "_edit_use_anchors_": false
 }
 
-[node name="Control" type="Control" parent="HBoxContainer/Connect/ConfirmationDialog"]
+[node name="Control" type="Control" parent="VBoxContainer/FileUtilsHBox/Connect/ConfirmationDialog"]
 margin_left = 8.0
 margin_top = 8.0
-margin_right = 192.0
-margin_bottom = 59.0
+margin_right = 392.0
+margin_bottom = 104.0
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer/Connect/ConfirmationDialog/Control"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/FileUtilsHBox/Connect/ConfirmationDialog/Control"]
 anchor_right = 1.0
 anchor_bottom = 1.0
 size_flags_horizontal = 0
@@ -114,17 +136,86 @@ __meta__ = {
 "_edit_use_anchors_": false
 }
 
-[node name="Label" type="Label" parent="HBoxContainer/Connect/ConfirmationDialog/Control/VBoxContainer"]
-margin_right = 184.0
+[node name="Label" type="Label" parent="VBoxContainer/FileUtilsHBox/Connect/ConfirmationDialog/Control/VBoxContainer"]
+margin_right = 384.0
 margin_bottom = 14.0
 size_flags_vertical = 0
 text = "Ip Address:"
 
-[node name="LineEdit" type="LineEdit" parent="HBoxContainer/Connect/ConfirmationDialog/Control/VBoxContainer"]
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/FileUtilsHBox/Connect/ConfirmationDialog/Control/VBoxContainer"]
 margin_top = 18.0
-margin_right = 184.0
+margin_right = 384.0
 margin_bottom = 42.0
 text = "0.0.0.0:3450"
 __meta__ = {
 "_edit_use_anchors_": false
 }
+
+[node name="MainToolsHBox" type="HBoxContainer" parent="VBoxContainer"]
+margin_top = 24.0
+margin_right = 1004.0
+margin_bottom = 177.0
+size_flags_horizontal = 3
+
+[node name="ToolList" type="ItemList" parent="VBoxContainer/MainToolsHBox"]
+margin_right = 32.0
+margin_bottom = 153.0
+rect_min_size = Vector2( 32, 0 )
+items = [ "Item 0", SubResource( 5 ), false, "Item 1", SubResource( 2 ), false, "Item 2", SubResource( 3 ), false, "Item 3", SubResource( 4 ), false ]
+auto_height = true
+same_column_width = true
+fixed_column_width = 32
+fixed_icon_size = Vector2( 32, 32 )
+script = ExtResource( 9 )
+
+[node name="ToolSelectorVBox" type="VBoxContainer" parent="VBoxContainer/MainToolsHBox"]
+visible = false
+margin_right = 24.0
+margin_bottom = 80.0
+
+[node name="TerrainButton" type="CheckBox" parent="VBoxContainer/MainToolsHBox/ToolSelectorVBox"]
+visible = false
+margin_right = 24.0
+margin_bottom = 24.0
+keep_pressed_outside = true
+group = ExtResource( 8 )
+
+[node name="WaterButton" type="CheckBox" parent="VBoxContainer/MainToolsHBox/ToolSelectorVBox"]
+visible = false
+margin_top = 28.0
+margin_right = 24.0
+margin_bottom = 52.0
+keep_pressed_outside = true
+group = ExtResource( 8 )
+
+[node name="ActorButton" type="CheckBox" parent="VBoxContainer/MainToolsHBox/ToolSelectorVBox"]
+visible = false
+margin_top = 56.0
+margin_right = 24.0
+margin_bottom = 80.0
+keep_pressed_outside = true
+group = ExtResource( 8 )
+
+[node name="PaletteScroll" type="ScrollContainer" parent="VBoxContainer/MainToolsHBox"]
+visible = false
+margin_left = 36.0
+margin_right = 1004.0
+margin_bottom = 76.0
+rect_min_size = Vector2( 0, 76 )
+size_flags_horizontal = 3
+size_flags_vertical = 0
+scroll_horizontal_enabled = false
+
+[node name="Palette" type="ItemList" parent="VBoxContainer/MainToolsHBox/PaletteScroll"]
+margin_right = 968.0
+margin_bottom = 76.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+custom_constants/vseparation = 2
+custom_constants/line_separation = 0
+custom_constants/icon_margin = 0
+custom_constants/hseparation = 2
+max_columns = 0
+fixed_column_width = 32
+icon_mode = 0
+fixed_icon_size = Vector2( 32, 32 )

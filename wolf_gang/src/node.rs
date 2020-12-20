@@ -93,7 +93,7 @@ unsafe fn create_node_cache() {
 }
 
 /// Retrieves the node from cache if possible, otherwise uses the gdnative bindings to find it.
-pub unsafe fn get_node(node: &Node, name: String) -> Option<Ref<Node, Shared>> {
+pub unsafe fn get_node(node: &Node, name: String, child_lookup: bool) -> Option<Ref<Node, Shared>> {
 
     if NODE_CACHE.is_none() {
         create_node_cache();
@@ -106,29 +106,53 @@ pub unsafe fn get_node(node: &Node, name: String) -> Option<Ref<Node, Shared>> {
             return Some(*r)
         },
         None => {
-            let result = node.get_node(NodePath::from_str(&name));
+            let children = node.get_children();
 
-            if let Some(r) = result {
-                node_cache.cache.insert(name, r);
+            for i in 0..children.len() {
+                let child = children.get(i).try_to_object::<Node>().unwrap();
+
+                if child.assume_safe().name() == GodotString::from(name.clone()){
+                    node_cache.cache.insert(name.clone(), child);
+                    return Some(child);
+                } else {
+                    if let Some(val) = get_node(&child.assume_safe(), name.clone(), true) {
+                        node_cache.cache.insert(name.clone(), val);
+                        return Some(val);
+                    }
+                }
+                
             }
 
-            return result
+            return None;
         }
     }
 }
 
-pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node) -> Option<Ref<T>> {
+/// Look for children by type T, recursive true if you want to cycle through all children, false if you want to look just within the single child group.
+pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node, recursive: bool) -> Option<Ref<T>> {
 
     let children = node.get_children();
 
     let len = children.len();
 
+    let mut ret_val: Option<Ref<T>> = None;
+
     for i in 0..len {
         
         let child = children.get(i);
 
-        if let Some(child) = child.try_to_object::<T>() {
-            return Some(child)
+        match child.try_to_object::<T>() {
+            Some(child) => {
+                return Some(child)
+            },
+            _ if recursive => {
+                ret_val = get_child_by_type(&child.try_to_object::<Node>().unwrap().assume_safe(), recursive)
+            },
+            _ => {}
+        }
+
+        if let Some(_) = ret_val {
+            return ret_val
         }
         
     }

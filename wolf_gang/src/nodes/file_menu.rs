@@ -67,7 +67,7 @@ impl FileMenu {
         unsafe {
 
             //Get the FileDilaog for saving and loading
-            let file_dialog = node::get_child_by_type::<FileDialog>(menu_button); 
+            let file_dialog = node::get_child_by_type::<FileDialog>(menu_button, false); 
 
             match file_dialog {
                 Some(file_dialog) => {
@@ -84,7 +84,7 @@ impl FileMenu {
             }
 
             //Get the confirmation dialog
-            let dialog = node::get_child_by_type::<ConfirmationDialog>(menu_button);
+            let dialog = node::get_child_by_type::<ConfirmationDialog>(menu_button, false);
 
             match dialog {
                 Some(dialog) => {

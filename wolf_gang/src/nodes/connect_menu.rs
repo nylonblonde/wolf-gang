@@ -70,7 +70,7 @@ impl ConnectMenu {
 
     #[export]
     fn _ready(&mut self, menu_button: &MenuButton) {
-        self.confirmation = unsafe { node::get_child_by_type::<ConfirmationDialog>(menu_button.upcast()) };
+        self.confirmation = unsafe { node::get_child_by_type::<ConfirmationDialog>(menu_button, false) };
         menu_button.connect("join_or_host_online", self.confirmation.unwrap(), "connection_type_handler", VariantArray::new_shared(), 0).unwrap();
     }
 
