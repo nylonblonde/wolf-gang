@@ -6,4 +6,4 @@
 **/*.import
 /.import
 /.vscode
-
+**/*.blend1

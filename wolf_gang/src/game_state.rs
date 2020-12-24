@@ -6,7 +6,6 @@ use std::{
 
 pub struct GameState {
     name: &'static str,
-    // pub schedule: RefCell<Schedule>,
     active: bool,
 }
 
@@ -24,6 +23,34 @@ impl GameState{
         self.name
     }
 }
+
+pub struct BasicGameState {
+    game_state: GameState
+}
+
+impl GameStateTraits for BasicGameState {}
+
+impl AsMut<GameState> for BasicGameState {
+    fn as_mut(&mut self) -> &mut GameState {
+        &mut self.game_state
+    }
+}
+
+impl AsRef<GameState> for BasicGameState {
+    fn as_ref(&self) -> &GameState {
+        &self.game_state
+    }
+}
+
+impl NewState for BasicGameState {
+    fn new(name: &'static str, active: bool) -> Self {
+
+        Self {
+            game_state: GameState::new(name, active),
+        }
+    }
+}
+
 pub trait GameStateTraits: NewState + AsMut<GameState> + AsRef<GameState> {
     fn initialize(&mut self, _: &mut World, _: &mut Resources) {}
     fn free(&mut self, _: &mut World, _: &mut Resources) {}

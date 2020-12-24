@@ -116,8 +116,18 @@ impl WolfGang {
 
         systems::input::initialize_input_config(world, systems::input::CONFIG_PATH);
 
+        world.push((systems::scene::InitializeScene::new("res://models/lucas.escn"),));
+
         STATE_MACHINE.with(|s| {
             let mut state_machine = s.borrow_mut();
+
+            state_machine.add_state(
+                game_state::BasicGameState::new("SceneManager", true),
+                Schedule::builder()
+                    .add_thread_local(systems::scene::create_scene_init_system())
+                    .build(),
+                world, resources
+            );
 
             state_machine.add_state(
                 networking::Networking::new("Networking", true), 
