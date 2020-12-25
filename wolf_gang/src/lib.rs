@@ -116,7 +116,13 @@ impl WolfGang {
 
         systems::input::initialize_input_config(world, systems::input::CONFIG_PATH);
 
-        world.push((systems::scene::InitializeScene::new("res://models/lucas.escn"),));
+        world.push(
+            (
+                systems::scene::InitializeScene::new("res://characters/lucas.tscn".to_string()),
+                systems::character_animator::AnimationControlCreator{},
+                systems::character_animator::PlayAnimationState("square_up".to_string())
+            )
+        );
 
         STATE_MACHINE.with(|s| {
             let mut state_machine = s.borrow_mut();
@@ -124,7 +130,9 @@ impl WolfGang {
             state_machine.add_state(
                 game_state::BasicGameState::new("SceneManager", true),
                 Schedule::builder()
-                    .add_thread_local(systems::scene::create_scene_init_system())
+                    .add_thread_local_fn(systems::scene::create_scene_init_system())
+                    .add_thread_local(systems::character_animator::create_animation_control_creation_system())
+                    .add_thread_local(systems::character_animator::create_animation_control_system())
                     .build(),
                 world, resources
             );

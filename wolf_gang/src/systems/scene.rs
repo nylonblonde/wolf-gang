@@ -1,40 +1,66 @@
 use gdnative::prelude::*;
 use legion::*;
 
-use crate::node;
+use crate::{
+    node,
+    node::NodeName,
+};
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct InitializeScene {
-    path: &'static str
+    path: String,
 }
 
 impl InitializeScene {
-    pub fn new(path: &'static str) -> InitializeScene {
+    pub fn new(path: String) -> InitializeScene {
         InitializeScene {
-            path
+            path,
         }
     }
 }
 
-pub fn create_scene_init_system() -> impl systems::Runnable {
+pub fn create_scene_init_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
-    SystemBuilder::new("scene_init_system")
-        .with_query(<(Entity, Read<InitializeScene>)>::query())
-        .build(move |command, world, _, query| {
+    let mut query = <(Entity, Read<InitializeScene>)>::query();
+    Box::new(move |world, _| {
 
-            for (entity, init_scene) in query.iter(world) {
-                println!("Initializing scene {:?}!", init_scene.path);
+        let results = query.iter(world)
+            .map(|(entity, init_scene)| (*entity, init_scene.clone()))
+            .collect::<Vec<(Entity, InitializeScene)>>();
 
-                let scene = ResourceLoader::godot_singleton().load(init_scene.path, "PackedScene", false).unwrap().cast::<PackedScene>().unwrap();
-                unsafe {
-                    let scene_instance = scene.assume_safe().instance(0).unwrap().assume_unique();
+        results.iter().for_each(|(entity, init_scene)| {
 
-                    godot_print!("{:?}", scene_instance.name());
+            let scene = ResourceLoader::godot_singleton().load(init_scene.path.clone(), "PackedScene", false).unwrap().cast::<PackedScene>().unwrap();
+            unsafe {
+                let scene_instance = scene.assume_safe().instance(0).unwrap().assume_unique();
+                
+                let mut needs_node_name: Option<NodeName> = None;
 
-                    node::add_node(scene_instance);
+                if let Some(entry) = world.entry(*entity) {
+
+                    match entry.into_component_mut::<NodeName>() {
+                        Ok(mut node_name) => {
+                            scene_instance.set_name(node_name.clone().0);
+                            let new_name = node::add_node(scene_instance).unwrap();
+                            node_name.0 = new_name.0;
+
+                        },
+                        _ => {
+                            needs_node_name = node::add_node(scene_instance);
+                        }
+                    }
                 }
-                command.remove(*entity);
-            }
 
-        })
+                if let Some(mut entry) = world.entry(*entity) {
+                    if let Some(node_name) = needs_node_name {
+                        entry.add_component(node_name);
+                    }
+
+                    entry.remove_component::<InitializeScene>();
+                }
+
+            }
+        });
+
+    })
 }

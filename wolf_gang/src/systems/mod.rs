@@ -1,4 +1,5 @@
 pub mod camera;
+pub mod character_animator;
 pub mod custom_mesh;
 pub mod history;
 pub mod level_map;
