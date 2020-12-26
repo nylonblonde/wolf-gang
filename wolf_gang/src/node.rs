@@ -106,22 +106,24 @@ pub unsafe fn get_node(node: &Node, name: String, child_lookup: bool) -> Option<
             return Some(*r)
         },
         None => {
-            let children = node.get_children();
 
-            for i in 0..children.len() {
-                let child = children.get(i).try_to_object::<Node>().unwrap();
+            if child_lookup {
+                let children = node.get_children();
 
-                if child.assume_safe().name() == GodotString::from(name.clone()){
-                    node_cache.cache.insert(name.clone(), child);
-                    return Some(child);
-                } else {
-                    if let Some(val) = get_node(&child.assume_safe(), name.clone(), true) {
-                        node_cache.cache.insert(name.clone(), val);
-                        return Some(val);
+                for i in 0..children.len() {
+                    let child = children.get(i).try_to_object::<Node>().unwrap();
+
+                    if child.assume_safe().name() == GodotString::from(name.clone()){
+                        node_cache.cache.insert(name.clone(), child);
+                        return Some(child);
+                    } else {
+                        if let Some(val) = get_node(&child.assume_safe(), name.clone(), true) {
+                            node_cache.cache.insert(name.clone(), val);
+                            return Some(val);
+                        }
                     }
                 }
-                
-            }
+            }   
 
             return None;
         }
