@@ -166,8 +166,8 @@ impl Socket for UdpSocket {
 
             //Ip requests are sent as 8008
             if self.buffer[0..4] == [8,0,0,8] {
-                println!("Got the IP request");
-
+                // println!("Got the IP request from {:?}", src);
+                // println!("{:?}", self.socket);
                 self.send_to(&[], src).unwrap();
             }
             Ok((src, self.buffer[..len].to_vec()))
@@ -229,7 +229,7 @@ impl GameStateTraits for Networking {
                 if let Ok(server) = entry.into_component_mut::<Server<UdpSocket, BinaryRateLimiter, NoopPacketModifier>>() {
                     let server_addr = match connection.scope {
                         Scope::Loopback => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345)),
-                        Scope::Multicast => MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap(),
+                        Scope::Multicast => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 12345)),
                         Scope::Online(_) => SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 3450))
                     //     Scope::Online => {
         
