@@ -48,6 +48,12 @@ impl ClientID {
     }
 }
 
+impl Default for ClientID {
+    fn default() -> ClientID {
+        ClientID(0)
+    }
+}
+
 /// Component that gets used to set the ClientID resource on the main thread
 #[derive(Copy, Clone)]
 pub struct SetClientID {
@@ -157,8 +163,16 @@ pub enum  DataType {
     /// Message sent by the server to communicate the existence of other selection boxes when a new client connects
     CreateSelectionBox{
         client_id: u32,
+        box_type: crate::systems::selection_box::ToolBoxType,
+        active: bool,
         coord_pos: Point,
         aabb: AABB
+    },
+    ActivateTerrainToolBox{
+        client_id: u32
+    },
+    ActivateActorToolBox {
+        client_id: u32
     },
     MapInput(crate::collections::octree::Octree<i32, crate::systems::level_map::TileData>),
     ///Handles changes to map like insertion, removal, cutting, pasting, takes an optional u32 as store_history to store the change in the history for that client_id if need be
@@ -694,15 +708,15 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
             };
 
         },
-        DataType::CreateSelectionBox{client_id: id, coord_pos, aabb} => {
+        DataType::CreateSelectionBox{client_id: id, box_type, active, coord_pos, aabb} => {
 
             use crate::systems::{
-                selection_box::SelectionBox,
+                selection_box::{Active, SelectionBox},
                 level_map::CoordPos,
                 history::History,
             };
 
-            let entity = crate::systems::selection_box::initialize_selection_box(world, id, None);
+            let entity = crate::systems::selection_box::initialize_selection_box(world, id, box_type, None);
 
             world.push((
                 ClientID::new(id),
@@ -716,8 +730,46 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 if let Ok(selection_box) = entry.get_component_mut::<SelectionBox>() {
                     selection_box.aabb = aabb;
                 }
+
+                if active {
+                    entry.add_component(Active{})
+                }
+                
             }
-        }
+            
+        },
+        DataType::ActivateActorToolBox{client_id: id} => {
+
+            use crate::systems::{
+                selection_box::{
+                    set_active_selection_box,
+                    ActorToolBox
+                }
+            };
+
+            //only set it if it wasn't sent from this client, since it was already handled when the message was sent
+            if let Some(client_id) = resources.get::<ClientID>() {
+                if client_id.val() != id {
+                    set_active_selection_box::<ActorToolBox>(world, ClientID::new(id));
+                }
+            }
+        },
+        DataType::ActivateTerrainToolBox{client_id: id} => {
+
+            use crate::systems::{
+                selection_box::{
+                    set_active_selection_box,
+                    TerrainToolBox
+                }
+            };
+
+            //only set it if it wasn't sent from this client, since it was already handled when the message was sent
+            if let Some(client_id) = resources.get::<ClientID>() {
+                if client_id.val() != id {
+                    set_active_selection_box::<TerrainToolBox>(world, ClientID::new(id));
+                }
+            }
+        },
         DataType::NewConnection(r) => {
 
             world.push(

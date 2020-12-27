@@ -9,7 +9,7 @@
 [ext_resource path="res://Palette.gdns" type="Script" id=7]
 [ext_resource path="res://ToolList.gdns" type="Script" id=9]
 
-[sub_resource type="StreamTexture" id=5]
+[sub_resource type="StreamTexture" id=1]
 
 [sub_resource type="StreamTexture" id=2]
 
@@ -17,7 +17,7 @@
 
 [sub_resource type="StreamTexture" id=4]
 
-[sub_resource type="ButtonGroup" id=6]
+[sub_resource type="ButtonGroup" id=5]
 
 [node name="EditorUI" type="Control"]
 anchor_right = 1.0
@@ -163,7 +163,7 @@ size_flags_horizontal = 3
 margin_right = 32.0
 margin_bottom = 153.0
 rect_min_size = Vector2( 32, 0 )
-items = [ "Item 0", SubResource( 5 ), false, "Item 1", SubResource( 2 ), false, "Item 2", SubResource( 3 ), false, "Item 3", SubResource( 4 ), false ]
+items = [ "Item 0", SubResource( 1 ), false, "Item 1", SubResource( 2 ), false, "Item 2", SubResource( 3 ), false, "Item 3", SubResource( 4 ), false ]
 auto_height = true
 same_column_width = true
 fixed_column_width = 32
@@ -180,7 +180,7 @@ visible = false
 margin_right = 24.0
 margin_bottom = 24.0
 keep_pressed_outside = true
-group = SubResource( 6 )
+group = SubResource( 5 )
 
 [node name="WaterButton" type="CheckBox" parent="VBoxContainer/MainToolsHBox/ToolSelectorVBox"]
 visible = false
@@ -188,7 +188,7 @@ margin_top = 28.0
 margin_right = 24.0
 margin_bottom = 52.0
 keep_pressed_outside = true
-group = SubResource( 6 )
+group = SubResource( 5 )
 
 [node name="ActorButton" type="CheckBox" parent="VBoxContainer/MainToolsHBox/ToolSelectorVBox"]
 visible = false
@@ -196,7 +196,7 @@ margin_top = 56.0
 margin_right = 24.0
 margin_bottom = 80.0
 keep_pressed_outside = true
-group = SubResource( 6 )
+group = SubResource( 5 )
 
 [node name="PaletteScroll" type="ScrollContainer" parent="VBoxContainer/MainToolsHBox"]
 visible = false

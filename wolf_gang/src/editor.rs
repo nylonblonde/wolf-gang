@@ -29,10 +29,12 @@ pub struct Editor {
 impl GameStateTraits for Editor {
 
     fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
+        
         self.camera = camera::initialize_camera(world);
         resources.insert(self.map);
         resources.insert(level_map::document::Document::default());
         resources.insert(PaletteSelection(0));
+        resources.insert(SelectedTool(selection_box::ToolBoxType::TerrainToolBox));
     }
 
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
@@ -57,7 +59,22 @@ impl GameStateTraits for Editor {
            History::new() 
         ));
 
-        selection_box::initialize_selection_box(world, connection_id, camera);
+        let selected_tool = resources.get::<SelectedTool>().unwrap();
+        selection_box::initialize_selection_box(world, connection_id, selection_box::ToolBoxType::TerrainToolBox, camera.clone());
+        selection_box::initialize_selection_box(world, connection_id, selection_box::ToolBoxType::ActorToolBox, camera);
+
+        match selected_tool.0 {
+            selection_box::ToolBoxType::TerrainToolBox =>{
+                world.push((
+                    selection_box::ActivateTerrainToolBox{},
+                ));
+            },
+            selection_box::ToolBoxType::ActorToolBox => {
+                world.push((
+                    selection_box::ActivateActorToolBox{},
+                ));
+            }
+        }
 
     }
 
@@ -81,32 +98,54 @@ impl GameStateTraits for Editor {
 
     }
 
-    fn on_client_connected(&self, connection_id: u32, world: &mut World, _: &mut Resources) {
+    fn on_client_connected(&self, connection_id: u32, world: &mut World, resources: &mut Resources) {
 
         //Get all of the selection boxes to send them to the new client
-        let mut query = <(Read<selection_box::SelectionBox>, Read<ClientID>, Read<level_map::CoordPos>)>::query();
+        let mut query = <(Entity, Read<selection_box::SelectionBox>, Read<ClientID>, Read<level_map::CoordPos>)>::query();
 
         let results = query.iter(world)
-            .map(|(selection_box, client_id, coord_pos)| (selection_box.aabb, *client_id, *coord_pos))
-            .collect::<Vec<(AABB, ClientID, level_map::CoordPos)>>();
+            .map(|(entity, selection_box, client_id, coord_pos)| (*entity, selection_box.aabb, *client_id, *coord_pos))
+            .collect::<Vec<(Entity, AABB, ClientID, level_map::CoordPos)>>();
 
 
-        results.into_iter().for_each(|(aabb, client_id, coord_pos)| {
+        results.into_iter().for_each(|(entity, aabb, client_id, coord_pos)| {
 
-            world.push(
-                (
-                    ServerMessageSender {
-                        client_id: connection_id,
-                        data_type: DataType::CreateSelectionBox {
-                            client_id: client_id.val(),
-                            aabb,
-                            coord_pos: coord_pos.value
+            if let Some(entry) = world.entry(entity) {
+
+                let box_type: Option<selection_box::ToolBoxType> = if let Ok(_) = entry.get_component::<selection_box::ActorToolBox>() {
+                    Some(selection_box::ToolBoxType::ActorToolBox)
+                } else if let Ok(_) = entry.get_component::<selection_box::TerrainToolBox>() {
+                    Some(selection_box::ToolBoxType::TerrainToolBox)
+                } else {
+                    None
+                };
+
+                let active: bool = if let Some(selected_tool) = resources.get::<SelectedTool>() {
+                    if let Some(box_type) = box_type {
+                        selected_tool.0 == box_type
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                world.push(
+                    (
+                        ServerMessageSender {
+                            client_id: connection_id,
+                            data_type: DataType::CreateSelectionBox {
+                                active,
+                                box_type: box_type.unwrap(),
+                                client_id: client_id.val(),
+                                aabb,
+                                coord_pos: coord_pos.value
+                            },
+                            message_type: MessageType::Reliable,
                         },
-                        message_type: MessageType::Reliable,
-                        
-                    },
-                )
-            );
+                    )
+                );
+            }
 
         });
 
@@ -159,3 +198,6 @@ impl NewState for Editor {
 
 #[derive(Copy, Clone)]
 pub struct PaletteSelection(pub i64);
+
+#[derive(Copy, Clone, PartialEq)]
+pub struct SelectedTool(pub selection_box::ToolBoxType);

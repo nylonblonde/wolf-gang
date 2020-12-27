@@ -168,7 +168,8 @@ pub fn create_camera_angle_system() -> impl systems::Runnable {
 pub fn create_focal_point_system() -> impl systems::Runnable {
 
     SystemBuilder::new("camera_focal_point_system")
-        .with_query(<Read<selection_box::RelativeCamera>>::query())
+        .with_query(<Read<selection_box::RelativeCamera>>::query()
+            .filter(component::<selection_box::Active>()))
         .with_query(<(Read<Smoothing>, Read<node::NodeName>, Write<FocalPoint>)>::query())
         .build(|_, world, _, queries| {
 

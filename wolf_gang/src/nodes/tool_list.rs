@@ -6,7 +6,16 @@ use gdnative::api::{
     ScrollContainer,
     StreamTexture,
 };
-use crate::node;
+use crate::{
+    editor,
+    node,
+    systems::{
+        selection_box,
+        networking::{
+            DataType, MessageSender, MessageType
+        },
+    }
+};
 
 #[derive(NativeClass)]
 #[inherit(ItemList)]
@@ -24,13 +33,33 @@ impl ToolList {
 
     #[export]
     fn item_selected(&self, item_list: &ItemList, index: i64) {
+
+        let resources = crate::WolfGang::get_resources().unwrap();
+        let resources = &mut resources.borrow_mut();
+
+        let world_lock = &mut crate::WolfGang::get_world().unwrap();
+        let world = &mut world_lock.write().unwrap();
+
         unsafe {
 
             let palette = get_palette(item_list);
             let palette_window = palette.get_parent().unwrap().assume_unique().cast::<ScrollContainer>().unwrap().into_shared();
 
             match index {
-                0 | 1 => palette_window.assume_safe().set_visible(true),
+                0 => { 
+                    palette_window.assume_safe().set_visible(true);
+                    resources.insert(editor::SelectedTool(selection_box::ToolBoxType::TerrainToolBox));
+
+                    world.push((selection_box::ActivateTerrainToolBox{},));
+
+                },
+                1 => {
+                    palette_window.assume_safe().set_visible(false);
+                    resources.insert(editor::SelectedTool(selection_box::ToolBoxType::ActorToolBox));
+
+                    world.push((selection_box::ActivateActorToolBox{},));
+
+                }
                 _ => palette_window.assume_safe().set_visible(false)
 
             }

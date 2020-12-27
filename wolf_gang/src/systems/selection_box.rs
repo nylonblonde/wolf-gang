@@ -1,8 +1,12 @@
 use gdnative::prelude::*;
-use gdnative::api::ImmediateGeometry;
+use gdnative::api::{
+    ImmediateGeometry,
+    Spatial
+};
 use legion::*;
 use nalgebra::Rotation3;
 use num::Float;
+use serde::{Serialize, Deserialize};
 
 use std::cmp::Ordering;
 
@@ -26,11 +30,6 @@ type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
 type Vector2D = nalgebra::Vector2<f32>;
 
-#[derive(Debug, Copy, Clone)]
-pub struct SelectionBox {
-    pub aabb: AABB
-}
-
 #[derive(Copy, Clone, PartialEq)]
 pub struct CameraAdjustedDirection {
     pub forward: Vector3D,
@@ -44,6 +43,37 @@ impl Default for CameraAdjustedDirection {
             right: Vector3D::x()
         }
     }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ToolBoxType {
+    TerrainToolBox,
+    ActorToolBox,
+}
+
+#[derive(Copy, Clone)]
+/// TerrainToolBox is just a struct that is used as a way of tagging the selection box that should be visible and active while the tile tool is in use
+pub struct TerrainToolBox {}
+
+#[derive(Copy, Clone)]
+/// ActorToolBox is just a struct that is used as away of tagging the selection box that should be visible and active while the actor placement tool is in use
+pub struct ActorToolBox {}
+
+#[derive(Copy, Clone)]
+/// Used to tag whichever selection box is active
+pub struct Active {}
+
+#[derive(Copy, Clone)]
+/// Component pushed to world for activating the terrain tool box and sending the message to server
+pub struct ActivateTerrainToolBox{}
+
+#[derive(Copy, Clone)]
+/// Component pushed to world for activating the actor tool box and sending the message to server
+pub struct ActivateActorToolBox{}
+
+#[derive(Debug, Copy, Clone)]
+pub struct SelectionBox {
+    pub aabb: AABB
 }
 
 impl SelectionBox {
@@ -70,34 +100,68 @@ pub struct UpdateBounds {
 #[derive(Default, Clone)]
 pub struct RelativeCamera(pub String);
 
-pub fn initialize_selection_box(world: &mut World, client_id: u32, camera_name: Option<String>) -> Entity {
+/// Initializes and returns the entities for the different kinds of tool boxes
+pub fn initialize_selection_box(world: &mut World, client_id: u32, tool_type: ToolBoxType, camera_name: Option<String>) -> Entity {
 
+    // TerrainTool selection box
     let mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
+    mesh.set_visible(false);
 
     let node_name = unsafe { 
         node::add_node(mesh.upcast())
     }.unwrap();
+    
+    match tool_type {
+        ToolBoxType::TerrainToolBox => {
+            let entity = world.push(
+                (
+                    node_name,
+                    ClientID::new(client_id),
+                    SelectionBox::new(),
+                    custom_mesh::MeshData::new(),
+                    level_map::CoordPos::default(),
+                    transform::position::Position::default(), 
+                    CameraAdjustedDirection::default(),
+                    custom_mesh::Material::from_str("res://materials/select_box.material")
+                )
+            );
+        
+            if let Some(mut entry) = world.entry(entity) {
+                entry.add_component(TerrainToolBox{});
+        
+                if let Some(camera_name) = &camera_name {
+                    entry.add_component(RelativeCamera(camera_name.clone()))
+                }
+            }
 
-    let entity = world.push(
-        (
-            node_name,
-            ClientID::new(client_id),
-            SelectionBox::new(), 
-            custom_mesh::MeshData::new(),
-            level_map::CoordPos::default(),
-            transform::position::Position::default(), 
-            CameraAdjustedDirection::default(),
-            custom_mesh::Material::from_str("res://materials/select_box.material")
-        )
-    );
-
-    if let Some(camera_name) = camera_name {
-        if let Some(mut entry) = world.entry(entity) {
-            entry.add_component(RelativeCamera(camera_name))
+            entity
+        },
+        ToolBoxType::ActorToolBox => {
+            let entity = world.push(
+                (
+                    node_name,
+                    ClientID::new(client_id),
+                    SelectionBox::new(),
+                    custom_mesh::MeshData::new(),
+                    level_map::CoordPos::default(),
+                    transform::position::Position::default(), 
+                    CameraAdjustedDirection::default(),
+                    custom_mesh::Material::from_str("res://materials/select_box.material")
+                )
+            );
+        
+            if let Some(mut entry) = world.entry(entity) {
+                entry.add_component(ActorToolBox{});
+        
+                if let Some(camera_name) = &camera_name {
+                    entry.add_component(RelativeCamera(camera_name.clone()))
+                }
+            }
+        
+            entity
         }
     }
 
-    entity
 }
 
 /// Removes all SelectionBox entities from the world, and frees and removes the related Godot nodes
@@ -144,6 +208,76 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
     a.dot(&forward).partial_cmp(
         &b.dot(&forward)
     ).unwrap()
+}
+
+/// System for sending the ActivateTerrainToolBox Message
+/// We do this because we need access to ClientID before we can send the message, so handling it through a system helps guarantee that
+pub fn create_terrain_tool_activate_system() -> impl systems::Runnable {
+    SystemBuilder::new("terrain_tool_activate_message_sending_system")
+        .read_resource::<ClientID>()
+        .with_query(<Read<SelectionBox>>::query())
+        .with_query(<(Entity, Read<ActivateTerrainToolBox>)>::query())
+        .build(move |command, world, client_id, (selection_box_query, query)| {
+
+            //kinda hacky, but we can ensure this never runs if connection hasn't been established and selection boxes haven't initialized
+            if let None = selection_box_query.iter(world).next() {
+                return
+            }
+            
+            let client_id = **client_id;
+            for (entity, _) in query.iter(world) {
+
+                let entity = *entity;
+
+                command.exec_mut(move |world| {
+
+                    set_active_selection_box::<TerrainToolBox>(world, client_id);
+
+                    world.push(
+                        (MessageSender{
+                            data_type: DataType::ActivateTerrainToolBox{
+                                client_id: client_id.val()
+                            },
+                            message_type: MessageType::Ordered
+                        },)
+                    );
+                    world.remove(entity);
+
+                });
+            }
+        })
+}
+
+/// System for sending the ActivateActorToolBox Message
+pub fn create_actor_tool_activate_system() -> impl systems::Runnable {
+    SystemBuilder::new("actor_tool_activate_message_sending_system")
+        .read_resource::<ClientID>()
+        .with_query(<Read<SelectionBox>>::query())
+        .with_query(<(Entity, Read<ActivateActorToolBox>)>::query())
+        .build(move |command, world, client_id, (selection_box_query, query)| {
+
+            //kinda hacky, but we can ensure this never runs if connection hasn't been established and selection boxes haven't initialized
+            if let None = selection_box_query.iter(world).next() {
+                return
+            }
+            
+            let client_id = **client_id;
+            for (entity, _) in query.iter(world) {
+                command.exec_mut(move |world| {
+                    set_active_selection_box::<ActorToolBox>(world, client_id);
+
+                    world.push(
+                        (MessageSender{
+                            data_type: DataType::ActivateActorToolBox{
+                                client_id: client_id.val()
+                            },
+                            message_type: MessageType::Ordered
+                        },)
+                    );
+                });
+                command.remove(*entity);
+            }
+        })
 }
 
 /// Calculates the orthogonal direction that should be considered forward and right when grid-like directional input is used.
@@ -351,6 +485,7 @@ pub fn create_coord_to_pos_system() -> impl systems::Runnable {
         })
 }
 
+/// The system responsible for the tile tool functions, such as insertion, removal, and (to be added) copy, paste, painting
 pub fn create_tile_tool_system() -> impl systems::Runnable {
     let insertion = input::Action(("insertion").to_string());
     let removal = input::Action(("removal").to_string());
@@ -359,9 +494,10 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
         .read_resource::<ClientID>()
         .read_resource::<level_map::Map>()
         .read_resource::<editor::PaletteSelection>()
-        .with_query(<(Read<SelectionBox>, Read<level_map::CoordPos>, Read<ClientID>)>::query()) //all selection_boxes
+        .with_query(<(Read<SelectionBox>, Read<level_map::CoordPos>, Read<ClientID>)>::query() //all selection_boxes
+            .filter(component::<TerrainToolBox>() & component::<Active>()))
         .with_query(<(Read<SelectionBox>, Read<level_map::CoordPos>, Read<ClientID>)>::query() //only moved selection_boxes
-            .filter(maybe_changed::<level_map::CoordPos>()))
+            .filter(component::<TerrainToolBox>() & component::<Active>() & maybe_changed::<level_map::CoordPos>()))
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
         .build(move |commands, world, resources, queries| {
 
@@ -447,7 +583,8 @@ pub fn create_expansion_system() -> impl systems::Runnable {
         .read_resource::<crate::Time>()
         .read_resource::<ClientID>()
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
-        .with_query(<(Read<CameraAdjustedDirection>, Read<ClientID>, Read<level_map::CoordPos>, Read<SelectionBox>)>::query())
+        .with_query(<(Read<CameraAdjustedDirection>, Read<ClientID>, Read<level_map::CoordPos>, Read<SelectionBox>)>::query()
+            .filter(component::<TerrainToolBox>() & component::<Active>()))
         .build(move |commands, world, (time, client_id), queries| {
             let (input_query, selection_box_query) = queries;
 
@@ -599,8 +736,10 @@ pub fn create_update_bounds_system() -> impl systems::Runnable {
                             }
 
                             if selection_box.aabb != update_to.aabb { //only write to SelectionBox if there is an actual change
-                                if let Ok(selection_box) = entry.get_component_mut::<SelectionBox>() {
-                                    selection_box.aabb = update_to.aabb;
+                                if let Ok(_) = entry.get_component::<Active>() { //only update bounds if this is the active toolbox
+                                    if let Ok(selection_box) = entry.get_component_mut::<SelectionBox>() {
+                                        selection_box.aabb = update_to.aabb;
+                                    }
                                 }
                             }
                         }
@@ -978,4 +1117,55 @@ fn expansion_movement_helper(expansion: Point, camera_adjusted_dir: CameraAdjust
 
     diff
 } 
+
+pub fn set_active_selection_box<T: legion::storage::Component>(world: &mut World, client_id: ClientID) {
+    let component_filter = component::<T>();
+
+    //disable active selection box that is not this component type
+    let mut query = <(Entity, Read<ClientID>, Read<node::NodeName>)>::query().filter(component::<SelectionBox>() & component::<Active>() & !component_filter.clone());
+    let results = query.iter(world)
+        .filter(|(_, id, _)| client_id == **id)
+        .map(|(entity, _, node_name)| (*entity, node_name.clone()))
+        .collect::<Vec<(Entity, node::NodeName)>>();
+
+    for (entity, node_name) in results {
+
+        let mesh = unsafe { 
+            node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0, false).unwrap()
+                .assume_safe()
+                .cast::<Spatial>().unwrap()
+            };
+
+        mesh.set_visible(false);
+
+        if let Some(mut entry) = world.entry(entity) {
+            entry.remove_component::<Active>();
+        }
+    }
+
+    //enable selection box that is not yet active and that is this component type
+    let mut query = <(Entity, Read<ClientID>, Read<node::NodeName>)>::query().filter(component::<SelectionBox>() & !component::<Active>() & component_filter);
+    let results = query.iter(world)
+        .filter(|(_, id, _)| {
+            client_id == **id
+        })
+        .map(|(entity, _, node_name)| (*entity, node_name.clone()))
+        .collect::<Vec<(Entity, node::NodeName)>>();
+
+    for (entity, node_name) in results {
+
+        let mesh = unsafe { 
+            node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0, false).unwrap()
+                .assume_safe()
+                .cast::<Spatial>().unwrap()
+            };
+
+        mesh.set_visible(true);
+
+        if let Some(mut entry) = world.entry(entity) {
+            entry.add_component(Active{});
+        }
+    }
+
+}
     

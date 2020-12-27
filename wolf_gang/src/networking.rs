@@ -216,7 +216,7 @@ impl GameStateTraits for Networking {
             config.packet_max_size = 6000;
         }
 
-        resources.insert(ClientID::new(0));
+        resources.insert(ClientID::default());
 
         if let ConnectionType::Host = connection.conn_type {
             let entity = world.push(
