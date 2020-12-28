@@ -46,8 +46,10 @@ impl GameStateTraits for Editor {
 
     fn on_connection(&self, connection_id: u32, world: &mut World, resources: &mut Resources) {
 
+        let client_id = resources.get::<ClientID>().map(|client_id| *client_id);
+
         //Only pass the camera name if this selection box belongs to the client
-        let camera: Option<String> = match resources.get::<ClientID>() {
+        let camera: Option<String> = match client_id {
             Some(r) if r.val() == connection_id => {
                 Some(self.camera.clone())
             },
@@ -59,20 +61,28 @@ impl GameStateTraits for Editor {
            History::new() 
         ));
 
-        let selected_tool = resources.get::<SelectedTool>().unwrap();
         selection_box::initialize_selection_box(world, connection_id, selection_box::ToolBoxType::TerrainToolBox, camera.clone());
         selection_box::initialize_selection_box(world, connection_id, selection_box::ToolBoxType::ActorToolBox, camera);
 
-        match selected_tool.0 {
-            selection_box::ToolBoxType::TerrainToolBox =>{
-                world.push((
-                    selection_box::ActivateTerrainToolBox{},
-                ));
-            },
-            selection_box::ToolBoxType::ActorToolBox => {
-                world.push((
-                    selection_box::ActivateActorToolBox{},
-                ));
+        if let Some(client_id) = client_id {
+            gdnative::godot_print!("What the fuck");
+            //Activate tool if this box belongs to the client
+            if client_id.val() == connection_id {
+
+                let selected_tool = resources.get::<SelectedTool>().unwrap();
+
+                match selected_tool.0 {
+                    selection_box::ToolBoxType::TerrainToolBox =>{
+                        world.push((
+                            selection_box::ActivateTerrainToolBox{},
+                        ));
+                    },
+                    selection_box::ToolBoxType::ActorToolBox => {
+                        world.push((
+                            selection_box::ActivateActorToolBox{},
+                        ));
+                    }
+                }
             }
         }
 
@@ -98,7 +108,7 @@ impl GameStateTraits for Editor {
 
     }
 
-    fn on_client_connected(&self, connection_id: u32, world: &mut World, resources: &mut Resources) {
+    fn on_client_connected(&self, connection_id: u32, world: &mut World, _: &mut Resources) {
 
         //Get all of the selection boxes to send them to the new client
         let mut query = <(Entity, Read<selection_box::SelectionBox>, Read<ClientID>, Read<level_map::CoordPos>)>::query();
@@ -120,15 +130,7 @@ impl GameStateTraits for Editor {
                     None
                 };
 
-                let active: bool = if let Some(selected_tool) = resources.get::<SelectedTool>() {
-                    if let Some(box_type) = box_type {
-                        selected_tool.0 == box_type
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                };
+                let active = entry.get_component::<selection_box::Active>().is_ok();
 
                 world.push(
                     (
@@ -145,6 +147,7 @@ impl GameStateTraits for Editor {
                         },
                     )
                 );
+
             }
 
         });

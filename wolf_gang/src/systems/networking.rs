@@ -711,7 +711,10 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
         DataType::CreateSelectionBox{client_id: id, box_type, active, coord_pos, aabb} => {
 
             use crate::systems::{
-                selection_box::{Active, SelectionBox},
+                selection_box::{
+                    ActivateActorToolBox, ActivateTerrainToolBox, 
+                    ToolBoxType, SelectionBox
+                },
                 level_map::CoordPos,
                 history::History,
             };
@@ -731,8 +734,20 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                     selection_box.aabb = aabb;
                 }
 
+                gdnative::godot_print!("{:?} is active : {:?}", box_type, active);
                 if active {
-                    entry.add_component(Active{})
+                    match box_type {
+                        ToolBoxType::TerrainToolBox => {
+                            world.push((
+                                ActivateTerrainToolBox{}, 
+                            ));
+                        },
+                        ToolBoxType::ActorToolBox => {
+                            world.push((
+                                ActivateActorToolBox{},  
+                            ));
+                        }
+                    }
                 }
                 
             }

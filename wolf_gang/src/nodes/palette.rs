@@ -5,10 +5,6 @@ use gdnative::api::{
 
 use crate::editor::PaletteSelection;
 
-use legion::*;
-
-use crate::node;
-
 #[derive(NativeClass)]
 #[inherit(ItemList)]
 #[user_data(user_data::LocalCellData<Palette>)]
