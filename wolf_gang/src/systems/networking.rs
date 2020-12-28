@@ -712,8 +712,9 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
 
             use crate::systems::{
                 selection_box::{
-                    ActivateActorToolBox, ActivateTerrainToolBox, 
-                    ToolBoxType, SelectionBox
+                    ActorToolBox, TerrainToolBox,
+                    ToolBoxType, SelectionBox,
+                    set_active_selection_box
                 },
                 level_map::CoordPos,
                 history::History,
@@ -738,14 +739,10 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 if active {
                     match box_type {
                         ToolBoxType::TerrainToolBox => {
-                            world.push((
-                                ActivateTerrainToolBox{}, 
-                            ));
+                            set_active_selection_box::<TerrainToolBox>(world, ClientID::new(id));
                         },
                         ToolBoxType::ActorToolBox => {
-                            world.push((
-                                ActivateActorToolBox{},  
-                            ));
+                            set_active_selection_box::<ActorToolBox>(world, ClientID::new(id));
                         }
                     }
                 }

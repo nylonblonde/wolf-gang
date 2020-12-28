@@ -65,7 +65,6 @@ impl GameStateTraits for Editor {
         selection_box::initialize_selection_box(world, connection_id, selection_box::ToolBoxType::ActorToolBox, camera);
 
         if let Some(client_id) = client_id {
-            gdnative::godot_print!("What the fuck");
             //Activate tool if this box belongs to the client
             if client_id.val() == connection_id {
 
