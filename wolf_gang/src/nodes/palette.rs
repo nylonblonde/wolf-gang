@@ -25,7 +25,7 @@ impl Palette{
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.borrow_mut();
 
-        resources.insert(PaletteSelection(index));
+        resources.insert(PaletteSelection::new(index as u32));
     }
 
     #[export]

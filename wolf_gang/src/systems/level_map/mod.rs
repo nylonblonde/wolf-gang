@@ -400,21 +400,21 @@ impl MapChunkData {
 
 #[derive(Serialize, Deserialize, Eq, Hash, PartialEq, Clone, Debug)]
 pub struct TileData {
-    tile: i64,
+    tile: u32,
     point: Point
 }
 
 impl Copy for TileData {}
 
 impl TileData {
-    pub fn new(tile: i64, point: Point) -> Self {
+    pub fn new(tile: u32, point: Point) -> Self {
         TileData {
             tile,
             point
         }
     }
 
-    pub fn get_tile(&self) -> i64 {
+    pub fn get_tile(&self) -> u32 {
         self.tile
     }
 }

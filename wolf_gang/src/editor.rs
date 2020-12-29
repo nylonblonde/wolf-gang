@@ -204,10 +204,32 @@ impl NewState for Editor {
 }
 
 #[derive(Copy, Clone)]
-pub struct PaletteSelection(pub i64);
+pub struct PaletteSelection(u32);
+
+impl PaletteSelection {
+
+    pub fn new(id: u32) -> PaletteSelection {
+        PaletteSelection(id)
+    }
+
+    pub fn val(&self) -> u32 {
+        self.0
+    }
+}
 
 #[derive(Copy, Clone)]
-pub struct ActorPaletteSelection(pub i64);
+pub struct ActorPaletteSelection(u32);
+
+impl ActorPaletteSelection {
+
+    pub fn new(id: u32) -> ActorPaletteSelection {
+        ActorPaletteSelection(id)
+    }
+
+    pub fn val(&self) -> u32 {
+        self.0
+    }
+}
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct SelectedTool(pub selection_box::ToolBoxType);

@@ -3,7 +3,11 @@ use gdnative::api::{
     ItemList,
 };
 
-use crate::editor::ActorPaletteSelection;
+use crate::{
+    actors::actor::ActorDefinitions,
+    editor::ActorPaletteSelection,
+    systems::selection_box,
+};
 
 #[derive(NativeClass)]
 #[inherit(ItemList)]
@@ -25,7 +29,16 @@ impl ActorPalette{
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.borrow_mut();
 
-        resources.insert(ActorPaletteSelection(index));
+        let world_lock = crate::WolfGang::get_world().unwrap();
+        let world = &mut world_lock.write().unwrap();
+
+        resources.insert(ActorPaletteSelection::new(index as u32));
+
+        if let Some(actor_definitions) = resources.get::<ActorDefinitions>() {
+            world.push((
+                selection_box::MakeActorSelectionChosen{},
+            ));
+        };
     }
 
     #[export]

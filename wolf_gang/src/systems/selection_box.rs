@@ -11,6 +11,7 @@ use serde::{Serialize, Deserialize};
 use std::cmp::Ordering;
 
 use crate::{
+    actors::actor::{Actor,ActorDefinitions},
     geometry::aabb,
     editor,
     node,
@@ -70,6 +71,10 @@ pub struct ActivateTerrainToolBox{}
 #[derive(Copy, Clone)]
 /// Component pushed to world for activating the actor tool box and sending the message to server
 pub struct ActivateActorToolBox{}
+
+#[derive(Copy, Clone)]
+/// Componenet pushed to world to act on the chosen selection in actor palette and send the relevant message
+pub struct MakeActorSelectionChosen{}
 
 #[derive(Debug, Copy, Clone)]
 pub struct SelectionBox {
@@ -208,6 +213,52 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
     a.dot(&forward).partial_cmp(
         &b.dot(&forward)
     ).unwrap()
+}
+
+pub fn create_actor_selection_chooser_system() -> impl systems::Runnable {
+    SystemBuilder::new("actor_selection_chooser_system")
+        .read_resource::<ClientID>()
+        .read_resource::<ActorDefinitions>()
+        .read_resource::<editor::ActorPaletteSelection>()
+        .with_query(<Read<SelectionBox>>::query())
+        .with_query(<(Entity, Read<MakeActorSelectionChosen>)>::query())
+        .build(move |command, world, (client_id, actor_definitions, actor_selection), (selection_box_query, query)| {
+
+            //kinda hacky, but we can ensure this never runs if connection hasn't been established and selection boxes haven't initialized
+            if let None = selection_box_query.iter(world).next() {
+                return
+            }
+
+            let client_id = **client_id;
+            let actor_selection = **actor_selection;
+            if let Some(actor_definition) = actor_definitions.get_definitions().get(actor_selection.val() as usize) {
+
+                for(entity, _) in query.iter(world) {
+
+                    let entity = *entity;
+
+                    let actor_definition = actor_definition.clone();
+    
+                    command.exec_mut(move |world| {
+                        set_chosen_actor(world, client_id, &actor_definition);
+    
+                        world.push(
+                            (MessageSender {
+                                data_type: DataType::ActorToolSelection{
+                                    client_id: client_id.val(),
+                                    actor_id: actor_selection.val(),
+                                },
+                                message_type: MessageType::Ordered
+                            },)
+                        );
+    
+                        world.remove(entity);
+                    });
+                }
+
+            }
+
+        })
 }
 
 /// System for sending the ActivateTerrainToolBox Message
@@ -524,7 +575,7 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
 
                             commands.exec_mut(move |world|{
                 
-                                let tile_data = level_map::TileData::new(tile_selection.0, Point::zeros());
+                                let tile_data = level_map::TileData::new(tile_selection.val(), Point::zeros());
             
                                 if let Ok(_) = map.can_change(world, level_map::fill_octree_from_aabb(aabb, Some(tile_data))) {
                                     world.push(
@@ -771,8 +822,10 @@ pub fn create_system() -> impl systems::Runnable {
                 //at the end of each loop
                 let mut offset = 0;
 
-                let min = level_map::map_coords_to_world(selection_box.aabb.get_min()) - level_map::map_coords_to_world(selection_box.aabb.center);
-                let max = level_map::map_coords_to_world(selection_box.aabb.get_max() + Point::new(1,1,1)) - level_map::map_coords_to_world(selection_box.aabb.center);
+                let center = level_map::map_coords_to_world(selection_box.aabb.center);
+
+                let min = level_map::map_coords_to_world(selection_box.aabb.get_min()) - center;
+                let max = level_map::map_coords_to_world(selection_box.aabb.get_max() + Point::new(1,1,1)) - center;
 
                 let true_center = (max + min) / 2.0;
                 let true_dimensions = level_map::map_coords_to_world(selection_box.aabb.dimensions);
@@ -1117,6 +1170,34 @@ fn expansion_movement_helper(expansion: Point, camera_adjusted_dir: CameraAdjust
 
     diff
 } 
+
+pub fn set_chosen_actor(world: &mut World, client_id: ClientID, actor_selection: &Actor) {
+
+    let mut query = <(Entity, Read<ClientID>, Read<SelectionBox>, Read<node::NodeName>)>::query().filter(component::<ActorToolBox>());
+    let results = query.iter(world)
+        .filter(|(_, id, _, _)| client_id == **id)
+        .map(|(entity, _, selection_box, node_name)| (*entity, *selection_box, node_name.clone()))
+        .collect::<Vec<(Entity, SelectionBox, node::NodeName)>>();
+
+    for (entity, selection_box, node_name) in results {
+        if let Some(mut entry) = world.entry(entity) {
+
+            let mut new_aabb = selection_box.aabb.clone();
+
+            let bounds = actor_selection.get_bounds();
+
+            let bounds = Point::new(
+                (bounds.x as f32 / level_map::TILE_DIMENSIONS.x) as i32,
+                (bounds.y as f32 / level_map::TILE_DIMENSIONS.y) as i32,
+                (bounds.z as f32 / level_map::TILE_DIMENSIONS.z) as i32,
+            );
+
+            entry.add_component(SelectionBox::from_aabb(AABB::new(Point::zeros(), bounds)));
+            
+        }
+    }
+
+}
 
 pub fn set_active_selection_box<T: legion::storage::Component>(world: &mut World, client_id: ClientID) {
     let component_filter = component::<T>();

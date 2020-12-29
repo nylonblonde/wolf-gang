@@ -1,6 +1,5 @@
 use gdnative::prelude::*;
 use gdnative::api::{
-    File,
     AtlasTexture,
     ImageTexture,
     ItemList,

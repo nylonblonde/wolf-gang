@@ -5,11 +5,7 @@ use gdnative::api::{
 
 use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Bounds {
-    width: u32,
-    height: u32,
-}
+type Point = nalgebra::Vector3<u32>;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ActorDefinitions {
@@ -54,7 +50,7 @@ impl ActorDefinitions {
 pub struct Actor {
     name: String,
     file_name: String,
-    bounds: Bounds,
+    bounds: Point,
 }
 
 impl Actor {
@@ -66,7 +62,7 @@ impl Actor {
         &self.file_name
     }
 
-    pub fn get_bounds(&self) -> &Bounds {
+    pub fn get_bounds(&self) -> &Point {
         &self.bounds
     }
 }

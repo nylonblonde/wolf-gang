@@ -174,6 +174,10 @@ pub enum  DataType {
     ActivateActorToolBox {
         client_id: u32
     },
+    ActorToolSelection {
+        client_id: u32,
+        actor_id: u32
+    },
     MapInput(crate::collections::octree::Octree<i32, crate::systems::level_map::TileData>),
     ///Handles changes to map like insertion, removal, cutting, pasting, takes an optional u32 as store_history to store the change in the history for that client_id if need be
     MapChange{
@@ -735,7 +739,6 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                     selection_box.aabb = aabb;
                 }
 
-                gdnative::godot_print!("{:?} is active : {:?}", box_type, active);
                 if active {
                     match box_type {
                         ToolBoxType::TerrainToolBox => {

@@ -175,6 +175,7 @@ impl WolfGang {
                     .add_system(systems::selection_box::create_tile_tool_system())
                     .add_system(systems::selection_box::create_terrain_tool_activate_system())
                     .add_system(systems::selection_box::create_actor_tool_activate_system())
+                    .add_thread_local(systems::selection_box::create_actor_selection_chooser_system())
 
                     .add_thread_local(systems::custom_mesh::create_tag_system())
 
