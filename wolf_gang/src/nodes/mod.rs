@@ -1,3 +1,4 @@
+pub mod actor_palette;
 pub mod edit_menu;
 pub mod file_menu;
 pub mod file_dialog;

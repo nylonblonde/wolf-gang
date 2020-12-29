@@ -19,6 +19,7 @@ use std::{
     },
 };
 
+mod actors;
 mod collections;
 mod geometry;
 mod systems;
@@ -241,6 +242,7 @@ fn init(handle: InitHandle) {
     handle.add_class::<nodes::connet_dialog::ConnectDialog>();
     handle.add_class::<nodes::tool_list::ToolList>();
     handle.add_class::<nodes::palette::Palette>();
+    handle.add_class::<nodes::actor_palette::ActorPalette>();
 }
 
 godot_init!(init);

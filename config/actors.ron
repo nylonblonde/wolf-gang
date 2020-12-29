@@ -1,0 +1,25 @@
+(
+    definitions: [
+        // Actor structs can have properties overridden by Character structs for essentially "inheritance"
+        (
+            name: "Player",
+            file_name: "res://characters/lucas.tscn", 
+            // size in actual units, ie: world space
+            bounds: (
+                width: 1,
+                height: 2,
+            )
+        ),
+        (
+            name: "Tree",
+            file_name: "res://characters/lucas.tscn", 
+            // size in actual units, ie: world space
+            bounds: (
+                width: 1,
+                height: 2,
+            )
+        ),
+    ]
+    
+)
+

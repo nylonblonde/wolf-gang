@@ -4,6 +4,8 @@
 [ext_resource path="res://WolfGang.gdns" type="Script" id=3]
 
 [node name="WolfGang" type="Node"]
+
+[node name="WolfGang" type="Node" parent="."]
 script = ExtResource( 3 )
 
 [node name="Editor" parent="." instance=ExtResource( 1 )]

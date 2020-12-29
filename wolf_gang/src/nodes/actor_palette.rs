@@ -3,20 +3,20 @@ use gdnative::api::{
     ItemList,
 };
 
-use crate::editor::PaletteSelection;
+use crate::editor::ActorPaletteSelection;
 
 #[derive(NativeClass)]
 #[inherit(ItemList)]
-#[user_data(user_data::LocalCellData<Palette>)]
-pub struct Palette {}
+#[user_data(user_data::LocalCellData<ActorPalette>)]
+pub struct ActorPalette {}
 
 #[methods]
-impl Palette{
+impl ActorPalette{
     fn new(item_list: &ItemList) -> Self {
 
         unsafe { item_list.connect("item_selected", item_list.assume_shared(), "item_selected", VariantArray::default(), 0).ok(); }
 
-        Palette {}
+        ActorPalette {}
     }
 
     #[export]
@@ -25,7 +25,7 @@ impl Palette{
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.borrow_mut();
 
-        resources.insert(PaletteSelection(index));
+        resources.insert(ActorPaletteSelection(index));
     }
 
     #[export]

@@ -1,5 +1,6 @@
 use legion::*;
 use crate::{
+    actors::actor::ActorDefinitions,
     collections::octree::Octree,
     game_state::{NewState, GameState, GameStateTraits},
     systems::{
@@ -35,6 +36,10 @@ impl GameStateTraits for Editor {
         resources.insert(level_map::document::Document::default());
         resources.insert(PaletteSelection(0));
         resources.insert(SelectedTool(selection_box::ToolBoxType::TerrainToolBox));
+
+        if let Some(actor_definitions) = ActorDefinitions::from_config() {
+            resources.insert(actor_definitions);
+        }
     }
 
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
@@ -200,6 +205,9 @@ impl NewState for Editor {
 
 #[derive(Copy, Clone)]
 pub struct PaletteSelection(pub i64);
+
+#[derive(Copy, Clone)]
+pub struct ActorPaletteSelection(pub i64);
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct SelectedTool(pub selection_box::ToolBoxType);

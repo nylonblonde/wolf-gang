@@ -1,12 +1,15 @@
 use gdnative::prelude::*;
 use gdnative::api::{
+    File,
     AtlasTexture,
+    ImageTexture,
     ItemList,
     ResourceLoader,
     ScrollContainer,
     StreamTexture,
 };
 use crate::{
+    actors::actor,
     editor,
     node,
     systems::{
@@ -17,7 +20,8 @@ use crate::{
 #[derive(NativeClass)]
 #[inherit(ItemList)]
 #[user_data(user_data::LocalCellData<ToolList>)]
-pub struct ToolList {}
+pub struct ToolList {
+}
 
 #[methods]
 impl ToolList {
@@ -42,9 +46,14 @@ impl ToolList {
             let palette = get_palette(item_list);
             let palette_window = palette.get_parent().unwrap().assume_unique().cast::<ScrollContainer>().unwrap().into_shared();
 
+            let actor_palette = get_actor_palette(item_list);
+            let actor_window = actor_palette.get_parent().unwrap().assume_unique().cast::<ScrollContainer>().unwrap().into_shared();
+
             match index {
                 0 => { 
                     palette_window.assume_safe().set_visible(true);
+                    actor_window.assume_safe().set_visible(false);
+
                     resources.insert(editor::SelectedTool(selection_box::ToolBoxType::TerrainToolBox));
 
                     world.push((selection_box::ActivateTerrainToolBox{},));
@@ -52,6 +61,8 @@ impl ToolList {
                 },
                 1 => {
                     palette_window.assume_safe().set_visible(false);
+                    actor_window.assume_safe().set_visible(true);
+
                     resources.insert(editor::SelectedTool(selection_box::ToolBoxType::ActorToolBox));
 
                     world.push((selection_box::ActivateActorToolBox{},));
@@ -73,7 +84,33 @@ impl ToolList {
         }
         item_list.emit_signal("item_selected", &[Variant::from_i64(0)]);
 
+        let resources = crate::WolfGang::get_resources().unwrap();
+        let resources = &mut resources.as_ref().borrow_mut();
+
+        if let Some(actor_definitions) = resources.get::<actor::ActorDefinitions>() {
+            godot_print!("Got actor definitions");
+            unsafe {
+                let palette = get_actor_palette(item_list);
+                populate_actor_palette(&palette, &actor_definitions)
+            }
+        };
+
     }
+
+    #[export]
+    fn _process(&self, item_list: &ItemList, _: f64) {
+        if !item_list.is_anything_selected() {
+            item_list.select(0, true);
+        }
+    }
+}
+
+unsafe fn get_actor_palette(item_list: &ItemList) -> TRef<ItemList> {
+    let main_tools_panel = item_list.get_parent().unwrap().assume_safe().get_parent().unwrap().assume_unique();
+    let actor_palette = node::get_node(&main_tools_panel, "ActorPalette".to_string(), true)
+        .unwrap().assume_unique().cast::<ItemList>().unwrap().into_shared();
+
+    actor_palette.assume_safe()
 }
 
 unsafe fn get_palette(item_list: &ItemList) -> TRef<ItemList> {
@@ -103,3 +140,16 @@ unsafe fn populate_palette(palette: &ItemList) {
 
     }
 }
+
+unsafe fn populate_actor_palette(item_list: &ItemList, actor_definitions: &actor::ActorDefinitions) {
+
+    for definition in actor_definitions.get_definitions() {
+
+        godot_print!("{:?}", definition.get_name());
+            
+        let texture = ImageTexture::new();
+
+        item_list.add_icon_item(texture, true);
+    }
+}
+
