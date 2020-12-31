@@ -1,3 +1,4 @@
+pub mod actor;
 pub mod camera;
 pub mod character_animator;
 pub mod custom_mesh;

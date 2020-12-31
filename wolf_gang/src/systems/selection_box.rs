@@ -11,11 +11,11 @@ use serde::{Serialize, Deserialize};
 use std::cmp::Ordering;
 
 use crate::{
-    actor::{Definition,ActorDefinition,ActorDefinitions},
     geometry::aabb,
     editor,
     node,
     systems::{
+        actor::{Definition,ActorDefinition,ActorDefinitions},
         camera,
         custom_mesh,
         transform,
@@ -538,6 +538,65 @@ pub fn create_coord_to_pos_system() -> impl systems::Runnable {
         })
 }
 
+/// The system responsible for the actor tool functions, such as insertion, removal, moving, editing, etc
+pub fn create_actor_tool_system() -> impl systems::Runnable {
+    let insertion = input::Action(("insertion").to_string());
+    let removal = input::Action(("removal").to_string());
+
+    SystemBuilder::new("actor_tool_system")
+        .read_resource::<ClientID>()
+        .read_resource::<editor::ActorPaletteSelection>()
+        .with_query(<(Read<SelectionBox>, Read<level_map::CoordPos>, Read<ClientID>)>::query() 
+            .filter(component::<ActorToolBox>() & component::<Active>()))
+        .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
+        .build(move |command, world, resources, queries| {
+            let (selection_box_query, input_query) = queries;
+            let (client_id, actor_selection) = resources;
+
+            input_query.iter(world).filter(|(_, a)| {
+                *a == &insertion || *a == &removal
+            }).for_each(|(input_component, action)|  {
+                // Insertion tool should check whether or not this is a valid placement for the actor
+                selection_box_query.iter(world).filter(|(_, _, id)| **id == **client_id).for_each(|(selection_box, coord_pos, _)| {
+
+                    if input_component.just_pressed() {
+
+                        if action == &insertion {
+                            
+                            let client_id = client_id.val();
+                            let actor_selection = actor_selection.val();
+                            let coord_pos = coord_pos.value;
+
+                            command.exec_mut(move |world| {
+                            
+                                world.push(
+                                    (
+                                        MessageSender{
+                                            data_type: DataType::MapChange{
+                                                store_history: Some(client_id),
+                                                change: level_map::MapChange::ActorInsertion{
+                                                    uuid: uuid::Uuid::new_v4().as_u128(),
+                                                    coord_pos: coord_pos,
+                                                    definition_id: actor_selection
+                                                }
+                                            },
+                                            message_type: MessageType::Ordered,
+                                        },
+                                    )
+                                );
+                            });
+
+                        } else if action == &removal {
+
+                        }
+
+                    }
+
+                })
+            })
+        })
+}
+
 /// The system responsible for the tile tool functions, such as insertion, removal, and (to be added) copy, paste, painting
 pub fn create_tile_tool_system() -> impl systems::Runnable {
     let insertion = input::Action(("insertion").to_string());
@@ -557,10 +616,9 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
             let (selection_box_query, selection_box_moved_query, input_query) = queries;
             let (client_id, map, tile_selection) = resources;
 
-            for (input_component, action) in input_query.iter(world).filter(|(_,a)|
-                *a == &insertion ||
-                *a == &removal
-            ) {
+            input_query.iter(world).filter(|(_, a)| {
+                *a == &insertion || *a == &removal
+            }).for_each(|(input_component, action)|  {
                 selection_box_query.iter(world).filter(|(_, _, id)| **id == **client_id).for_each(|(selection_box, coord_pos, _)| {
                     
                     let moved = selection_box_moved_query.iter(world).filter(|(_, _, id)| **id == **client_id).next().is_some();
@@ -618,7 +676,7 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
                         
                     }
                 })
-            }
+            })
         })
 }
 

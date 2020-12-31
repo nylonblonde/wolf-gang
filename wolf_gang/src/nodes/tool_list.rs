@@ -8,10 +8,10 @@ use gdnative::api::{
     StreamTexture,
 };
 use crate::{
-    actor::{Definition, ActorDefinitions},
     editor,
     node,
     systems::{
+        actor::{Definition, ActorDefinitions},
         selection_box,
     }
 };

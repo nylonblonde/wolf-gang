@@ -1,9 +1,9 @@
 use legion::*;
 use crate::{
-    actor::ActorDefinitions,
     collections::octree::Octree,
     game_state::{NewState, GameState, GameStateTraits},
     systems::{
+        actor::ActorDefinitions,
         camera,
         history::History,
         level_map,

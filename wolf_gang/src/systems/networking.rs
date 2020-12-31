@@ -671,6 +671,29 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                     },
                     MapChange::MapRemoval(aabb) => {
                         map.change(world, level_map::fill_octree_from_aabb(aabb, None), store_history)
+                    },
+                    MapChange::ActorInsertion { uuid, coord_pos, definition_id } => {
+                        
+                        use crate::{
+                            systems::{
+                                actor::{ActorDefinitions, initialize_actor},
+                                level_map::CoordPos,
+                            }
+                        };
+
+                        //TODO: check if the id exists already, insertion should silently fail if so
+
+                        let actors = resources.get::<ActorDefinitions>().unwrap();
+
+                        if let Some(actor_definition) = actors.get_definitions().get(definition_id as usize) {
+                            let entity = initialize_actor(world, actor_definition, CoordPos::new(coord_pos));
+
+                            //TODO: add ID component to entity through an entry
+                        }
+
+                    },
+                    MapChange::ActorRemoval(uuid) => {
+                        unimplemented!();
                     }
                 }
 

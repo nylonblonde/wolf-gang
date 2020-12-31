@@ -58,9 +58,17 @@ struct ManuallyChange{
 pub enum MapChange {
     MapInsertion{
         aabb: AABB,
-        tile_data: crate::systems::level_map::TileData
+        tile_data: TileData
     },
     MapRemoval(AABB),
+    ActorInsertion{
+        /// unique id for the inserted actor object
+        uuid: u128,
+        /// the index of the actor in ActorDefinitions
+        definition_id: u32,
+        coord_pos: Point,
+    },
+    ActorRemoval(u128),
 }
 
 pub struct TileDimensions {
@@ -72,6 +80,14 @@ pub struct TileDimensions {
 #[derive(Debug, Copy, Clone)]
 pub struct CoordPos {
     pub value: Point
+}
+
+impl CoordPos {
+    pub fn new(point: Point) -> CoordPos{
+        CoordPos {
+            value: point
+        }
+    }
 }
 
 impl Default for CoordPos {

@@ -19,7 +19,6 @@ use std::{
     },
 };
 
-mod actor;
 mod collections;
 mod geometry;
 mod systems;
@@ -104,7 +103,7 @@ impl WolfGang {
     // Instead they are"attached" to the parent object, called the "owner".
     // The owner is passed to every single exposed method.
     #[export]
-    fn _ready(&mut self, owner: &Node) {
+    fn _ready(&mut self, _owner: &Node) {
 
         godot_print!("hello, world.");
 
@@ -172,6 +171,8 @@ impl WolfGang {
                     .flush()
                     
                     .add_system(systems::selection_box::create_tile_tool_system())
+                    .add_system(systems::selection_box::create_actor_tool_system())
+
                     .add_system(systems::selection_box::create_terrain_tool_activate_system())
                     .add_system(systems::selection_box::create_actor_tool_activate_system())
                     .add_thread_local(systems::selection_box::create_actor_selection_chooser_system())
@@ -191,6 +192,8 @@ impl WolfGang {
                     .add_thread_local_fn(systems::level_map::mesh::create_drawing_system())
                     
                     .add_thread_local(systems::custom_mesh::create_draw_system())
+
+                    .add_thread_local(systems::actor::create_move_actor_system())
 
                     .add_thread_local(systems::transform::rotation::create_system())
                     .add_thread_local(systems::transform::position::create_system())
