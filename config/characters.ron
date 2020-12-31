@@ -1,0 +1,14 @@
+(
+    definitions: [
+        (
+            name: "Lucas",
+            path: "res://characters/lucas.tscn",
+            bounds: [
+                1,
+                2,
+                1,
+            ],
+            
+        )
+    ]
+)

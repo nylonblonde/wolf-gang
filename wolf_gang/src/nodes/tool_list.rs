@@ -8,7 +8,7 @@ use gdnative::api::{
     StreamTexture,
 };
 use crate::{
-    actors::actor,
+    actor::{Definition, ActorDefinitions},
     editor,
     node,
     systems::{
@@ -86,7 +86,7 @@ impl ToolList {
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.as_ref().borrow_mut();
 
-        if let Some(actor_definitions) = resources.get::<actor::ActorDefinitions>() {
+        if let Some(actor_definitions) = resources.get::<ActorDefinitions>() {
             godot_print!("Got actor definitions");
             unsafe {
                 let palette = get_actor_palette(item_list);
@@ -140,7 +140,7 @@ unsafe fn populate_palette(palette: &ItemList) {
     }
 }
 
-unsafe fn populate_actor_palette(item_list: &ItemList, actor_definitions: &actor::ActorDefinitions) {
+unsafe fn populate_actor_palette(item_list: &ItemList, actor_definitions: &ActorDefinitions) {
 
     for definition in actor_definitions.get_definitions() {
 

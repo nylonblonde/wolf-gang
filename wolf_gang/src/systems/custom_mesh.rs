@@ -74,7 +74,9 @@ pub fn create_tag_system() -> impl systems::Runnable {
             query.for_each(world, |entity| {
                 let immediate_geometry = ImmediateGeometry::new();
 
-                let node_name = unsafe { node::add_node(immediate_geometry.upcast()) }.unwrap();
+                let owner = unsafe { crate::OWNER_NODE.as_mut().unwrap().assume_safe() };
+
+                let node_name = unsafe { node::add_node(&owner, immediate_geometry.upcast()) }.unwrap();
 
                 commands.add_component(*entity, node_name);
             })

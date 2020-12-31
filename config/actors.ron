@@ -3,23 +3,36 @@
         // Actor structs can have properties overridden by Character structs for essentially "inheritance"
         (
             name: "Player",
-            file_name: "res://characters/lucas.tscn", 
+            path: "res://characters/lucas.tscn", 
             // size in actual units, ie: world space
             bounds: [
                 1,
                 2,
                 1,
-            ]
+            ],
+            actor_type: Player,
+        ),
+        (
+            name: "Monument",
+            path: "res://characters/lucas.tscn", 
+            // size in actual units, ie: world space
+            bounds: [
+                1,
+                2,
+                1,
+            ],
+            actor_type: Monument,
         ),
         (
             name: "Tree",
-            file_name: "res://characters/lucas.tscn", 
+            path: "res://models/alpinetree.escn", 
             // size in actual units, ie: world space
             bounds: [
                 1,
-                2,
+                4.5,
                 1,
-            ]
+            ],
+            actor_type: Actor,
         ),
     ]
     

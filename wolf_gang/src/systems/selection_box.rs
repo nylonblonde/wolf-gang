@@ -11,7 +11,7 @@ use serde::{Serialize, Deserialize};
 use std::cmp::Ordering;
 
 use crate::{
-    actors::actor::{Actor,ActorDefinitions},
+    actor::{Definition,ActorDefinition,ActorDefinitions},
     geometry::aabb,
     editor,
     node,
@@ -112,8 +112,10 @@ pub fn initialize_selection_box(world: &mut World, client_id: u32, tool_type: To
     let mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
     mesh.set_visible(false);
 
+    let owner = unsafe { crate::OWNER_NODE.as_mut().unwrap().assume_safe() };
+
     let node_name = unsafe { 
-        node::add_node(mesh.upcast())
+        node::add_node(&owner, mesh.upcast())
     }.unwrap();
     
     match tool_type {
@@ -1171,18 +1173,16 @@ fn expansion_movement_helper(expansion: Point, camera_adjusted_dir: CameraAdjust
     diff
 } 
 
-pub fn set_chosen_actor(world: &mut World, client_id: ClientID, actor_selection: &Actor) {
+pub fn set_chosen_actor(world: &mut World, client_id: ClientID, actor_selection: &ActorDefinition) {
 
-    let mut query = <(Entity, Read<ClientID>, Read<SelectionBox>, Read<node::NodeName>)>::query().filter(component::<ActorToolBox>());
+    let mut query = <(Entity, Read<ClientID>, Read<node::NodeName>)>::query().filter(component::<SelectionBox>() & component::<ActorToolBox>());
     let results = query.iter(world)
-        .filter(|(_, id, _, _)| client_id == **id)
-        .map(|(entity, _, selection_box, node_name)| (*entity, *selection_box, node_name.clone()))
-        .collect::<Vec<(Entity, SelectionBox, node::NodeName)>>();
+        .filter(|(_, id,  _)| client_id == **id)
+        .map(|(entity, _, node_name)| (*entity, node_name.clone()))
+        .collect::<Vec<(Entity, node::NodeName)>>();
 
-    for (entity, selection_box, node_name) in results {
+    for (entity, node_name) in results {
         if let Some(mut entry) = world.entry(entity) {
-
-            let mut new_aabb = selection_box.aabb.clone();
 
             let bounds = actor_selection.get_bounds();
 
@@ -1191,10 +1191,36 @@ pub fn set_chosen_actor(world: &mut World, client_id: ClientID, actor_selection:
                 (bounds.y as f32 / level_map::TILE_DIMENSIONS.y) as i32,
                 (bounds.z as f32 / level_map::TILE_DIMENSIONS.z) as i32,
             );
-
             entry.add_component(SelectionBox::from_aabb(AABB::new(Point::zeros(), bounds)));
-            
         }
+
+        let owner = unsafe { crate::OWNER_NODE.as_mut().unwrap().assume_safe() };
+
+        let selection_box_node = unsafe { node::get_node(&owner, node_name.0.clone(), false) }.unwrap();
+
+        //erase previous actor selection
+        let children = unsafe { selection_box_node.assume_safe().get_children() };
+
+        if children.len() > 0 {
+            let child = children.get(0);
+
+            if let Some(node) = child.try_to_object::<Node>() {
+                let name = unsafe { node.assume_safe().name() };
+
+                node::free(world, &name.to_string());
+
+                godot_print!("Erasing this thing {:?}", name);
+            }
+        }
+
+        let node = node::init_scene(world, unsafe {&selection_box_node.assume_safe()}, actor_selection.get_path().to_string());
+
+        let spatial = unsafe { node.assume_safe().cast::<Spatial>().unwrap() };
+
+        let bounds = actor_selection.get_bounds();
+
+        spatial.set_translation(Vector3::new(bounds.x/2., -bounds.y/2., bounds.z/2.));
+        
     }
 
 }

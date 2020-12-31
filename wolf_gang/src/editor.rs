@@ -1,6 +1,6 @@
 use legion::*;
 use crate::{
-    actors::actor::ActorDefinitions,
+    actor::ActorDefinitions,
     collections::octree::Octree,
     game_state::{NewState, GameState, GameStateTraits},
     systems::{

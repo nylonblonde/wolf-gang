@@ -19,7 +19,7 @@ use std::{
     },
 };
 
-mod actors;
+mod actor;
 mod collections;
 mod geometry;
 mod systems;
@@ -104,7 +104,7 @@ impl WolfGang {
     // Instead they are"attached" to the parent object, called the "owner".
     // The owner is passed to every single exposed method.
     #[export]
-    fn _ready(&mut self, _owner: &Node) {
+    fn _ready(&mut self, owner: &Node) {
 
         godot_print!("hello, world.");
 
@@ -117,13 +117,13 @@ impl WolfGang {
 
         systems::input::initialize_input_config(world, systems::input::CONFIG_PATH);
 
-        world.push(
-            (
-                systems::scene::InitializeScene::new("res://characters/lucas.tscn".to_string()),
-                systems::character_animator::AnimationControlCreator{},
-                systems::character_animator::PlayAnimationState("square_up".to_string())
-            )
-        );
+        // world.push(
+        //     (
+        //         systems::scene::InitializeScene::new(unsafe { owner.assume_shared() }, "res://characters/lucas.tscn".to_string()),
+        //         systems::character_animator::AnimationControlCreator{},
+        //         systems::character_animator::PlayAnimationState("square_up".to_string())
+        //     )
+        // );
 
         STATE_MACHINE.with(|s| {
             let mut state_machine = s.borrow_mut();
@@ -131,7 +131,6 @@ impl WolfGang {
             state_machine.add_state(
                 game_state::BasicGameState::new("SceneManager", true),
                 Schedule::builder()
-                    .add_thread_local_fn(systems::scene::create_scene_init_system())
                     .add_thread_local(systems::character_animator::create_animation_control_creation_system())
                     .add_thread_local(systems::character_animator::create_animation_control_system())
                     .build(),

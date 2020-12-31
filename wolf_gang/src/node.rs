@@ -16,9 +16,9 @@ static mut NODE_CACHE: Option<NodeCache> = None;
 /// been created and adds the node to it.
 /// 
 /// References being passed into this function are assumed to be unique, which is okay, as they have usually just been created.
-pub unsafe fn add_node(node: Ref<Node, Unique>) -> Option<NodeName> {
+pub unsafe fn add_node(parent: &Node, node: Ref<Node, Unique>) -> Option<NodeName> {
 
-    let owner = crate::OWNER_NODE.as_mut().unwrap().assume_safe();
+    // let owner = crate::OWNER_NODE.as_mut().unwrap().assume_safe();
 
     //Disable all processing since we're not using it anyway. Maybe it makes it faster? Who knows
     node.set_physics_process(false);
@@ -31,7 +31,7 @@ pub unsafe fn add_node(node: Ref<Node, Unique>) -> Option<NodeName> {
 
     let shared_node = node.into_shared();
 
-    owner.add_child(shared_node, true); 
+    parent.add_child(shared_node, true); 
     //We can generally assume this is a unique reference as it is has just been created and is now being added.
     let string = shared_node.assume_unique().name().to_string();
 
@@ -58,9 +58,9 @@ pub fn free(world: &mut legion::World, name: &String) {
         .map(|(entity, node_name)| (*entity, (*node_name).clone()))
         .collect::<Vec<(Entity, NodeName)>>();
 
-    for (entity, _) in results {
+    unsafe { remove_node(&name); }
 
-        unsafe { remove_node(&name); }
+    for (entity, _) in results {
 
         world.remove(entity);
     }
@@ -82,7 +82,6 @@ pub unsafe fn remove_node(name: &String) {
 
             node_cache.cache.remove(name);
         }
-
     }
 }
 
@@ -160,4 +159,14 @@ pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node, recursive: bool) ->
     }
 
     None
+}
+
+pub fn init_scene(world: &mut World, parent: &Node, path: String) -> Ref<Node> {
+    let scene = ResourceLoader::godot_singleton().load(path.clone(), "PackedScene", false).unwrap().cast::<PackedScene>().unwrap();
+    let scene_instance = unsafe { scene.assume_safe().instance(0).unwrap() };
+
+    unsafe { add_node(&parent.assume_unique(), scene_instance.assume_unique()).unwrap() };
+
+    scene_instance
+
 }

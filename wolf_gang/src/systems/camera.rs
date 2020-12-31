@@ -50,9 +50,11 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
     //into_shared to avoid cloning
     let camera: Ref<Camera> = Camera::new().into_shared();
 
+    let owner = unsafe { crate::OWNER_NODE.as_mut().unwrap().assume_safe() };
+
     // This is okay as we have literally just created this
     let node_name = unsafe { 
-        node::add_node(camera.assume_safe().upcast::<Node>().as_ref().assume_unique())
+        node::add_node(&owner, camera.assume_safe().upcast::<Node>().as_ref().assume_unique())
     };
 
     unsafe {

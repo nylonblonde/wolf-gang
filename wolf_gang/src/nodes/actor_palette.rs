@@ -4,7 +4,6 @@ use gdnative::api::{
 };
 
 use crate::{
-    actors::actor::ActorDefinitions,
     editor::ActorPaletteSelection,
     systems::selection_box,
 };
@@ -34,11 +33,9 @@ impl ActorPalette{
 
         resources.insert(ActorPaletteSelection::new(index as u32));
 
-        if let Some(actor_definitions) = resources.get::<ActorDefinitions>() {
-            world.push((
-                selection_box::MakeActorSelectionChosen{},
-            ));
-        };
+        world.push((
+            selection_box::MakeActorSelectionChosen{},
+        ));
     }
 
     #[export]
