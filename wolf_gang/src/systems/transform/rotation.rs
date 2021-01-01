@@ -10,6 +10,7 @@ type Rotation3D = nalgebra::Rotation3<f32>;
 
 use crate::node;
 
+#[derive(Copy, Clone)]
 pub struct Rotation {
     pub value: Rotation3D
 }

@@ -7,28 +7,65 @@ use legion::*;
 use serde::{Serialize, Deserialize};
 
 use crate::{
+    node,
     node::{init_scene, NodeName},
     systems::{
         character_animator::{
             AnimationControlCreator,
             PlayAnimationState,
         },
+        history::{
+            History, StepType
+        },
         level_map,
         level_map::CoordPos,
+        networking::ClientID,
         transform,
     },
 };
 
-type Point = nalgebra::Vector3<u32>;
+type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+/// Message data type for communicating changes over the connection
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum ActorChange {
+    ActorInsertion{
+        /// unique id for the inserted actor object
+        uuid: u128,
+        /// the index of the actor in ActorDefinitions
+        definition_id: u32,
+        coord_pos: Point,
+        direction: Vector3D,
+        actor_type: ActorType,
+        sub_definition: Option<u32>,
+    },
+    ActorRemoval(u128),
+}
+
+// #[derive(Debug, Copy, Clone)]
+// pub enum ActorChangeOption {
+//     Some(ActorChange),
+//     None(u128)
+// }
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum ActorType {
     Player,
     Monument,
     Actor
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub struct ActorID(u128);
+
+impl ActorID {
+    pub fn val(&self) -> u128 {
+        self.0
+    }
+}
+
+#[derive(Clone)]
 pub struct Actor {
     definiton: ActorDefinition,
 }
@@ -54,18 +91,16 @@ impl Player {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct ActorDefinitions {
-    definitions: Vec<ActorDefinition>
+pub struct Definitions<T> {
+    definitions: Vec<T>,
 }
 
-impl ActorDefinitions {
-    pub fn get_definitions(&self) -> &Vec<ActorDefinition> {
-        &self.definitions
-    }
+pub trait DefinitionsTrait<T: Sized>: serde::de::DeserializeOwned {
+    fn get_definitions(&self) -> &Vec<T>;
 
-    pub fn from_config() -> Option<ActorDefinitions> {
+    fn from_config(path: &'static str) -> Option<Self> where Self: Sized{
         {
-            let path = "res://config/actors.ron";
+            // let path = "res://config/actors.ron";
 
             let file = File::new();
 
@@ -75,7 +110,7 @@ impl ActorDefinitions {
         
                     let string = file.get_as_text().to_string();
         
-                    match ron::de::from_str::<ActorDefinitions>(string.as_str()) {
+                    match ron::de::from_str::<Self>(string.as_str()) {
                         Ok(result) => Some(result),
                         Err(err) => {
                             println!("{:?}", err);
@@ -92,7 +127,13 @@ impl ActorDefinitions {
     }
 }
 
-pub trait Definition<'a>: Clone + Serialize + Deserialize<'a> {
+impl DefinitionsTrait<ActorDefinition> for Definitions<ActorDefinition> {
+    fn get_definitions(&self) -> &Vec<ActorDefinition> {
+        &self.definitions
+    }
+}
+
+pub trait Definition: serde::de::DeserializeOwned + Clone + Serialize {
     fn get_name(&self) -> &String;
     fn get_path(&self) -> &String;
     fn get_bounds(&self) -> &Vector3D;
@@ -107,7 +148,7 @@ pub struct CharacterDefinition {
     //this is a seperate struct because we could possibly fit other properties here, like path to voice sounds, prefab outfits, other configurables
 }
 
-impl Definition<'_> for CharacterDefinition {
+impl Definition for CharacterDefinition {
     fn get_name(&self) -> &String {
         &self.name
     }
@@ -135,7 +176,7 @@ impl ActorDefinition {
     }
 }
 
-impl Definition<'_> for ActorDefinition {
+impl Definition for ActorDefinition {
     fn get_name(&self) -> &String {
         &self.name
     }
@@ -180,6 +221,84 @@ pub fn create_move_actor_system() -> impl systems::Runnable {
 
             });
         })
+}
+
+pub fn actor_change(
+    world: &mut World, 
+    change: &ActorChange, 
+    actor_definitions: &Definitions<ActorDefinition>, 
+    character_definitions: Option<&Definitions<CharacterDefinition>>, 
+    store_history: Option<u32>
+) {
+
+    match change {
+        ActorChange::ActorInsertion {
+            uuid, 
+            coord_pos, 
+            direction, 
+            actor_type, 
+            definition_id, 
+            sub_definition 
+        } => match actor_type {
+            ActorType::Actor => {
+                let mut query = <(Read<ActorID>, Read<Actor>, Read<CoordPos>, Read<transform::rotation::Rotation>)>::query();
+
+                let results = query.iter(world)
+                    .filter(|(actor_id, _,_,_)| actor_id.val() == *uuid)
+                    .map(|(actor_id, actor, coord_pos, rotation)| (*actor_id, actor.clone(), *coord_pos, *rotation))
+                    .collect::<Vec::<(ActorID, Actor, CoordPos, transform::rotation::Rotation)>>();
+
+                if results.len() > 0 { //If an actor with this uuid already exists
+                    results.into_iter().for_each(|(actor_id, actor, coord_pos, rotation)| {
+
+                        //TODO: update values for existing actor
+
+                    });
+                } else { // if an actor with this uuid does not exist
+
+                    // add to history
+                    //TODO: Check that there is actually changes worth storing
+                    if let Some(client_id) = store_history {
+                        let mut query = <(Write<History>, Read<ClientID>)>::query();    
+
+                        if let Some((history, _)) = query.iter_mut(world).filter(|(_, id)| id.val() == client_id).next() {
+                            history.add_step(StepType::ActorChange(
+                                (ActorChange::ActorRemoval(*uuid), change.clone())
+                            ))
+                        }
+                    }
+
+                    // this block creates a new actor
+                    if let Some(actor_definition) = actor_definitions.get_definitions().get(*definition_id as usize) {
+                        let entity = initialize_actor(world, actor_definition, CoordPos::new(*coord_pos));
+            
+                        if let Some(mut entry) = world.entry(entity) {
+                            entry.add_component(ActorID(*uuid));
+                        }
+                    }
+                }
+                
+            },
+            _ => {
+                unimplemented!();
+            }
+        },
+        ActorChange::ActorRemoval(uuid) => remove_actor(world, *uuid)
+    }
+}
+
+pub fn remove_actor(world: &mut World, uuid: u128) {
+
+    let mut query = <(Read<NodeName>, Read<ActorID>)>::query();
+
+    let results = query.iter(world)
+        .filter(|(_, actor_id)| actor_id.val() == uuid)
+        .map(|(node_name, _)| node_name.clone())
+        .collect::<Vec<NodeName>>();
+
+    results.into_iter().for_each(|node_name| {
+        node::free(world, &node_name.0);
+    });
 }
 
 pub fn initialize_actor(world: &mut World, actor_definition: &ActorDefinition, coord_pos: CoordPos) -> Entity {

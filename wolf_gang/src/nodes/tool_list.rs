@@ -11,7 +11,12 @@ use crate::{
     editor,
     node,
     systems::{
-        actor::{Definition, ActorDefinitions},
+        actor::{
+            Definition, 
+            Definitions, 
+            DefinitionsTrait, 
+            ActorDefinition
+        },
         selection_box,
     }
 };
@@ -86,7 +91,7 @@ impl ToolList {
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.as_ref().borrow_mut();
 
-        if let Some(actor_definitions) = resources.get::<ActorDefinitions>() {
+        if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
             godot_print!("Got actor definitions");
             unsafe {
                 let palette = get_actor_palette(item_list);
@@ -140,7 +145,7 @@ unsafe fn populate_palette(palette: &ItemList) {
     }
 }
 
-unsafe fn populate_actor_palette(item_list: &ItemList, actor_definitions: &ActorDefinitions) {
+unsafe fn populate_actor_palette(item_list: &ItemList, actor_definitions: &Definitions<ActorDefinition>) {
 
     for definition in actor_definitions.get_definitions() {
 

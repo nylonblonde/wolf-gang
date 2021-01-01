@@ -2,9 +2,18 @@ use std::collections::VecDeque;
 
 use legion::*;
 
+use gdnative::godot_print;
+
 use crate::{
     collections::octree::Octree,
     systems::{ 
+        actor::{
+            Definitions, 
+            ActorDefinition, 
+            CharacterDefinition, 
+            ActorChange, 
+            actor_change
+        },
         input::{
             InputActionComponent, Action
         },
@@ -19,7 +28,9 @@ use crate::{
 use std::io::{ Error, ErrorKind };
 
 pub enum StepType {
-    MapChange((Octree<i32, TileData>, Octree<i32, TileData>))
+    MapChange((Octree<i32, TileData>, Octree<i32, TileData>)),
+    // "previous" state must be an option to capture the state where the actor did not exist
+    ActorChange((ActorChange, ActorChange)),
 }
 
 /// Resource which holds chnages as a VecDeque
@@ -66,7 +77,20 @@ impl History {
                             map.change(world, octree.clone(), None);
                         })
                     }
-                }
+                },
+                StepType::ActorChange((undo_actor, redo_actor)) => {
+                    if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
+                        
+                        let change = if amount > 0 { *redo_actor } else { *undo_actor };
+            
+                        let actor_definitions = actor_definitions.clone();
+                        
+                        commands.exec_mut(move |world| {
+                            actor_change(world, &change, &actor_definitions, None, None);
+                        })
+                    }
+                    
+                },
             }
 
             self.current_step = std::cmp::max(0, std::cmp::min(self.history.len() as i32 - 1, next_step));

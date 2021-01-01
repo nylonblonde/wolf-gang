@@ -178,6 +178,11 @@ pub enum  DataType {
         client_id: u32,
         actor_id: u32
     },
+    ///Handles changes to actors such as insertion or removal. Edits to existing actors are handled through insertion but is checked against by the uuid
+    ActorChange{
+        change: crate::systems::actor::ActorChange,
+        store_history: Option<u32>
+    },
     MapInput(crate::collections::octree::Octree<i32, crate::systems::level_map::TileData>),
     ///Handles changes to map like insertion, removal, cutting, pasting, takes an optional u32 as store_history to store the change in the history for that client_id if need be
     MapChange{
@@ -651,6 +656,41 @@ fn client_handle_fragments(
 
 fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resources) {
     match data {
+        DataType::ActorChange{ change, store_history } => {
+
+            use crate::systems::{
+                actor::{
+                    Definitions, 
+                    ActorChange,
+                    ActorDefinition, 
+                    CharacterDefinition, 
+                    actor_change, 
+                    remove_actor,
+                    initialize_actor
+                },
+                level_map::CoordPos,
+            };
+
+            match change {
+                ActorChange::ActorInsertion { 
+                    uuid, 
+                    coord_pos, 
+                    direction, 
+                    actor_type, 
+                    definition_id, 
+                    sub_definition 
+                } => {
+
+                    let actor_definitions = resources.get::<Definitions<ActorDefinition>>().unwrap();
+
+                    actor_change(world, &change, &actor_definitions, None, store_history);
+
+                },
+                ActorChange::ActorRemoval(uuid) => {
+                    remove_actor(world, uuid);
+                }
+            }
+        },
         DataType::MapInput(r) => {
             if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
                 map.change(world, r, None);
@@ -672,29 +712,29 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                     MapChange::MapRemoval(aabb) => {
                         map.change(world, level_map::fill_octree_from_aabb(aabb, None), store_history)
                     },
-                    MapChange::ActorInsertion { uuid, coord_pos, definition_id } => {
+                    // MapChange::ActorInsertion { uuid, coord_pos, definition_id } => {
                         
-                        use crate::{
-                            systems::{
-                                actor::{ActorDefinitions, initialize_actor},
-                                level_map::CoordPos,
-                            }
-                        };
+                    //     use crate::{
+                    //         systems::{
+                    //             actor::{ActorDefinitions, initialize_actor},
+                    //             level_map::CoordPos,
+                    //         }
+                    //     };
 
-                        //TODO: check if the id exists already, insertion should silently fail if so
+                    //     //TODO: check if the id exists already, insertion should silently fail if so
 
-                        let actors = resources.get::<ActorDefinitions>().unwrap();
+                    //     let actors = resources.get::<ActorDefinitions>().unwrap();
 
-                        if let Some(actor_definition) = actors.get_definitions().get(definition_id as usize) {
-                            let entity = initialize_actor(world, actor_definition, CoordPos::new(coord_pos));
+                    //     if let Some(actor_definition) = actors.get_definitions().get(definition_id as usize) {
+                    //         let entity = initialize_actor(world, actor_definition, CoordPos::new(coord_pos));
 
-                            //TODO: add ID component to entity through an entry
-                        }
+                    //         //TODO: add ID component to entity through an entry
+                    //     }
 
-                    },
-                    MapChange::ActorRemoval(uuid) => {
-                        unimplemented!();
-                    }
+                    // },
+                    // MapChange::ActorRemoval(uuid) => {
+                    //     unimplemented!();
+                    // }
                 }
 
             }

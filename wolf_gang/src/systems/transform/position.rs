@@ -7,6 +7,7 @@ use legion::*;
 
 use crate::node;
 
+#[derive(Copy, Clone)]
 pub struct Position {
     pub value: Vector3
 }

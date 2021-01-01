@@ -61,14 +61,6 @@ pub enum MapChange {
         tile_data: TileData
     },
     MapRemoval(AABB),
-    ActorInsertion{
-        /// unique id for the inserted actor object
-        uuid: u128,
-        /// the index of the actor in ActorDefinitions
-        definition_id: u32,
-        coord_pos: Point,
-    },
-    ActorRemoval(u128),
 }
 
 pub struct TileDimensions {

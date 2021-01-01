@@ -3,7 +3,11 @@ use crate::{
     collections::octree::Octree,
     game_state::{NewState, GameState, GameStateTraits},
     systems::{
-        actor::ActorDefinitions,
+        actor::{
+            Definitions,
+            DefinitionsTrait,
+            ActorDefinition,
+        },
         camera,
         history::History,
         level_map,
@@ -37,7 +41,7 @@ impl GameStateTraits for Editor {
         resources.insert(PaletteSelection(0));
         resources.insert(SelectedTool(selection_box::ToolBoxType::TerrainToolBox));
 
-        if let Some(actor_definitions) = ActorDefinitions::from_config() {
+        if let Some(actor_definitions) = Definitions::<ActorDefinition>::from_config("res://config/actors.ron") {
             resources.insert(actor_definitions);
         }
     }

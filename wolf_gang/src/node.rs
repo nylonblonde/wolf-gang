@@ -33,7 +33,7 @@ pub unsafe fn add_node(parent: &Node, node: Ref<Node, Unique>) -> Option<NodeNam
 
     parent.add_child(shared_node, true); 
     //We can generally assume this is a unique reference as it is has just been created and is now being added.
-    let string = shared_node.assume_unique().name().to_string();
+    let mut string = shared_node.assume_unique().name().to_string();
 
     // godot_print!("{}", string.clone());
 
@@ -42,6 +42,13 @@ pub unsafe fn add_node(parent: &Node, node: Ref<Node, Unique>) -> Option<NodeNam
     }
 
     let node_cache = NODE_CACHE.as_mut().unwrap();
+    let mut i = 1;
+    //ensure the name is unique in the cache
+    while node_cache.cache.contains_key(&string){
+        string = format!("{}{}", string, i);
+        i += 1;
+    }
+    shared_node.assume_unique().set_name(string.clone());
     node_cache.cache.insert(string.clone(), shared_node);
 
     Some(NodeName(string))

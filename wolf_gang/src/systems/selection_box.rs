@@ -15,7 +15,14 @@ use crate::{
     editor,
     node,
     systems::{
-        actor::{Definition,ActorDefinition,ActorDefinitions},
+        actor::{
+            ActorChange, 
+            ActorType,
+            Definitions,
+            DefinitionsTrait,
+            Definition,
+            ActorDefinition
+        },
         camera,
         custom_mesh,
         transform,
@@ -220,7 +227,7 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
 pub fn create_actor_selection_chooser_system() -> impl systems::Runnable {
     SystemBuilder::new("actor_selection_chooser_system")
         .read_resource::<ClientID>()
-        .read_resource::<ActorDefinitions>()
+        .read_resource::<Definitions<ActorDefinition>>()
         .read_resource::<editor::ActorPaletteSelection>()
         .with_query(<Read<SelectionBox>>::query())
         .with_query(<(Entity, Read<MakeActorSelectionChosen>)>::query())
@@ -572,12 +579,15 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
                                 world.push(
                                     (
                                         MessageSender{
-                                            data_type: DataType::MapChange{
+                                            data_type: DataType::ActorChange{
                                                 store_history: Some(client_id),
-                                                change: level_map::MapChange::ActorInsertion{
+                                                change: ActorChange::ActorInsertion{
                                                     uuid: uuid::Uuid::new_v4().as_u128(),
                                                     coord_pos: coord_pos,
-                                                    definition_id: actor_selection
+                                                    direction: Vector3D::z(),
+                                                    actor_type: ActorType::Actor,
+                                                    definition_id: actor_selection,
+                                                    sub_definition: None,
                                                 }
                                             },
                                             message_type: MessageType::Ordered,
