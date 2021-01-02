@@ -1,0 +1,166 @@
+(
+    actions: {
+        "rotate_selection_left": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777238,
+            )), Some((
+                deadzone: 0,
+                code: 65,
+            ))),
+        },
+        "rotate_selection_right": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777238,
+            )), Some((
+                deadzone: 0,
+                code: 68,
+            ))),
+        },
+        "camera_rotate_left": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 74,
+            ))),
+        },
+        "expand_selection_forward": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777237,
+            )), Some((
+                deadzone: 0,
+                code: 87,
+            ))),
+        },
+        "move_down": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 90,
+            ))),
+        },
+        "redo": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777238,
+            )), Some((
+                deadzone: 0,
+                code: 89,
+            ))),
+        },
+        "move_forward": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 87,
+            ))),
+        },
+        "move_left": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 65,
+            ))),
+        },
+        "camera_rotate_right": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 76,
+            ))),
+        },
+        "move_up": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 88,
+            ))),
+        },
+        "expand_selection_up": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777237,
+            )), Some((
+                deadzone: 0,
+                code: 88,
+            ))),
+        },
+        "expand_selection_right": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777237,
+            )), Some((
+                deadzone: 0,
+                code: 68,
+            ))),
+        },
+        "expand_selection_down": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777237,
+            )), Some((
+                deadzone: 0,
+                code: 90,
+            ))),
+        },
+        "camera_rotate_down": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 75,
+            ))),
+        },
+        "expand_selection_left": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777237,
+            )), Some((
+                deadzone: 0,
+                code: 65,
+            ))),
+        },
+        "move_right": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 68,
+            ))),
+        },
+        "camera_rotate_up": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 73,
+            ))),
+        },
+        "undo": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777238,
+            )), Some((
+                deadzone: 0,
+                code: 90,
+            ))),
+        },
+        "expand_selection_back": {
+            Key: (Some((
+                deadzone: 0,
+                code: 16777237,
+            )), Some((
+                deadzone: 0,
+                code: 83,
+            ))),
+        },
+        "insertion": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 82,
+            ))),
+        },
+        "move_back": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 83,
+            ))),
+        },
+        "removal": {
+            Key: (None, Some((
+                deadzone: 0,
+                code: 70,
+            ))),
+        },
+    },
+)

@@ -1,7 +1,6 @@
 use gdnative::prelude::*;
 use gdnative::api::{
     File,
-    GlobalConstants,
     InputMap
 };
 use legion::*;
@@ -10,7 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::{ HashMap, HashSet };
 
-pub const CONFIG_PATH: &'static str = "user://input_map.ron";
+const USER_CONFIG_PATH: &'static str = "user://input_map.ron";
+const RESOURCE_CONFIG_PATH: &'static str = "res://config/input_map.ron";
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub enum InputType {
@@ -38,216 +38,20 @@ pub struct InputConfig {
 }
 
 impl InputConfig {
-    pub fn new() -> Self {
 
-        let mut input_config: Self = InputConfig {
-            actions: HashMap::new()
-        };
+    fn from_file(path: &'static str) -> Option<InputConfig> {
 
-        // First key inserted is a modifier (like Shift), second key is the main input
-        input_config.actions.insert(String::from("move_forward"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_W })]);
-                event
-            }
-        );
+        let file = File::new();
+        match file.open(path, File::READ) {
+            Ok(_) => {
+                match ron::de::from_str::<InputConfig>(file.get_as_text().to_string().as_str()) {
+                    Ok(result) => Some(result),
+                    Err(_) => None
+                }
+            },
+            Err(_) => None
+        }
 
-        input_config.actions.insert(String::from("move_back"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_S })]);
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("move_left"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_A })]);
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("move_right"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_D })]);
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("move_down"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_Z })]);
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("move_up"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_X })]);
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("camera_rotate_left"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_J })]);
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("camera_rotate_right"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_L })]);
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("camera_rotate_up"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_I })]);
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("camera_rotate_down"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [None, Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_K })]);
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("expand_selection_forward"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_W })
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("expand_selection_back"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_S })
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("expand_selection_left"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_A })
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("expand_selection_right"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_D })
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("expand_selection_up"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_X })
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("expand_selection_down"), 
-            { 
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_SHIFT}), 
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_Z })
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("insertion"), 
-            {
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        None,
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_R})
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("removal"), 
-            {
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        None,
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_F})
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("undo"), 
-            {
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_CONTROL}),
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_Z})
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.actions.insert(String::from("redo"), 
-            {
-                let mut event = HashMap::new();
-                event.insert(InputType::Key, [
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_CONTROL}),
-                        Some(InputData { deadzone: 0.0, code: GlobalConstants::KEY_Y})
-                    ]
-                );
-                event
-            }
-        );
-
-        input_config.save(CONFIG_PATH);
-
-        input_config
     }
 
     fn transcode_to_input_map(&self) {
@@ -319,30 +123,16 @@ impl InputConfig {
 }
 
 /// Loads a config file if it can find it, otherwise, creates a new InputConfig and inserts the config entities from the relevant data
-pub fn initialize_input_config(world: &mut legion::world::World, path: &str) {
-    let file = File::new();
+pub fn initialize_input_config(world: &mut legion::world::World) {
 
-    let input_config = match file.file_exists(GodotString::from_str(path)) {
-        true => InputConfig::new(),
-        false => {
-            match file.open(GodotString::from_str(path), File::READ) {
-                Ok(_) => {},
-                _err => {
-                    //maybe return an error message
-                }
-            };
-    
-            let string = file.get_as_text().to_string();
-    
-            match ron::de::from_str::<InputConfig>(string.as_str()) {
-                Ok(r) => {
-                    r
-                }
-                _err => {
-                    //some kind of error message needed
-                    InputConfig::new()
-                }
-            }
+    let input_config = match InputConfig::from_file(USER_CONFIG_PATH) {
+        Some(input_config) => input_config,
+        None => {
+            let input_config = InputConfig::from_file(RESOURCE_CONFIG_PATH).expect(format!("Failed to load {}", RESOURCE_CONFIG_PATH).as_str());
+
+            input_config.save(USER_CONFIG_PATH);
+
+            input_config
         }
     };
 

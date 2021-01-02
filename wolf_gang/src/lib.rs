@@ -114,15 +114,7 @@ impl WolfGang {
             delta: 0.
         });
 
-        systems::input::initialize_input_config(world, systems::input::CONFIG_PATH);
-
-        // world.push(
-        //     (
-        //         systems::scene::InitializeScene::new(unsafe { owner.assume_shared() }, "res://characters/lucas.tscn".to_string()),
-        //         systems::character_animator::AnimationControlCreator{},
-        //         systems::character_animator::PlayAnimationState("square_up".to_string())
-        //     )
-        // );
+        systems::input::initialize_input_config(world);
 
         STATE_MACHINE.with(|s| {
             let mut state_machine = s.borrow_mut();

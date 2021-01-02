@@ -155,16 +155,18 @@ pub fn initialize_selection_box(world: &mut World, client_id: u32, tool_type: To
                 (
                     node_name,
                     ClientID::new(client_id),
-                    SelectionBox::new(),
                     custom_mesh::MeshData::new(),
                     level_map::CoordPos::default(),
                     transform::position::Position::default(), 
+                    transform::rotation::Rotation::default(),
                     CameraAdjustedDirection::default(),
                     custom_mesh::Material::from_str("res://materials/select_box.material")
                 )
             );
         
+            //have to add extra components via entry because world.push can only take 8
             if let Some(mut entry) = world.entry(entity) {
+                entry.add_component(SelectionBox::new());
                 entry.add_component(ActorToolBox{});
         
                 if let Some(camera_name) = &camera_name {
