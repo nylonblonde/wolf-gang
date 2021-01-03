@@ -186,8 +186,6 @@ impl WolfGang {
                     
                     .add_thread_local(systems::custom_mesh::create_draw_system())
 
-                    .add_thread_local(systems::actor::create_move_actor_system())
-
                     .add_thread_local(systems::transform::rotation::create_system())
                     .add_thread_local(systems::transform::position::create_system())
                     

@@ -18,7 +18,7 @@ pub struct Rotation {
 impl Default for Rotation {
     fn default() -> Self {
         Rotation {
-            value: Rotation3D::new(Vector3D::new(0.,0.,0.))
+            value: Rotation3D::identity()
         }
     }
 }

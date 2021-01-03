@@ -26,6 +26,7 @@ use crate::{
 
 type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
+type AABB = crate::geometry::aabb::AABB<i32>;
 
 /// Message data type for communicating changes over the connection
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
@@ -36,9 +37,9 @@ pub enum ActorChange {
         /// the index of the actor in ActorDefinitions
         definition_id: u32,
         coord_pos: Point,
-        direction: Vector3D,
-        actor_type: ActorType,
-        sub_definition: Option<u32>,
+        rotation: nalgebra::Rotation3<f32>,
+        // rh side is sub_definition
+        actor_type: (ActorType, Option<u32>),
     },
     ActorRemoval(u128),
 }
@@ -67,12 +68,38 @@ impl ActorID {
 
 #[derive(Clone)]
 pub struct Actor {
-    definiton: ActorDefinition,
+    definition_id: usize,
+    definition: ActorDefinition,
 }
 
 impl Actor {
+
+    pub fn new(actor_definitions: &Definitions<ActorDefinition>, definition_id: usize) -> Actor {
+        
+        let definition = actor_definitions.get_definitions().get(definition_id).unwrap().clone();
+        
+        Actor {
+            definition_id,
+            definition
+        }
+    }
+
     pub fn get_definition(&self) -> &ActorDefinition{
-        &self.definiton
+        &self.definition
+    }
+
+    pub fn get_bounds(&self, rotation: nalgebra::Rotation3<f32>) -> AABB {
+
+        let bounds = self.definition.bounds;
+
+        let bounds = Point::new(
+            (bounds.x as f32 / level_map::TILE_DIMENSIONS.x) as i32,
+            (bounds.y as f32 / level_map::TILE_DIMENSIONS.y) as i32,
+            (bounds.z as f32 / level_map::TILE_DIMENSIONS.z) as i32,
+        );
+        
+        let aabb = AABB::new(Point::zeros(), bounds);
+        return aabb.rotate(rotation)
     }
 }
 
@@ -190,37 +217,47 @@ impl Definition for ActorDefinition {
     }
 }
 
-pub struct MoveImmediate{}
+pub fn place_actor(world: &mut World, actor_entity: Entity)  {
 
-pub fn create_move_actor_system() -> impl systems::Runnable {
-    SystemBuilder::new("move_actor_system")
-        .with_query(<(Entity, Read<NodeName>)>::query()
-            .filter(component::<MoveImmediate>())
-        )
-        .with_query(<(Read<NodeName>, Read<Actor>, Read<CoordPos>, Write<transform::position::Position>)>::query())
-        .build(move |commands,world,_,queries| {
-            let (move_queries, actor_queries) = queries;
+    let bounds = if let Some(entry) = world.entry(actor_entity) {
+        if let Ok(actor) = entry.get_component::<Actor>() {
+            if let Ok(coord_pos) = entry.get_component::<CoordPos>(){
+                if let Ok(rotation) = entry.get_component::<transform::rotation::Rotation>() {
+                    let bounds = AABB::new(coord_pos.value, actor.get_bounds(rotation.value).dimensions);
 
-            let results = move_queries.iter(world)
-                .map(|(entity, node_name)| (*entity, node_name.clone()))
-                .collect::<Vec<(Entity, NodeName)>>();
-            
-            results.into_iter().for_each(move |(entity, node_name)| {
-                
-                actor_queries.iter_mut(world).filter(|(name, _, _, _)| *name == &node_name)
-                    .for_each(|(_, actor, coord_pos, position)| {
-                        let mut new_position = level_map::map_coords_to_world(coord_pos.value);
-                        let bounds = actor.definiton.get_bounds();
-                        new_position += Vector3D::new(bounds.x, -bounds.y, bounds.z) / 2.;
-                        position.value = Vector3::new(new_position.x, new_position.y, new_position.z);
-                    });
+                    Some(bounds)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
-                commands.exec_mut(move |world| {
-                    world.remove(entity);
-                });
+    if let Some(bounds) = bounds {
+        position_actor_helper(world, actor_entity, bounds);   
+    }
+}
 
-            });
-        })
+pub fn position_actor_helper(world: &mut World, actor_entity: Entity, aabb: AABB) {
+    if let Ok(entry) = world.entry_mut(actor_entity) {
+        godot_print!("what");
+        if let Ok(position) = entry.into_component_mut::<transform::position::Position>() {
+
+            let min = level_map::map_coords_to_world(aabb.get_min());
+
+            godot_print!("{:#?}", min);
+
+            let bounds = level_map::map_coords_to_world(aabb.dimensions);
+            let bounds = Vector3::new(bounds.x, bounds.y, bounds.z);
+            position.value = Vector3::new(min.x, min.y, min.z) + Vector3::new(bounds.x/2., 0., bounds.z/2.);
+        }
+    } 
 }
 
 pub fn actor_change(
@@ -235,12 +272,11 @@ pub fn actor_change(
         ActorChange::ActorInsertion {
             uuid, 
             coord_pos, 
-            direction, 
+            rotation, 
             actor_type, 
             definition_id, 
-            sub_definition 
         } => match actor_type {
-            ActorType::Actor => {
+            (ActorType::Actor, _) => {
                 let mut query = <(Read<ActorID>, Read<Actor>, Read<CoordPos>, Read<transform::rotation::Rotation>)>::query();
 
                 let results = query.iter(world)
@@ -269,13 +305,16 @@ pub fn actor_change(
                     }
 
                     // this block creates a new actor
-                    if let Some(actor_definition) = actor_definitions.get_definitions().get(*definition_id as usize) {
-                        let entity = initialize_actor(world, actor_definition, CoordPos::new(*coord_pos));
-            
-                        if let Some(mut entry) = world.entry(entity) {
-                            entry.add_component(ActorID(*uuid));
-                        }
+                    let owner = unsafe { crate::OWNER_NODE.as_ref().unwrap() };
+                    let entity = initialize_actor(world, unsafe{ &owner.assume_safe()}, &Actor::new(actor_definitions, *definition_id as usize));
+        
+                    if let Some(mut entry) = world.entry(entity) {
+                        entry.add_component(CoordPos::new(*coord_pos));
+                        entry.add_component(transform::rotation::Rotation{value:*rotation});
+                        entry.add_component(ActorID(*uuid));
                     }
+
+                    place_actor(world, entity);
                 }
                 
             },
@@ -301,27 +340,16 @@ pub fn remove_actor(world: &mut World, uuid: u128) {
     });
 }
 
-pub fn initialize_actor(world: &mut World, actor_definition: &ActorDefinition, coord_pos: CoordPos) -> Entity {
+pub fn initialize_actor(world: &mut World, parent: &Node, actor: &Actor) -> Entity {
 
-    let owner = unsafe { crate::OWNER_NODE.as_mut().unwrap().assume_safe() };
-    let node = unsafe { init_scene(world, &owner, actor_definition.get_path().to_string()).assume_safe() };
+    let node = unsafe { init_scene(world, parent, actor.definition.get_path().to_string()).assume_safe() };
 
     let node_name = NodeName(node.name().to_string());
 
     world.push(
         (
-            MoveImmediate{},
-            node_name.clone(),
-        )
-    );
-
-    world.push(
-        (
             node_name,
-            Actor{
-                definiton: actor_definition.clone(),    
-            },
-            coord_pos,
+            actor.clone(),
             AnimationControlCreator{},
             PlayAnimationState("square_up".to_string()),
             transform::position::Position::default(),

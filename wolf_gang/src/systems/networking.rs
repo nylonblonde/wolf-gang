@@ -675,10 +675,9 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 ActorChange::ActorInsertion { 
                     uuid, 
                     coord_pos, 
-                    direction, 
+                    rotation, 
                     actor_type, 
                     definition_id, 
-                    sub_definition 
                 } => {
 
                     let actor_definitions = resources.get::<Definitions<ActorDefinition>>().unwrap();

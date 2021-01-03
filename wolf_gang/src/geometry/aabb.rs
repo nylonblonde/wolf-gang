@@ -83,12 +83,6 @@ impl<F: Signed + Scalar + Num + NumCast + Ord + Copy + Clone> AABB<F> {
         max
     }
 
-    pub fn get_extents_from_matrix(&self, matrix: nalgebra::MatrixMN<F, nalgebra::dimension::U4, nalgebra::dimension::U3>) -> (Vector3<F>, Vector3<F>) {
-
-        unimplemented!()
-
-    }
-
     fn get_corners<T: nalgebra::SimdRealField + NumCast>(&self) -> [Vector3<T>; 8] {
         let min = self.get_min();
         let max = self.get_max();
@@ -120,8 +114,6 @@ impl<F: Signed + Scalar + Num + NumCast + Ord + Copy + Clone> AABB<F> {
         let rotated_corners = corners.iter().map(|corner| rotation * *corner).collect::<Vec<Vector3<T>>>();
         let mut rotated_corners_iter = rotated_corners.iter();
 
-        println!("{:#?}", rotated_corners);
-
         if let Some(corner) = rotated_corners_iter.next() {
             let mut min_x: F = NumCast::from(corner.x).unwrap();
             let mut min_y: F = NumCast::from(corner.y).unwrap();
@@ -149,7 +141,10 @@ impl<F: Signed + Scalar + Num + NumCast + Ord + Copy + Clone> AABB<F> {
                 NumCast::from(max_x).unwrap(), NumCast::from(max_y).unwrap(), NumCast::from(max_z).unwrap()
             );
 
-            return AABB::from_extents(min, max)
+            let aabb = AABB::from_extents(min, max);
+            return AABB::new(Vector3::zeros(), Vector3::new(
+                aabb.dimensions.x.abs(), aabb.dimensions.y.abs(), aabb.dimensions.z.abs()
+            ))
         }
 
         AABB::from_extents(Vector3::zeros(), Vector3::zeros())
