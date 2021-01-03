@@ -109,6 +109,11 @@ pub struct UpdateBounds {
     pub aabb: AABB
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct SelectionBoxRotation {
+    rotation: Rotation3<f32>
+}
+
 #[derive(Default, Clone)]
 pub struct RelativeCamera(pub String);
 
@@ -157,8 +162,10 @@ pub fn initialize_selection_box(world: &mut World, client_id: u32, tool_type: To
                     ClientID::new(client_id),
                     custom_mesh::MeshData::new(),
                     level_map::CoordPos::default(),
-                    transform::position::Position::default(), 
-                    transform::rotation::Rotation::default(),
+                    transform::position::Position::default(),
+                    SelectionBoxRotation{
+                        rotation: Rotation3::identity()
+                    },
                     CameraAdjustedDirection::default(),
                     custom_mesh::Material::from_str("res://materials/select_box.material")
                 )
@@ -689,6 +696,53 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
                     }
                 })
             })
+        })
+}
+
+pub fn create_rotation_system() -> impl systems::Runnable {
+    let rotate_selection_left = input::Action("rotate_selection_left".to_string());
+    let rotate_selection_right = input::Action("rotate_selection_right".to_string());
+
+    SystemBuilder::new("selection_rotation_system")
+        .read_resource::<crate::Time>()
+        .read_resource::<ClientID>()
+        .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
+        .with_query(<(Read<ClientID>, Write<SelectionBox>, Write<SelectionBoxRotation>)>::query()
+            .filter(component::<SelectionBox>() & component::<ActorToolBox>() & component::<Active>()))
+        .build(move |commands, world, (time, client_id), queries| {
+            let (input_query, selection_box_query) = queries;
+
+            let inputs = input_query.iter(world)
+                .map(|(input, action)| (*input, (*action).clone()))
+                .collect::<Vec<(input::InputActionComponent, input::Action)>>();
+
+            inputs.into_iter()
+                .filter(|(_, a)|
+                    a == &rotate_selection_left
+                    || a == &rotate_selection_right
+                )
+                .for_each(|(input_component, action)| {
+                    if input_component.repeated(time.delta, 0.25) {
+
+                        selection_box_query.iter_mut(world)
+                            .filter(|(id, _, _)| id.val() == client_id.val())
+                            .for_each(|(_, selection_box, selection_box_rot)| {
+
+                                let rotation = if action == rotate_selection_left {
+                                    Rotation3::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2)
+                                } else if action == rotate_selection_right {
+                                    Rotation3::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2)
+                                } else {
+                                    Rotation3::identity()
+                                };
+
+                                selection_box_rot.rotation = selection_box_rot.rotation * Rotation3::from_axis_angle(&Vector3D::y_axis(), std::f32::consts::FRAC_PI_2);
+                                selection_box.aabb = selection_box.aabb.rotate(rotation);
+
+                            });
+
+                    }
+                });
         })
 }
 
@@ -1279,7 +1333,6 @@ pub fn set_chosen_actor(world: &mut World, client_id: ClientID, actor_selection:
 
                 node::free(world, &name.to_string());
 
-                godot_print!("Erasing this thing {:?}", name);
             }
         }
 
@@ -1288,7 +1341,7 @@ pub fn set_chosen_actor(world: &mut World, client_id: ClientID, actor_selection:
         let spatial = unsafe { node.assume_safe().cast::<Spatial>().unwrap() };
 
         let bounds = actor_selection.get_bounds();
-
+        
         spatial.set_translation(Vector3::new(bounds.x/2., -bounds.y/2., bounds.z/2.));
         
     }

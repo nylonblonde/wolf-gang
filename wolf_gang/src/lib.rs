@@ -178,6 +178,7 @@ impl WolfGang {
                     .add_system(systems::selection_box::create_orthogonal_dir_system())
                     .add_system(systems::selection_box::create_movement_system()) 
                     .add_system(systems::selection_box::create_expansion_system())
+                    .add_system(systems::selection_box::create_rotation_system())
 
                     .add_system(systems::level_map::mesh::create_add_components_system())
                     .flush()

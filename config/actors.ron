@@ -6,7 +6,7 @@
             path: "res://characters/lucas.tscn", 
             // size in actual units, ie: world space
             bounds: [
-                1,
+                2,
                 2,
                 1,
             ],

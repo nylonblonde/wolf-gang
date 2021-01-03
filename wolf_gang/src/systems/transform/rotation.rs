@@ -42,12 +42,17 @@ impl Default for Direction {
 
 pub fn create_system() -> impl systems::Runnable {
     SystemBuilder::new("rotation_system")
-    .with_query(<(Read<Rotation>, Write<Direction>, Read<node::NodeName>)>::query()
+    .with_query(<(Entity, Read<Rotation>, Read<node::NodeName>)>::query()
         .filter(maybe_changed::<Rotation>())
     )
-    .build(move |_, world, _, query| {
+    .build(move |commands, world, _, query| {
 
-        query.for_each_mut(world, |(rotation, mut direction, node_name)| {
+        let results = query.iter(world)
+            .map(|(entity, rotation, node_name)| (*entity, *rotation, node_name.clone()))
+            .collect::<Vec<(Entity, Rotation, node::NodeName)>>();
+        
+        results.into_iter().for_each(|(entity, rotation, node_name)| {
+
             let spatial_node : Option<Ref<Spatial>> = {
                 unsafe {
                     match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0.clone(), false) {
@@ -66,11 +71,17 @@ pub fn create_system() -> impl systems::Runnable {
 
             match spatial_node {
                 Some(r) => {
-                    
-                    direction.right = rotation.value * Vector3D::x();
-                    direction.up = rotation.value * Vector3D::y();
-                    direction.forward = rotation.value * Vector3D::z();
 
+                    commands.exec_mut(move |world|{
+                        if let Ok(entry) = world.entry_mut(entity) {
+                            if let Ok(mut direction) = entry.into_component_mut::<Direction>() {
+                                direction.right = rotation.value * Vector3D::x();
+                                direction.up = rotation.value * Vector3D::y();
+                                direction.forward = rotation.value * Vector3D::z();
+                            }
+                        }
+                    });
+                    
                     let unit_quat: nalgebra::UnitQuaternion<f32> = rotation.value.into();
                     let quat = unit_quat.quaternion();
 
@@ -119,10 +130,9 @@ pub fn create_system() -> impl systems::Runnable {
                     }
 
                 },
-
-                   
+ 
                 None => {}
             }
-        })
+        });
     })
 }
