@@ -2,7 +2,7 @@ use gdnative::prelude::*;
 use legion::*;
 use std::collections::HashMap;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NodeName(pub String);
 
 pub struct NodeCache {

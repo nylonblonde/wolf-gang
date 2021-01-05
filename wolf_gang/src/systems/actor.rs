@@ -88,6 +88,10 @@ impl Actor {
         &self.definition
     }
 
+    pub fn get_definition_id(&self) -> usize {
+        self.definition_id
+    }
+
     pub fn get_bounds(&self, rotation: nalgebra::Rotation3<f32>) -> AABB {
 
         let bounds = self.definition.bounds;

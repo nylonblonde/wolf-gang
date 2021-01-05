@@ -142,6 +142,12 @@ impl GameStateTraits for Editor {
                     None
                 };
 
+                let rotation = if let Ok(rotation) = entry.get_component::<selection_box::SelectionBoxRotation>() {
+                    rotation.value
+                } else {
+                    nalgebra::Rotation::identity()
+                };
+
                 let active = entry.get_component::<selection_box::Active>().is_ok();
 
                 world.push(
@@ -152,6 +158,7 @@ impl GameStateTraits for Editor {
                                 active,
                                 box_type: box_type.unwrap(),
                                 client_id: client_id.val(),
+                                rotation,
                                 aabb,
                                 coord_pos: coord_pos.value
                             },

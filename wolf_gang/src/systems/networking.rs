@@ -166,6 +166,7 @@ pub enum  DataType {
         box_type: crate::systems::selection_box::ToolBoxType,
         active: bool,
         coord_pos: Point,
+        rotation: nalgebra::Rotation3<f32>,
         aabb: AABB
     },
     ActivateTerrainToolBox{
@@ -177,6 +178,10 @@ pub enum  DataType {
     ActorToolSelection {
         client_id: u32,
         actor_id: u32
+    },
+    ActorToolRotation {
+        client_id: u32,
+        rotation: nalgebra::Rotation3<f32>
     },
     ///Handles changes to actors such as insertion or removal. Edits to existing actors are handled through insertion but is checked against by the uuid
     ActorChange{
@@ -661,16 +666,39 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 actor::{
                     Actor, ActorDefinition, Definitions
                 },
-                selection_box::set_chosen_actor,
+                selection_box::{
+                    ActorToolBox,
+                    get_box_entity_by_client_id,
+                    set_chosen_actor,
+                }
             };
 
             if let Some(definitions) = resources.get::<Definitions<ActorDefinition>>(){
                 if let Some(id) = resources.get::<ClientID>() {
                     if id.0 != client_id { //don't act on this client because this was already processed before being sent
-                        set_chosen_actor(world, ClientID::new(client_id), &Actor::new(&definitions, actor_id as usize));
+                    if let Some(entity) = get_box_entity_by_client_id::<ActorToolBox>(world, ClientID(client_id)) {
+                            set_chosen_actor(world, entity, &Actor::new(&definitions, actor_id as usize));
+                        }
                     }
                 }
 
+            }
+        },
+        DataType::ActorToolRotation { client_id, rotation} => {
+            use crate::systems::{
+                selection_box::{
+                    ActorToolBox,
+                    get_box_entity_by_client_id,
+                    actor_tool_rotation,
+                }
+            };
+
+            if let Some(id) = resources.get::<ClientID>() {
+                if id.0 != client_id {
+                    if let Some(entity) = get_box_entity_by_client_id::<ActorToolBox>(world, ClientID(client_id)) {
+                        actor_tool_rotation(world, entity, rotation);
+                    }
+                }
             }
         },
         DataType::ActorChange{ change, store_history } => {
@@ -790,7 +818,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
             };
 
         },
-        DataType::CreateSelectionBox{client_id: id, box_type, active, coord_pos, aabb} => {
+        DataType::CreateSelectionBox{client_id: id, box_type, active, rotation, coord_pos, aabb} => {
 
             use crate::systems::{
                 actor::{
@@ -801,6 +829,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                     ToolBoxType, SelectionBox,
                     set_active_selection_box,
                     set_chosen_actor,
+                    actor_tool_rotation
                 },
                 level_map::CoordPos,
                 history::History,
@@ -821,18 +850,22 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                     selection_box.aabb = aabb;
                 }
 
-                if active {
-                    match box_type {
-                        ToolBoxType::TerrainToolBox => {
-                            set_active_selection_box::<TerrainToolBox>(world, ClientID::new(id));
-                        },
-                        ToolBoxType::ActorToolBox(actor_id) => {
+                match box_type {
+                    ToolBoxType::TerrainToolBox => {
+                        if active {
+                            set_active_selection_box::<TerrainToolBox>(world, ClientID(id));
+                        }
+                    },
+                    ToolBoxType::ActorToolBox(actor_id) => {
 
-                            if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
-                                set_chosen_actor(world, ClientID(id), &Actor::new(&actor_definitions, actor_id as usize));
-                            }
+                        if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
+                            set_chosen_actor(world, entity, &Actor::new(&actor_definitions, actor_id as usize));
+                        }
 
-                            set_active_selection_box::<ActorToolBox>(world, ClientID::new(id));
+                        actor_tool_rotation(world, entity, rotation);
+
+                        if active {
+                            set_active_selection_box::<ActorToolBox>(world, ClientID(id));
                         }
                     }
                 }
