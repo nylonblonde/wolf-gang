@@ -4,6 +4,8 @@ use legion::*;
 
 use gdnative::godot_print;
 
+use serde::{Serialize, Deserialize};
+
 use crate::{
     collections::octree::Octree,
     systems::{ 
@@ -27,6 +29,7 @@ use crate::{
 
 use std::io::{ Error, ErrorKind };
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StepType {
     MapChange((Octree<i32, TileData>, Octree<i32, TileData>)),
     // "previous" state must be an option to capture the state where the actor did not exist
@@ -34,6 +37,7 @@ pub enum StepType {
 }
 
 /// Resource which holds chnages as a VecDeque
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct History {
     history: VecDeque<StepType>,
     current_step: i32,

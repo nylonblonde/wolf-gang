@@ -129,8 +129,14 @@ impl GameStateTraits for Editor {
             .map(|(entity, selection_box, client_id, coord_pos)| (*entity, selection_box.aabb, *client_id, *coord_pos))
             .collect::<Vec<(Entity, AABB, ClientID, level_map::CoordPos)>>();
 
+        let mut query = <(Read<History>, Read<ClientID>)>::query();
 
         results.into_iter().for_each(|(entity, aabb, client_id, coord_pos)| {
+
+            let history = query.iter(world)
+                .filter(|(_, id)| client_id.val() == id.val())
+                .map(|(history, _)| history.clone())
+                .next().unwrap_or(History::new());
 
             if let Some(entry) = world.entry(entity) {
 
@@ -146,11 +152,11 @@ impl GameStateTraits for Editor {
                     rotation.value
                 } else {
                     nalgebra::Rotation::identity()
-                };
+                }; 
 
                 let active = entry.get_component::<selection_box::Active>().is_ok();
 
-                world.push(
+                world.extend(vec![
                     (
                         ServerMessageSender {
                             client_id: connection_id,
@@ -164,7 +170,18 @@ impl GameStateTraits for Editor {
                             },
                             message_type: MessageType::Reliable,
                         },
+                    ),
+                    (
+                        ServerMessageSender {
+                            client_id: connection_id,
+                            data_type: DataType::CreateHistory{
+                                client_id: client_id.val(),
+                                history
+                            },
+                            message_type: MessageType::Ordered,
+                        },
                     )
+                    ]
                 );
             }
 

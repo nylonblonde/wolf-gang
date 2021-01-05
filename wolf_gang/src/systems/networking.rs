@@ -169,6 +169,10 @@ pub enum  DataType {
         rotation: nalgebra::Rotation3<f32>,
         aabb: AABB
     },
+    CreateHistory{
+        client_id: u32,
+        history: crate::systems::history::History
+    },
     ActivateTerrainToolBox{
         client_id: u32
     },
@@ -710,9 +714,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                     CharacterDefinition, 
                     actor_change, 
                     remove_actor,
-                    initialize_actor
                 },
-                level_map::CoordPos,
             };
 
             match change {
@@ -755,29 +757,6 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                     MapChange::MapRemoval(aabb) => {
                         map.change(world, level_map::fill_octree_from_aabb(aabb, None), store_history)
                     },
-                    // MapChange::ActorInsertion { uuid, coord_pos, definition_id } => {
-                        
-                    //     use crate::{
-                    //         systems::{
-                    //             actor::{ActorDefinitions, initialize_actor},
-                    //             level_map::CoordPos,
-                    //         }
-                    //     };
-
-                    //     //TODO: check if the id exists already, insertion should silently fail if so
-
-                    //     let actors = resources.get::<ActorDefinitions>().unwrap();
-
-                    //     if let Some(actor_definition) = actors.get_definitions().get(definition_id as usize) {
-                    //         let entity = initialize_actor(world, actor_definition, CoordPos::new(coord_pos));
-
-                    //         //TODO: add ID component to entity through an entry
-                    //     }
-
-                    // },
-                    // MapChange::ActorRemoval(uuid) => {
-                    //     unimplemented!();
-                    // }
                 }
 
             }
@@ -818,6 +797,14 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
             };
 
         },
+        DataType::CreateHistory{client_id, history} => {
+
+            println!("~~~~~~~   ~ ~ ~~ ~ ~  ~Did we add the history");
+            world.push((
+                ClientID::new(client_id),
+                history
+            ));
+        },
         DataType::CreateSelectionBox{client_id: id, box_type, active, rotation, coord_pos, aabb} => {
 
             use crate::systems::{
@@ -836,11 +823,6 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
             };
 
             let entity = crate::systems::selection_box::initialize_selection_box(world, resources, id, box_type, None);
-
-            world.push((
-                ClientID::new(id),
-                History::new() 
-             ));
             
             if let Some(mut entry) = world.entry(entity) {
                 if let Ok(pos) = entry.get_component_mut::<CoordPos>() {
