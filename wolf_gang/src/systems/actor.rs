@@ -246,12 +246,9 @@ pub fn place_actor(world: &mut World, actor_entity: Entity)  {
 
 pub fn position_actor_helper(world: &mut World, actor_entity: Entity, aabb: AABB) {
     if let Ok(entry) = world.entry_mut(actor_entity) {
-        godot_print!("what");
         if let Ok(position) = entry.into_component_mut::<transform::position::Position>() {
 
             let min = level_map::map_coords_to_world(aabb.get_min());
-
-            godot_print!("{:#?}", min);
 
             let bounds = level_map::map_coords_to_world(aabb.dimensions);
             let bounds = Vector3::new(bounds.x, bounds.y, bounds.z);
@@ -342,7 +339,7 @@ pub fn remove_actor(world: &mut World, uuid: u128) {
 
 pub fn initialize_actor(world: &mut World, parent: &Node, actor: &Actor) -> Entity {
 
-    let node = unsafe { init_scene(world, parent, actor.definition.get_path().to_string()).assume_safe() };
+    let node = unsafe { init_scene(parent, actor.definition.get_path().to_string()).assume_safe() };
 
     let node_name = NodeName(node.name().to_string());
 

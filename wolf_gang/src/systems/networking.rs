@@ -656,8 +656,24 @@ fn client_handle_fragments(
 
 fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resources) {
     match data {
-        DataType::ActorChange{ change, store_history } => {
+        DataType::ActorToolSelection { client_id, actor_id } => {
+            use crate::systems::{
+                actor::{
+                    Actor, ActorDefinition, Definitions
+                },
+                selection_box::set_chosen_actor,
+            };
 
+            if let Some(definitions) = resources.get::<Definitions<ActorDefinition>>(){
+                if let Some(id) = resources.get::<ClientID>() {
+                    if id.0 != client_id { //don't act on this client because this was already processed before being sent
+                        set_chosen_actor(world, ClientID::new(client_id), &Actor::new(&definitions, actor_id as usize));
+                    }
+                }
+
+            }
+        },
+        DataType::ActorChange{ change, store_history } => {
             use crate::systems::{
                 actor::{
                     Definitions, 
@@ -673,11 +689,11 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
 
             match change {
                 ActorChange::ActorInsertion { 
-                    uuid, 
-                    coord_pos, 
-                    rotation, 
-                    actor_type, 
-                    definition_id, 
+                    uuid: _, 
+                    coord_pos: _, 
+                    rotation: _, 
+                    actor_type: _, 
+                    definition_id: _, 
                 } => {
 
                     let actor_definitions = resources.get::<Definitions<ActorDefinition>>().unwrap();
@@ -777,10 +793,14 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
         DataType::CreateSelectionBox{client_id: id, box_type, active, coord_pos, aabb} => {
 
             use crate::systems::{
+                actor::{
+                    Actor, Definitions, ActorDefinition,
+                },
                 selection_box::{
                     ActorToolBox, TerrainToolBox,
                     ToolBoxType, SelectionBox,
-                    set_active_selection_box
+                    set_active_selection_box,
+                    set_chosen_actor,
                 },
                 level_map::CoordPos,
                 history::History,
@@ -806,7 +826,12 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                         ToolBoxType::TerrainToolBox => {
                             set_active_selection_box::<TerrainToolBox>(world, ClientID::new(id));
                         },
-                        ToolBoxType::ActorToolBox => {
+                        ToolBoxType::ActorToolBox(actor_id) => {
+
+                            if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
+                                set_chosen_actor(world, ClientID(id), &Actor::new(&actor_definitions, actor_id as usize));
+                            }
+
                             set_active_selection_box::<ActorToolBox>(world, ClientID::new(id));
                         }
                     }

@@ -67,7 +67,10 @@ impl ToolList {
                     palette_window.assume_safe().set_visible(false);
                     actor_window.assume_safe().set_visible(true);
 
-                    resources.insert(editor::SelectedTool(selection_box::ToolBoxType::ActorToolBox));
+                    let actor_selection = resources.get::<editor::ActorPaletteSelection>().map(|selection| selection.val());
+                    if let Some(actor_selection) = actor_selection {
+                        resources.insert(editor::SelectedTool(selection_box::ToolBoxType::ActorToolBox(actor_selection)))
+                    }
 
                     world.push((selection_box::ActivateActorToolBox{},));
 

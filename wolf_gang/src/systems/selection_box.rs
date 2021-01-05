@@ -59,7 +59,7 @@ impl Default for CameraAdjustedDirection {
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ToolBoxType {
     TerrainToolBox,
-    ActorToolBox,
+    ActorToolBox(u32),
 }
 
 #[derive(Copy, Clone)]
@@ -68,7 +68,13 @@ pub struct TerrainToolBox {}
 
 #[derive(Copy, Clone)]
 /// ActorToolBox is just a struct that is used as away of tagging the selection box that should be visible and active while the actor placement tool is in use
-pub struct ActorToolBox {}
+pub struct ActorToolBox(u32);
+
+impl ActorToolBox {
+    pub fn get_selection(&self) -> u32 {
+        self.0
+    }
+}
 
 #[derive(Copy, Clone)]
 /// Used to tag whichever selection box is active
@@ -158,7 +164,7 @@ pub fn initialize_selection_box(world: &mut World, client_id: u32, tool_type: To
 
             entity
         },
-        ToolBoxType::ActorToolBox => {
+        ToolBoxType::ActorToolBox(actor_id) => {
             let entity = world.push(
                 (
                     node_name,
@@ -177,7 +183,7 @@ pub fn initialize_selection_box(world: &mut World, client_id: u32, tool_type: To
             //have to add extra components via entry because world.push can only take 8
             if let Some(mut entry) = world.entry(entity) {
                 entry.add_component(SelectionBox::new());
-                entry.add_component(ActorToolBox{});
+                entry.add_component(ActorToolBox(actor_id));
         
                 if let Some(camera_name) = &camera_name {
                     entry.add_component(RelativeCamera(camera_name.clone()))
@@ -562,8 +568,8 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
     SystemBuilder::new("actor_tool_system")
         .read_resource::<ClientID>()
         .read_resource::<editor::ActorPaletteSelection>()
-        .with_query(<(Read<SelectionBox>, Read<SelectionBoxRotation>, Read<level_map::CoordPos>, Read<ClientID>)>::query() 
-            .filter(component::<ActorToolBox>() & component::<Active>()))
+        .with_query(<(Read<SelectionBoxRotation>, Read<level_map::CoordPos>, Read<ClientID>)>::query() 
+            .filter(component::<SelectionBox>() & component::<ActorToolBox>() & component::<Active>()))
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
         .build(move |command, world, resources, queries| {
             let (selection_box_query, input_query) = queries;
@@ -573,7 +579,7 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
                 *a == &insertion || *a == &removal
             }).for_each(|(input_component, action)|  {
                 // Insertion tool should check whether or not this is a valid placement for the actor
-                selection_box_query.iter(world).filter(|(_, _, _, id)| **id == **client_id).for_each(|(selection_box, selection_box_rot, coord_pos, _)| {
+                selection_box_query.iter(world).filter(|(_, _, id)| **id == **client_id).for_each(|(selection_box_rot, coord_pos, _)| {
 
                     if input_component.just_pressed() {
 
@@ -1380,13 +1386,14 @@ pub fn set_chosen_actor(world: &mut World, client_id: ClientID, actor: &Actor) {
             }
         }
 
-        let aabb = if let Ok(actor_entry) = world.entry_mut(actor_entity) {
+        let new_components = if let Ok(actor_entry) = world.entry_mut(actor_entity) {
 
             if let Ok(actor) = actor_entry.into_component_mut::<Actor>() {
                 let aabb = actor.get_bounds(selection_box_rot.rotation);
+                let actor = actor.clone();
                 position_actor_helper(world, actor_entity, aabb);
 
-                Some(aabb)
+                Some((aabb, actor))
             } else {
                 None
             }
@@ -1395,8 +1402,9 @@ pub fn set_chosen_actor(world: &mut World, client_id: ClientID, actor: &Actor) {
         };
 
         if let Some(mut entry) = world.entry(entity) {
-            if let Some(aabb) = aabb {
+            if let Some((aabb, actor)) = new_components {
                 entry.add_component(SelectionBox::from_aabb(aabb));
+                entry.add_component(actor);
             }
         }
             

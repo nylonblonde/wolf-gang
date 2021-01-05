@@ -71,7 +71,7 @@ impl GameStateTraits for Editor {
         ));
 
         selection_box::initialize_selection_box(world, connection_id, selection_box::ToolBoxType::TerrainToolBox, camera.clone());
-        selection_box::initialize_selection_box(world, connection_id, selection_box::ToolBoxType::ActorToolBox, camera);
+        selection_box::initialize_selection_box(world, connection_id, selection_box::ToolBoxType::ActorToolBox(0), camera);
 
         if let Some(client_id) = client_id {
             //Activate tool if this box belongs to the client
@@ -79,13 +79,17 @@ impl GameStateTraits for Editor {
 
                 let selected_tool = resources.get::<SelectedTool>().unwrap();
 
+                world.push((
+                    selection_box::MakeActorSelectionChosen{},
+                ));
+
                 match selected_tool.0 {
                     selection_box::ToolBoxType::TerrainToolBox =>{
                         world.push((
                             selection_box::ActivateTerrainToolBox{},
                         ));
                     },
-                    selection_box::ToolBoxType::ActorToolBox => {
+                    selection_box::ToolBoxType::ActorToolBox(_) => {
                         world.push((
                             selection_box::ActivateActorToolBox{},
                         ));
@@ -130,8 +134,8 @@ impl GameStateTraits for Editor {
 
             if let Some(entry) = world.entry(entity) {
 
-                let box_type: Option<selection_box::ToolBoxType> = if let Ok(_) = entry.get_component::<selection_box::ActorToolBox>() {
-                    Some(selection_box::ToolBoxType::ActorToolBox)
+                let box_type: Option<selection_box::ToolBoxType> = if let Ok(actor_tool) = entry.get_component::<selection_box::ActorToolBox>() {
+                    Some(selection_box::ToolBoxType::ActorToolBox(actor_tool.get_selection()))
                 } else if let Ok(_) = entry.get_component::<selection_box::TerrainToolBox>() {
                     Some(selection_box::ToolBoxType::TerrainToolBox)
                 } else {
@@ -155,7 +159,6 @@ impl GameStateTraits for Editor {
                         },
                     )
                 );
-
             }
 
         });

@@ -168,7 +168,7 @@ pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node, recursive: bool) ->
     None
 }
 
-pub fn init_scene(world: &mut World, parent: &Node, path: String) -> Ref<Node> {
+pub fn init_scene(parent: &Node, path: String) -> Ref<Node> {
     let scene = ResourceLoader::godot_singleton().load(path.clone(), "PackedScene", false).unwrap().cast::<PackedScene>().unwrap();
     let scene_instance = unsafe { scene.assume_safe().instance(0).unwrap() };
 

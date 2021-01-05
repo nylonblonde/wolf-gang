@@ -17,7 +17,9 @@ pub struct ActorPalette {}
 impl ActorPalette{
     fn new(item_list: &ItemList) -> Self {
 
-        unsafe { item_list.connect("item_selected", item_list.assume_shared(), "item_selected", VariantArray::default(), 0).ok(); }
+        unsafe { 
+            item_list.connect("item_selected", item_list.assume_shared(), "item_selected", VariantArray::default(), 0).ok(); 
+        }
 
         ActorPalette {}
     }

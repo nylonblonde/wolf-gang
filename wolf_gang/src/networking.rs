@@ -276,11 +276,13 @@ impl GameStateTraits for Networking {
                     //     }
                     };
 
-                    println!("Server is listening at {}", server_addr);
-        
-                    server.listen(server_addr).expect("Failed to bind to socket.");
-                    if let Scope::Multicast = connection.scope {
-                        server.socket().unwrap().join_multicast(&MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap().ip(), &IpAddr::V4(Ipv4Addr::new(0,0,0,0)))
+                    // Server binding silently fails if address is in use as a way of allowing multiple clients on the same machine
+                    if let Ok(_) = server.listen(server_addr) { 
+                        println!("Server is listening at {}", server_addr);
+
+                        if let Scope::Multicast = connection.scope {
+                            server.socket().unwrap().join_multicast(&MULTICAST_ADDR_V4.parse::<SocketAddr>().unwrap().ip(), &IpAddr::V4(Ipv4Addr::new(0,0,0,0)))
+                        } 
                     }
                 }
             }
