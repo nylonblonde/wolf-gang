@@ -127,7 +127,7 @@ pub struct SelectionBoxRotation {
 pub struct RelativeCamera(pub String);
 
 /// Initializes and returns the entities for the different kinds of tool boxes
-pub fn initialize_selection_box(world: &mut World, client_id: u32, tool_type: ToolBoxType, camera_name: Option<String>) -> Entity {
+pub fn initialize_selection_box(world: &mut World, resources: &mut Resources, client_id: u32, tool_type: ToolBoxType, camera_name: Option<String>) -> Entity {
 
     // TerrainTool selection box
     let mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
@@ -188,6 +188,10 @@ pub fn initialize_selection_box(world: &mut World, client_id: u32, tool_type: To
                 if let Some(camera_name) = &camera_name {
                     entry.add_component(RelativeCamera(camera_name.clone()))
                 }
+            }
+
+            if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
+                set_chosen_actor(world, ClientID::new(client_id), &Actor::new(&actor_definitions, actor_id as usize))
             }
         
             entity

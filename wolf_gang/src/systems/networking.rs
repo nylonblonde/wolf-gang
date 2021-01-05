@@ -806,7 +806,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 history::History,
             };
 
-            let entity = crate::systems::selection_box::initialize_selection_box(world, id, box_type, None);
+            let entity = crate::systems::selection_box::initialize_selection_box(world, resources, id, box_type, None);
 
             world.push((
                 ClientID::new(id),
