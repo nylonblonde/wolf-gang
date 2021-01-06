@@ -190,9 +190,9 @@ pub fn initialize_selection_box(world: &mut World, resources: &mut Resources, cl
                 }
             }
 
-            if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
-                set_chosen_actor(world, entity, &Actor::new(&actor_definitions, actor_id as usize))
-            }
+            // if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
+                // set_chosen_actor(world, entity, &Actor::new(&actor_definitions, actor_id as usize))
+            // }
         
             entity
         }
@@ -264,13 +264,13 @@ pub fn create_actor_selection_chooser_system() -> impl systems::Runnable {
                 let actor_selection = **actor_selection;
                 let definitions = actor_definitions.clone();
 
-                for(entity, _) in query.iter(world) {
+                if let Some((entity, _)) = query.iter(world).next() {
 
-                    let entity = *entity;
                     let actor = Actor::new(&definitions, actor_selection.val() as usize);
 
                     command.exec_mut(move |world| {
 
+                        godot_print!("What the dang gives");
                         set_chosen_actor(world, box_entity, &actor);
 
                         world.push(
@@ -282,9 +282,11 @@ pub fn create_actor_selection_chooser_system() -> impl systems::Runnable {
                                 message_type: MessageType::Ordered
                             },)
                         );
-
-                        world.remove(entity);
                     });
+                }
+
+                for (entity, _) in query.iter(world) {
+                    command.remove(*entity);
                 }
 
             }
@@ -1459,7 +1461,6 @@ pub fn set_chosen_actor(world: &mut World, box_entity: Entity, actor: &Actor) {
             }
         }      
     }
-    // }
 }
 
 pub fn get_box_entity_by_client_id<T: legion::storage::Component>(world: &mut World, client_id: ClientID) -> Option<Entity> {

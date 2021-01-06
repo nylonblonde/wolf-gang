@@ -680,7 +680,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
             if let Some(definitions) = resources.get::<Definitions<ActorDefinition>>(){
                 if let Some(id) = resources.get::<ClientID>() {
                     if id.0 != client_id { //don't act on this client because this was already processed before being sent
-                    if let Some(entity) = get_box_entity_by_client_id::<ActorToolBox>(world, ClientID(client_id)) {
+                        if let Some(entity) = get_box_entity_by_client_id::<ActorToolBox>(world, ClientID(client_id)) {
                             set_chosen_actor(world, entity, &Actor::new(&definitions, actor_id as usize));
                         }
                     }
