@@ -190,10 +190,6 @@ pub fn initialize_selection_box(world: &mut World, _: &mut Resources, client_id:
                     entry.add_component(RelativeCamera(camera_name.clone()))
                 }
             }
-
-            // if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
-                // set_chosen_actor(world, entity, &Actor::new(&actor_definitions, actor_id as usize))
-            // }
         
             entity
         }
@@ -758,7 +754,7 @@ pub fn create_rotation_system() -> impl systems::Runnable {
                                 let client_id = client_id.val();
 
                                 commands.exec_mut(move |world, _| {
-                                    // actor_tool_rotation(world, entity, rotation);
+                                    actor_tool_rotation(world, entity, rotation);
 
                                     world.push(
                                         (MessageSender{
@@ -1329,170 +1325,96 @@ fn expansion_movement_helper(expansion: Point, camera_adjusted_dir: CameraAdjust
     diff
 } 
 
-// pub fn actor_tool_rotation(world: &mut World, selection_entity: Entity, tool_rotation: Rotation3<f32>) {
+pub fn actor_tool_rotation(world: &mut World, selection_entity: Entity, tool_rotation: Rotation3<f32>) {
 
-//     let box_rotation = if let Ok(entry) = world.entry_mut(selection_entity) {
-//         if let Ok(selection_box_rot) = entry.into_component_mut::<SelectionBoxRotation>() {
-//             selection_box_rot.value = selection_box_rot.value * tool_rotation;
-//             Some(selection_box_rot.value)
-//         } else {
-//             None
-//         }
-//     } else {
-//         None
-//     };
-
-//     let aabb = if let Ok(entry) = world.entry_mut(selection_entity) {
-//         if let Ok(selection_box) = entry.into_component_mut::<SelectionBox>() {
-//             selection_box.aabb = selection_box.aabb.rotate(tool_rotation);
-//             Some(selection_box.aabb)
-//         } else {
-//             None
-//         }
-//     } else {
-//         None
-//     };
-
-//     let actor_name = if let Some(entry) = world.entry(selection_entity) {
-//         if let Ok(node_name) = entry.get_component::<node::NodeName>() {
-//             let owner = unsafe { crate::OWNER_NODE.as_ref().unwrap().assume_safe() };
-//             if let Some(node) = unsafe { node::get_node(&owner, node_name.0.clone(), false) } {
-//                 unsafe {
-//                     let node = node.assume_safe();
-//                     let children = node.get_children();
-
-//                     let child = children.get(0);
-//                     if let Some(actor) = child.try_to_object::<Spatial>() {
-//                         let actor = actor.assume_safe();
-
-//                         Some(actor.name())
-//                     } else {
-//                         None
-//                     }
-//                 }
-//             } else { None }
-//         } else {
-//             None
-//         }
-//     } else {
-//         None
-//     };
-
-//     if let Some(box_rotation) = box_rotation {
-//         if let Some(aabb) = aabb {
-//             if let Some(actor_name) = actor_name {
-//                 let mut query = <(Entity, Read<node::NodeName>)>::query();
-//                 if let Some(actor_entity) = query.iter(world)
-//                     .filter(|(_, node_name)| node_name.0 == actor_name.to_string())
-//                     .map(|(entity, _)| *entity)
-//                     .next() {
-
-//                         if let Ok(entry) = world.entry_mut(actor_entity) {
-//                             if let Ok(rotation) = entry.into_component_mut::<transform::rotation::Rotation>() {
-//                                 rotation.value = box_rotation
-//                             }
-//                         }
-
-//                         position_actor_helper(world, actor_entity, aabb);
-//                     }
-//             }
-//         }
-//     }
-// }
+    world.entry(selection_entity).map(|mut entry| {
+        entry.get_component_mut::<SelectionBoxRotation>().map(|selection_box_rot| {
+            selection_box_rot.value = selection_box_rot.value * tool_rotation;
+            selection_box_rot.value
+        }).ok().and_then(|rotation| {
+            entry.get_component_mut::<SelectionBox>().map(|selection_box| {
+                selection_box.aabb = selection_box.aabb.rotate(tool_rotation);
+                selection_box.aabb
+            }).ok().and_then(|aabb| {
+                entry.get_component_mut::<EntityRef>().map(|entity_ref| entity_ref.0).ok().and_then(|entity| {
+                    Some((entity, rotation, aabb))
+                })
+            })
+        })
+    }).flatten().map(|(actor_entity, rotation, aabb)| {
+        world.entry(actor_entity).map(|mut entry| {
+            entry.add_component(transform::rotation::Rotation{
+                value: rotation
+            });
+        });
+        actor::position_actor_helper(world, actor_entity, aabb);
+    });
+}
 
 /// Updates the selection box with the new chosen actor (new_entity should be newly duplicated into this world)
 pub fn update_chosen_actor(world: &mut World, selection_entity: Entity, actor_id: i64) {
 
     // Check to see if there is an EntityRef which points to our old entity, and remove it
-    let old_entity = if let Some(entry) = world.entry(selection_entity) {
-        entry.get_component::<EntityRef>().map(|entity_ref| *entity_ref).ok()
-    } else {
-        None
-    };
-
-    if let Some(old_entity) = old_entity {
-
-        if let Some(actor_entry) = world.entry(old_entity.0) {
-            if let Ok(node_name) = actor_entry.get_component::<node::NodeName>() {
+    world.entry(selection_entity).map(|entry| {
+        entry.get_component::<EntityRef>().map(|entity_ref| entity_ref.0).ok()
+    }).flatten().and_then(|old_entity| {
+        world.entry(old_entity).map(|actor_entry| {
+            actor_entry.get_component::<node::NodeName>().map(|node_name| {
                 unsafe { node::remove_node(&node_name.0) };
-            }
-        }
-    }
+            })
+        })
+    });
 
-    if let Some(actor_world) = &mut ActorPalette::get_world() {
+    ActorPalette::get_world().map(|actor_world| {
         let actor_world = &mut actor_world.borrow_mut();
-        if let Some(actor_world) = actor_world.as_mut() {
+        actor_world.as_mut().map(|actor_world| {
             ENTITY_REFS.with(|e| {
                 let entity_refs = e.borrow();
 
-                if let Some(actor_entity) = entity_refs.get(&actor_id) {
+                entity_refs.get(&actor_id).map(|actor_entity| {
 
                     MERGER.with(|m| {
                         let mut merger = m.borrow_mut();
                         let new_entity = world.clone_from_single(actor_world, *actor_entity, &mut *merger);
 
-                            let bounds = if let Some(entry) = world.entry(new_entity) {
-                                entry.get_component::<actor::Bounds>().map(|b| *b).ok()
-                            } else {
-                                None
-                            };
+                        world.entry(new_entity).map(|entry| {
+                            entry.get_component::<actor::Bounds>().map(|b| *b).ok()
+                        }).flatten().map(|bounds| {
 
-                            let (box_node_name, rotation, aabb) = if let Some(mut entry) = world.entry(selection_entity) {
+                            world.entry(selection_entity).map(|mut entry| {
                                 entry.add_component(EntityRef(new_entity));
+                                entry.get_component::<SelectionBoxRotation>()
+                                    .map(|box_rotation| box_rotation.value)
+                                    .ok().and_then(|rotation| {
+                                        entry.get_component_mut::<SelectionBox>().map(|selection_box| {
+                                            selection_box.aabb = bounds.get_scaled_and_rotated_aabb(rotation);
+                                            selection_box.aabb
+                                        }).ok().and_then(|aabb| {
+                                            entry.get_component::<node::NodeName>().map(|n| n.clone()).ok().and_then(|node_name|
+                                                Some((node_name, rotation, aabb))
+                                            )
+                                        })
+                                    })
+                            }).flatten().map(|(node_name, rotation, aabb)| {
 
-                                let rotation = if let Ok(box_rotation) = entry.get_component::<SelectionBoxRotation>() {
-                                    Some(box_rotation.value)
-                                } else {
-                                    None
-                                };
-
-                                //update selection box dimensions
-                                let aabb = if let Some(bounds) = bounds {
-                                    if let Ok(mut selection_box) = entry.get_component_mut::<SelectionBox>() {
-                                        if let Some(rotation) = rotation {
-                                            selection_box.aabb = bounds.get_scaled_and_rotated_aabb(rotation);  
-                                            Some(selection_box.aabb)
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                };
-
-                                //return selection box node name so we can initialize the actor's scene parented to it
-                                (entry.get_component::<node::NodeName>().map(|n| n.clone()).ok(), rotation, aabb)
-                            } else {
-                                (None, None, None)
-                            };
-
-                            if let Some(rotation) = rotation {
-                                if let Some(mut entry) = world.entry(new_entity) {
+                                world.entry(new_entity).map(|mut entry| {
                                     entry.add_component(transform::rotation::Rotation{
                                         value: rotation
-                                    });
-                                }
-                            }
+                                    })
+                                });
 
-                            let owner = unsafe { crate::OWNER_NODE.as_ref().unwrap().assume_safe() };
-                            if let Some(box_node_name) = box_node_name {
-                                if let Some(box_node) = unsafe { node::get_node(&owner, &box_node_name.0, false) } {
-                                    initialize_actor_scene(world, unsafe { &box_node.assume_safe() }, new_entity);
-                                }
-                            }
-
-                            if let Some(aabb) = aabb {
-                                actor::position_actor_helper(world, new_entity, aabb);
-                            }
-
-                    })
-                }
-            })
-        }
-    }
-
+                                let owner = unsafe { crate::OWNER_NODE.as_ref().unwrap().assume_safe() };
+                                    if let Some(box_node) = unsafe { node::get_node(&owner, &node_name.0, false) } {
+                                        initialize_actor_scene(world, unsafe { &box_node.assume_safe() }, new_entity);
+                                    }
+                                    actor::position_actor_helper(world, new_entity, aabb);
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
 }
 
 pub fn get_box_entity_by_client_id<T: legion::storage::Component>(world: &mut World, client_id: ClientID) -> Option<Entity> {

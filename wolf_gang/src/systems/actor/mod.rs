@@ -153,44 +153,50 @@ impl Health {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ActorChange {
+    ActorInsertion {
+        serialized: Vec<u8>
+    },
+    ActorRemoval(Entity)
+}
+
 pub fn initialize_actor_scene(world: &mut World, parent: &Node, actor_entity: Entity) {
 
     ACTOR_SCENE_MAP.with(|a| {
         let actor_scene_map = a.borrow();
 
-        let actor_node = if let Some(entry) = world.entry(actor_entity) {
+        world.entry(actor_entity).map(|entry| {
+            entry.get_component::<ActorSceneKey>().map(|actor_key| {
 
-            if let Ok(actor_key) = entry.get_component::<ActorSceneKey>() {
                 match actor_scene_map.get(&actor_key.0) {
-                    Some(path) => Some(node::init_scene(&parent, path)),
+                    Some(path) => node::init_scene(&parent, path),
                     None => todo!("Proper error handling for nonexistent data, maybe load a default actor")
                 }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
 
-        if let Some(actor_node) = actor_node {
-            if let Some(mut entry) = world.entry(actor_entity) {
+            }).ok()
+        }).flatten().map(|actor_node| {
+            world.entry(actor_entity).map(|mut entry| {
                 entry.add_component(NodeName(unsafe { actor_node.assume_safe().name() }.to_string()));
-                entry.add_component(Position::default());
-            }
-        }
+            });
+        });
 
-    })
+    });
 }
 
 pub fn position_actor_helper(world: &mut World, actor_entity: Entity, aabb: AABB) {
-    if let Ok(entry) = world.entry_mut(actor_entity) {
-        if let Ok(position) = entry.into_component_mut::<Position>() {
+    world.entry(actor_entity).map(|mut entry| {
 
-            let min = map_coords_to_world(aabb.get_min());
+        let min = map_coords_to_world(aabb.get_min());
 
-            let bounds = map_coords_to_world(aabb.dimensions);
-            let bounds = Vector3::new(bounds.x, bounds.y, bounds.z);
-            position.value = Vector3::new(min.x, min.y, min.z) + Vector3::new(bounds.x/2., 0., bounds.z/2.);
-        }
-    } 
+        let bounds = map_coords_to_world(aabb.dimensions);
+        let bounds = Vector3::new(bounds.x, bounds.y, bounds.z);
+        
+        let position = Position {
+            value: Vector3::new(min.x, min.y, min.z) + Vector3::new(bounds.x/2., 0., bounds.z/2.)
+        };
+
+        entry.add_component(position);
+        
+    });
 }
