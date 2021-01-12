@@ -10,7 +10,9 @@ type Rotation3D = nalgebra::Rotation3<f32>;
 
 use crate::node;
 
-#[derive(Copy, Clone)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Rotation {
     pub value: Rotation3D
 }
@@ -55,7 +57,7 @@ pub fn create_system() -> impl systems::Runnable {
 
             let spatial_node : Option<Ref<Spatial>> = {
                 unsafe {
-                    match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0.clone(), false) {
+                    match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &node_name.0, false) {
                         Some(r) => {
                             Some(r.assume_safe().cast::<Spatial>().unwrap().as_ref().assume_shared())
                         },
@@ -72,7 +74,7 @@ pub fn create_system() -> impl systems::Runnable {
             match spatial_node {
                 Some(r) => {
 
-                    commands.exec_mut(move |world|{
+                    commands.exec_mut(move |world, _|{
                         if let Ok(entry) = world.entry_mut(entity) {
                             if let Ok(mut direction) = entry.into_component_mut::<Direction>() {
                                 direction.right = rotation.value * Vector3D::x();

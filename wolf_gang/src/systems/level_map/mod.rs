@@ -69,7 +69,7 @@ pub struct TileDimensions {
     pub z: f32
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct CoordPos {
     pub value: Point
 }

@@ -132,7 +132,7 @@ pub fn initialize_input_config(world: &mut legion::world::World) {
 
             input_config.save(USER_CONFIG_PATH);
 
-            input_config
+            input_config    
         }
     };
 

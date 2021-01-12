@@ -9,13 +9,6 @@ use serde::{Serialize, Deserialize};
 use crate::{
     collections::octree::Octree,
     systems::{ 
-        actor::{
-            Definitions, 
-            ActorDefinition, 
-            CharacterDefinition, 
-            ActorChange, 
-            actor_change
-        },
         input::{
             InputActionComponent, Action
         },
@@ -33,7 +26,7 @@ use std::io::{ Error, ErrorKind };
 pub enum StepType {
     MapChange((Octree<i32, TileData>, Octree<i32, TileData>)),
     // "previous" state must be an option to capture the state where the actor did not exist
-    ActorChange((ActorChange, ActorChange)),
+    // ActorChange((ActorChange, ActorChange)),
 }
 
 /// Resource which holds chnages as a VecDeque
@@ -77,24 +70,24 @@ impl History {
                     if let Some(map) = resources.get::<Map>().map(|map| *map) {
                         let octree = if amount > 0 { redo_map.clone() } else { undo_map.clone() };
 
-                        commands.exec_mut(move |world| {
+                        commands.exec_mut(move |world, _| {
                             map.change(world, octree.clone(), None);
                         })
                     }
                 },
-                StepType::ActorChange((undo_actor, redo_actor)) => {
-                    if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
+                // StepType::ActorChange((undo_actor, redo_actor)) => {
+                //     if let Some(actor_definitions) = resources.get::<ActorDefinitions>() {
                         
-                        let change = if amount > 0 { *redo_actor } else { *undo_actor };
+                //         let change = if amount > 0 { *redo_actor } else { *undo_actor };
             
-                        let actor_definitions = actor_definitions.clone();
+                //         let actor_definitions = actor_definitions.clone();
                         
-                        commands.exec_mut(move |world| {
-                            actor_change(world, &change, &actor_definitions, None, None);
-                        })
-                    }
+                //         commands.exec_mut(move |world| {
+                //             actor_change(world, &change, &actor_definitions, None);
+                //         })
+                //     }
                     
-                },
+                // },
             }
 
             self.current_step = std::cmp::max(0, std::cmp::min(self.history.len() as i32 - 1, next_step));

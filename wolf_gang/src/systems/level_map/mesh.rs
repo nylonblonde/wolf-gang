@@ -62,7 +62,7 @@ pub fn create_add_components_system() -> impl systems::Runnable {
 
             for entity in entities {
 
-                commands.exec_mut(move |world| {
+                commands.exec_mut(move |world, _| {
                     if let Some(mut entry) = world.entry(entity) {
                         entry.add_component(custom_mesh::Material::from_str("res://materials/ground.material"));
                     }

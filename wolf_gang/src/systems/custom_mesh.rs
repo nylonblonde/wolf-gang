@@ -107,7 +107,7 @@ pub fn create_draw_system() -> impl systems::Runnable {
                 let indices = &mesh_data.indices;
                 
                 let immediate_geometry: Option<Ref<ImmediateGeometry>> = unsafe { 
-                    match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), mesh_name.0.clone(), false) {
+                    match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &mesh_name.0, false) {
                         Some(r) => {
                             Some(r.assume_safe().cast::<ImmediateGeometry>().unwrap().assume_shared())
                         },
@@ -151,7 +151,7 @@ pub fn create_draw_system() -> impl systems::Runnable {
 
             for (entity, immediate_geometry) in entities {
 
-                commands.exec_mut(move |world| {
+                commands.exec_mut(move |world, _| {
                     if let Some(mut entry) = world.entry(entity) {
                         if let Ok(material) = entry.get_component::<Material>() {
                             let resource = ResourceLoader::godot_singleton().load(match material.name {

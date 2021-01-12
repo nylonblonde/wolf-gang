@@ -11,12 +11,6 @@ use crate::{
     editor,
     node,
     systems::{
-        actor::{
-            Definition, 
-            Definitions, 
-            DefinitionsTrait, 
-            ActorDefinition
-        },
         selection_box,
     }
 };
@@ -94,13 +88,13 @@ impl ToolList {
         let resources = crate::WolfGang::get_resources().unwrap();
         let resources = &mut resources.as_ref().borrow_mut();
 
-        if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
-            godot_print!("Got actor definitions");
-            unsafe {
-                let palette = get_actor_palette(item_list);
-                populate_actor_palette(&palette, &actor_definitions)
-            }
-        };
+        // if let Some(actor_definitions) = resources.get::<ActorDefinitions>() {
+        //     godot_print!("Got actor definitions");
+        //     unsafe {
+        //         let palette = get_actor_palette(item_list);
+        //         populate_actor_palette(&palette, &actor_definitions)
+        //     }
+        // };
 
     }
 
@@ -114,7 +108,7 @@ impl ToolList {
 
 unsafe fn get_actor_palette(item_list: &ItemList) -> TRef<ItemList> {
     let main_tools_panel = item_list.get_parent().unwrap().assume_safe().get_parent().unwrap().assume_unique();
-    let actor_palette = node::get_node(&main_tools_panel, "ActorPalette".to_string(), true)
+    let actor_palette = node::get_node(&main_tools_panel, &"ActorPalette".to_string(), true)
         .unwrap().assume_unique().cast::<ItemList>().unwrap().into_shared();
 
     actor_palette.assume_safe()
@@ -122,7 +116,7 @@ unsafe fn get_actor_palette(item_list: &ItemList) -> TRef<ItemList> {
 
 unsafe fn get_palette(item_list: &ItemList) -> TRef<ItemList> {
     let main_tools_panel = item_list.get_parent().unwrap().assume_safe().get_parent().unwrap().assume_unique();
-    let palette = node::get_node(&main_tools_panel, "Palette".to_string(), true)
+    let palette = node::get_node(&main_tools_panel, &"Palette".to_string(), true)
         .unwrap().assume_unique().cast::<ItemList>().unwrap().into_shared();
 
     palette.assume_safe()
@@ -148,15 +142,15 @@ unsafe fn populate_palette(palette: &ItemList) {
     }
 }
 
-unsafe fn populate_actor_palette(item_list: &ItemList, actor_definitions: &Definitions<ActorDefinition>) {
+// unsafe fn populate_actor_palette(item_list: &ItemList, actor_definitions: &ActorDefinitions) {
 
-    for definition in actor_definitions.get_definitions() {
+//     for definition in actor_definitions.get_definitions() {
 
-        godot_print!("{:?}", definition.get_name());
+//         godot_print!("{:?}", definition.get_name());
             
-        let texture = ImageTexture::new();
+//         let texture = ImageTexture::new();
 
-        item_list.add_icon_item(texture, true);
-    }
-}
+//         item_list.add_icon_item(texture, true);
+//     }
+// }
 

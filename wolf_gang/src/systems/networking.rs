@@ -181,17 +181,17 @@ pub enum  DataType {
     },
     ActorToolSelection {
         client_id: u32,
-        actor_id: u32
+        actor_id: i64,
     },
     ActorToolRotation {
         client_id: u32,
         rotation: nalgebra::Rotation3<f32>
     },
-    ///Handles changes to actors such as insertion or removal. Edits to existing actors are handled through insertion but is checked against by the uuid
-    ActorChange{
-        change: crate::systems::actor::ActorChange,
-        store_history: Option<u32>
-    },
+    // ///Handles changes to actors such as insertion or removal. Edits to existing actors are handled through insertion but is checked against by the uuid
+    // ActorChange{
+    //     change: crate::systems::actor::ActorChange,
+    //     store_history: Option<u32>
+    // },
     MapInput(crate::collections::octree::Octree<i32, crate::systems::level_map::TileData>),
     ///Handles changes to map like insertion, removal, cutting, pasting, takes an optional u32 as store_history to store the change in the history for that client_id if need be
     MapChange{
@@ -666,76 +666,86 @@ fn client_handle_fragments(
 fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resources) {
     match data {
         DataType::ActorToolSelection { client_id, actor_id } => {
-            use crate::systems::{
-                actor::{
-                    Actor, ActorDefinition, Definitions
+            use crate::{
+                nodes::{
+                    actor_palette::{ActorPalette, ENTITY_REFS,}
                 },
-                selection_box::{
-                    ActorToolBox,
-                    get_box_entity_by_client_id,
-                    set_chosen_actor,
-                }
-            };
-
-            if let Some(definitions) = resources.get::<Definitions<ActorDefinition>>(){
-                if let Some(id) = resources.get::<ClientID>() {
-                    if id.0 != client_id { //don't act on this client because this was already processed before being sent
-                        if let Some(entity) = get_box_entity_by_client_id::<ActorToolBox>(world, ClientID(client_id)) {
-                            set_chosen_actor(world, entity, &Actor::new(&definitions, actor_id as usize));
-                        }
+                systems::{
+                    actor::{
+                        MERGER,
+                    },
+                    selection_box::{
+                        ActorToolBox,
+                        get_box_entity_by_client_id,
+                        update_chosen_actor,
                     }
-                }
-
-            }
-        },
-        DataType::ActorToolRotation { client_id, rotation} => {
-            use crate::systems::{
-                selection_box::{
-                    ActorToolBox,
-                    get_box_entity_by_client_id,
-                    actor_tool_rotation,
                 }
             };
 
             if let Some(id) = resources.get::<ClientID>() {
-                if id.0 != client_id {
-                    if let Some(entity) = get_box_entity_by_client_id::<ActorToolBox>(world, ClientID(client_id)) {
-                        actor_tool_rotation(world, entity, rotation);
+                if id.0 != client_id { //don't act on this client because this was already processed before being sent
+                    
+                    if let Some(selection_entity) = get_box_entity_by_client_id::<ActorToolBox>(world, ClientID(client_id)) {
+                        update_chosen_actor(world, selection_entity, actor_id);
                     }
                 }
             }
+        //     if let Some(definitions) = resources.get::<ActorDefinitions>(){
+        //         if let Some(id) = resources.get::<ClientID>() {
+        //             if id.0 != client_id { //don't act on this client because this was already processed before being sent
+        //                 if let Some(entity) = get_box_entity_by_client_id::<ActorToolBox>(world, ClientID(client_id)) {
+        //                     set_chosen_actor(world, entity, &Actor::new(&definitions, actor_id as usize));
+        //                 }
+        //             }
+        //         }
+
+        //     }
         },
-        DataType::ActorChange{ change, store_history } => {
-            use crate::systems::{
-                actor::{
-                    Definitions, 
-                    ActorChange,
-                    ActorDefinition, 
-                    CharacterDefinition, 
-                    actor_change, 
-                    remove_actor,
-                },
-            };
+        // DataType::ActorToolRotation { client_id, rotation} => {
+        //     use crate::systems::{
+        //         selection_box::{
+        //             ActorToolBox,
+        //             get_box_entity_by_client_id,
+        //             actor_tool_rotation,
+        //         }
+        //     };
 
-            match change {
-                ActorChange::ActorInsertion { 
-                    uuid: _, 
-                    coord_pos: _, 
-                    rotation: _, 
-                    actor_type: _, 
-                    definition_id: _, 
-                } => {
+        //     if let Some(id) = resources.get::<ClientID>() {
+        //         if id.0 != client_id {
+        //             if let Some(entity) = get_box_entity_by_client_id::<ActorToolBox>(world, ClientID(client_id)) {
+        //                 actor_tool_rotation(world, entity, rotation);
+        //             }
+        //         }
+        //     }
+        // },
+        // DataType::ActorChange{ change, store_history } => {
+        //     use crate::systems::{
+        //         actor::{
+        //             ActorDefinitions, 
+        //             ActorChange,
+        //             actor_change, 
+        //             remove_actor,
+        //         },
+        //     };
 
-                    let actor_definitions = resources.get::<Definitions<ActorDefinition>>().unwrap();
+        //     match change {
+        //         ActorChange::ActorInsertion { 
+        //             uuid: _, 
+        //             coord_pos: _, 
+        //             rotation: _, 
+        //             definition_id: _, 
+        //         } => {
 
-                    actor_change(world, &change, &actor_definitions, None, store_history);
+        //             let actor_definitions = resources.get::<ActorDefinitions>().unwrap();
 
-                },
-                ActorChange::ActorRemoval(uuid) => {
-                    remove_actor(world, uuid);
-                }
-            }
-        },
+        //             actor_change(world, &change, &actor_definitions, store_history);
+
+        //         },
+        //         ActorChange::ActorRemoval(uuid) => {
+        //             remove_actor(world, uuid);
+        //         }
+        //     }
+        // },
         DataType::MapInput(r) => {
             if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
                 map.change(world, r, None);
@@ -773,7 +783,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 history.move_by_step(&mut commands, resources, amount);
             }
 
-            commands.flush(world);
+            commands.flush(world, resources);
         },
         DataType::UpdateSelectionBounds{client_id: id, coord_pos, aabb} => {
 
@@ -798,8 +808,6 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
 
         },
         DataType::CreateHistory{client_id, history} => {
-
-            println!("~~~~~~~   ~ ~ ~~ ~ ~  ~Did we add the history");
             world.push((
                 ClientID::new(client_id),
                 history
@@ -807,19 +815,23 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
         },
         DataType::CreateSelectionBox{client_id: id, box_type, active, rotation, coord_pos, aabb} => {
 
-            use crate::systems::{
-                actor::{
-                    Actor, Definitions, ActorDefinition,
+            use crate::{
+                nodes::{
+                    actor_palette::{ ActorPalette, ENTITY_REFS,}
                 },
-                selection_box::{
-                    ActorToolBox, TerrainToolBox,
-                    ToolBoxType, SelectionBox,
-                    set_active_selection_box,
-                    set_chosen_actor,
-                    actor_tool_rotation
+                systems::{
+                    actor::{
+                        MERGER,
+                    },
+                    selection_box::{
+                        ActorToolBox, TerrainToolBox,
+                        ToolBoxType, SelectionBox,
+                        set_active_selection_box,
+                        update_chosen_actor,
+                        // actor_tool_rotation
+                    },
+                    level_map::CoordPos,
                 },
-                level_map::CoordPos,
-                history::History,
             };
 
             let entity = crate::systems::selection_box::initialize_selection_box(world, resources, id, box_type, None);
@@ -840,11 +852,11 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                     },
                     ToolBoxType::ActorToolBox(actor_id) => {
 
-                        if let Some(actor_definitions) = resources.get::<Definitions<ActorDefinition>>() {
-                            set_chosen_actor(world, entity, &Actor::new(&actor_definitions, actor_id as usize));
-                        }
-
-                        actor_tool_rotation(world, entity, rotation);
+                        
+                        update_chosen_actor(world, entity, actor_id);
+                               
+                        
+                        // actor_tool_rotation(world, entity, rotation);
 
                         if active {
                             set_active_selection_box::<ActorToolBox>(world, ClientID(id));

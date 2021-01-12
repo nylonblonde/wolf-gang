@@ -88,7 +88,7 @@ impl EditMenu {
                 }
             }
 
-            commands.flush(world);
+            commands.flush(world, resources);
         }
             
     }   

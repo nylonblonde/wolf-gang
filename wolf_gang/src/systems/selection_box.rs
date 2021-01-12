@@ -14,17 +14,15 @@ use crate::{
     geometry::aabb,
     editor,
     node,
+    nodes::actor_palette::{
+        ActorPalette,
+        ENTITY_REFS,
+    },
     systems::{
+        actor,
         actor::{
-            position_actor_helper,
-            initialize_actor,
-            Actor,
-            ActorChange, 
-            ActorType,
-            Definitions,
-            DefinitionsTrait,
-            Definition,
-            ActorDefinition
+            initialize_actor_scene, 
+            MERGER,
         },
         camera,
         custom_mesh,
@@ -40,6 +38,9 @@ type Point = nalgebra::Vector3<i32>;
 
 type Vector3D = nalgebra::Vector3<f32>;
 type Vector2D = nalgebra::Vector2<f32>;
+
+#[derive(Copy, Clone)]
+struct EntityRef(Entity);
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct CameraAdjustedDirection {
@@ -59,7 +60,7 @@ impl Default for CameraAdjustedDirection {
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ToolBoxType {
     TerrainToolBox,
-    ActorToolBox(u32),
+    ActorToolBox(i64),
 }
 
 #[derive(Copy, Clone)]
@@ -68,10 +69,10 @@ pub struct TerrainToolBox {}
 
 #[derive(Copy, Clone)]
 /// ActorToolBox is just a struct that is used as away of tagging the selection box that should be visible and active while the actor placement tool is in use
-pub struct ActorToolBox(u32);
+pub struct ActorToolBox(i64);
 
 impl ActorToolBox {
-    pub fn get_selection(&self) -> u32 {
+    pub fn get_selection(&self) -> i64 {
         self.0
     }
 }
@@ -127,7 +128,7 @@ pub struct SelectionBoxRotation {
 pub struct RelativeCamera(pub String);
 
 /// Initializes and returns the entities for the different kinds of tool boxes
-pub fn initialize_selection_box(world: &mut World, resources: &mut Resources, client_id: u32, tool_type: ToolBoxType, camera_name: Option<String>) -> Entity {
+pub fn initialize_selection_box(world: &mut World, _: &mut Resources, client_id: u32, tool_type: ToolBoxType, camera_name: Option<String>) -> Entity {
 
     // TerrainTool selection box
     let mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
@@ -246,51 +247,55 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
     ).unwrap()
 }
 
-pub fn create_actor_selection_chooser_system() -> impl systems::Runnable {
-    SystemBuilder::new("actor_selection_chooser_system")
-        .read_resource::<ClientID>()
-        .read_resource::<Definitions<ActorDefinition>>()
-        .read_resource::<editor::ActorPaletteSelection>()
-        .with_query(<(Entity, Read<ClientID>)>::query()
-            .filter(component::<SelectionBox>() & component::<node::NodeName>() & component::<ActorToolBox>() & component::<SelectionBoxRotation>()))
-        .with_query(<(Entity, Read<MakeActorSelectionChosen>)>::query())
-        .build(move |command, world, (client_id, actor_definitions, actor_selection), (selection_box_query, query)| {
+/// System that keeps track of and swaps out the selected actor for the actor tool
+pub fn create_actor_selection_chooser_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
-            if let Some(box_entity) = selection_box_query.iter(world)
-                .filter(|(_, id)| client_id.val() == id.val())
-                .map(|(entity, _)| *entity).next() {
+    let mut selection_box_query = <(Entity, Read<ClientID>)>::query()
+        .filter(component::<SelectionBox>() & component::<node::NodeName>() & component::<ActorToolBox>() & component::<SelectionBoxRotation>());
+    let mut query = <(Entity, Read<MakeActorSelectionChosen>)>::query();
 
-                let client_id = **client_id;
-                let actor_selection = **actor_selection;
-                let definitions = actor_definitions.clone();
+    Box::new(move |world, resources| {
 
-                if let Some((entity, _)) = query.iter(world).next() {
+        let results = query.iter(world)
+            .map(|(entity, _)| *entity)
+            .collect::<Vec<Entity>>();
 
-                    let actor = Actor::new(&definitions, actor_selection.val() as usize);
+        if let Some(_) = results.iter().next() {
 
-                    command.exec_mut(move |world| {
+            if let Some(actor_selection) = resources.get::<editor::ActorPaletteSelection>() {
+                if let Some(client_id) = resources.get::<ClientID>() {
 
-                        godot_print!("What the dang gives");
-                        set_chosen_actor(world, box_entity, &actor);
+                    selection_box_query.iter(world)
+                        .filter(|(_, id)| id.val() == client_id.val())
+                        .map(|(entity, _)| *entity)
+                        .collect::<Vec<Entity>>()
+                        .into_iter()
+                        .for_each(|selection_entity| {
 
-                        world.push(
-                            (MessageSender {
-                                data_type: DataType::ActorToolSelection{
-                                    client_id: client_id.val(),
-                                    actor_id: actor_selection.val(),
-                                },
-                                message_type: MessageType::Ordered
-                            },)
-                        );
-                    });
+                            update_chosen_actor(world, selection_entity, actor_selection.val());
+
+                            world.push(
+                                (
+                                    MessageSender{
+                                        data_type: DataType::ActorToolSelection {
+                                            client_id: client_id.val(),
+                                            actor_id: actor_selection.val(),
+                                        },
+                                        message_type: MessageType::Ordered,
+                                    },
+                                )
+                            );
+                                            
+                        });
                 }
-
-                for (entity, _) in query.iter(world) {
-                    command.remove(*entity);
-                }
-
             }
-        })
+        }
+
+        results.into_iter()
+            .for_each(|entity| {
+                world.remove(entity);
+            });
+    })
 }
 
 /// System for sending the ActivateTerrainToolBox Message
@@ -312,7 +317,7 @@ pub fn create_terrain_tool_activate_system() -> impl systems::Runnable {
 
                 let entity = *entity;
 
-                command.exec_mut(move |world| {
+                command.exec_mut(move |world, _| {
 
                     set_active_selection_box::<TerrainToolBox>(world, client_id);
 
@@ -346,7 +351,7 @@ pub fn create_actor_tool_activate_system() -> impl systems::Runnable {
             
             let client_id = **client_id;
             for (entity, _) in query.iter(world) {
-                command.exec_mut(move |world| {
+                command.exec_mut(move |world, _| {
                     set_active_selection_box::<ActorToolBox>(world, client_id);
 
                     world.push(
@@ -510,7 +515,7 @@ pub fn create_movement_system() -> impl systems::Runnable {
 
                     let move_to_pos = coord_pos_value + combined_movement;
 
-                    commands.exec_mut(move |world| {
+                    commands.exec_mut(move |world, _| {
                         let mut query = <(Write<UpdateBounds>, Read<ClientID>)>::query();
 
                         let mut existing_movement: Option<Point> = None;
@@ -598,25 +603,24 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
                             let coord_pos = coord_pos.value;
                             let rotation = selection_box_rot.value;
 
-                            command.exec_mut(move |world| {
+                            command.exec_mut(move |world, _| {
                             
-                                world.push(
-                                    (
-                                        MessageSender{
-                                            data_type: DataType::ActorChange{
-                                                store_history: Some(client_id),
-                                                change: ActorChange::ActorInsertion{
-                                                    uuid: uuid::Uuid::new_v4().as_u128(),
-                                                    coord_pos: coord_pos,
-                                                    rotation: rotation,
-                                                    actor_type: (ActorType::Actor, None),
-                                                    definition_id: actor_selection,
-                                                }
-                                            },
-                                            message_type: MessageType::Ordered,
-                                        },
-                                    )
-                                );
+                                // world.push(
+                                //     (
+                                //         MessageSender{
+                                //             data_type: DataType::ActorChange{
+                                //                 store_history: Some(client_id),
+                                //                 change: ActorChange::ActorInsertion{
+                                //                     uuid: uuid::Uuid::new_v4().as_u128(),
+                                //                     coord_pos: coord_pos,
+                                //                     rotation: rotation,
+                                //                     definition_id: actor_selection,
+                                //                 }
+                                //             },
+                                //             message_type: MessageType::Ordered,
+                                //         },
+                                //     )
+                                // );
                             });
 
                         } else if action == &removal {
@@ -666,7 +670,7 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
                             let client_id = client_id.val();
                             let aabb = AABB::new(coord_pos.value, selection_box.aabb.dimensions);
 
-                            commands.exec_mut(move |world|{
+                            commands.exec_mut(move |world, _|{
                 
                                 let tile_data = level_map::TileData::new(tile_selection.val(), Point::zeros());
             
@@ -690,7 +694,7 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
                             let client_id = client_id.val();
                             let aabb = AABB::new(coord_pos.value, selection_box.aabb.dimensions);
 
-                            commands.exec_mut(move |world|{
+                            commands.exec_mut(move |world, _|{
                                 if let Ok(_) = map.can_change(world, level_map::fill_octree_from_aabb(aabb, None)) {
                                     world.push(
                                         (
@@ -752,9 +756,9 @@ pub fn create_rotation_system() -> impl systems::Runnable {
 
                                 let entity = *entity;
                                 let client_id = client_id.val();
-                                // let box_rotation = selection_box_rot.rotation;
-                                commands.exec_mut(move |world| {
-                                    actor_tool_rotation(world, entity, rotation);
+
+                                commands.exec_mut(move |world, _| {
+                                    // actor_tool_rotation(world, entity, rotation);
 
                                     world.push(
                                         (MessageSender{
@@ -858,7 +862,7 @@ pub fn create_expansion_system() -> impl systems::Runnable {
             if let Some(combined_expansion) = combined_expansion {
                 if let Some((camera_adjusted_dir, coord_pos_value, aabb, client_id)) = entity {
                     
-                    commands.exec_mut(move |world| {
+                    commands.exec_mut(move |world, _| {
                         let mut query = <(Write<UpdateBounds>, Read<ClientID>)>::query();
 
                         let mut existing_expansion: Option<(Point, AABB)> = None;
@@ -933,7 +937,7 @@ pub fn create_update_bounds_system() -> impl systems::Runnable {
                     let update_to = *update_to;
                     let selection_box = *selection_box;
 
-                    commands.exec_mut(move |world|{
+                    commands.exec_mut(move |world, _|{
 
                         if let Some(mut entry) = world.entry(entity) {
                             if let Ok(coord_pos) = entry.get_component_mut::<level_map::CoordPos>() {
@@ -1325,142 +1329,170 @@ fn expansion_movement_helper(expansion: Point, camera_adjusted_dir: CameraAdjust
     diff
 } 
 
-pub fn actor_tool_rotation(world: &mut World, selection_entity: Entity, tool_rotation: Rotation3<f32>) {
+// pub fn actor_tool_rotation(world: &mut World, selection_entity: Entity, tool_rotation: Rotation3<f32>) {
 
-    let box_rotation = if let Ok(entry) = world.entry_mut(selection_entity) {
-        if let Ok(selection_box_rot) = entry.into_component_mut::<SelectionBoxRotation>() {
-            selection_box_rot.value = selection_box_rot.value * tool_rotation;
-            Some(selection_box_rot.value)
-        } else {
-            None
-        }
+//     let box_rotation = if let Ok(entry) = world.entry_mut(selection_entity) {
+//         if let Ok(selection_box_rot) = entry.into_component_mut::<SelectionBoxRotation>() {
+//             selection_box_rot.value = selection_box_rot.value * tool_rotation;
+//             Some(selection_box_rot.value)
+//         } else {
+//             None
+//         }
+//     } else {
+//         None
+//     };
+
+//     let aabb = if let Ok(entry) = world.entry_mut(selection_entity) {
+//         if let Ok(selection_box) = entry.into_component_mut::<SelectionBox>() {
+//             selection_box.aabb = selection_box.aabb.rotate(tool_rotation);
+//             Some(selection_box.aabb)
+//         } else {
+//             None
+//         }
+//     } else {
+//         None
+//     };
+
+//     let actor_name = if let Some(entry) = world.entry(selection_entity) {
+//         if let Ok(node_name) = entry.get_component::<node::NodeName>() {
+//             let owner = unsafe { crate::OWNER_NODE.as_ref().unwrap().assume_safe() };
+//             if let Some(node) = unsafe { node::get_node(&owner, node_name.0.clone(), false) } {
+//                 unsafe {
+//                     let node = node.assume_safe();
+//                     let children = node.get_children();
+
+//                     let child = children.get(0);
+//                     if let Some(actor) = child.try_to_object::<Spatial>() {
+//                         let actor = actor.assume_safe();
+
+//                         Some(actor.name())
+//                     } else {
+//                         None
+//                     }
+//                 }
+//             } else { None }
+//         } else {
+//             None
+//         }
+//     } else {
+//         None
+//     };
+
+//     if let Some(box_rotation) = box_rotation {
+//         if let Some(aabb) = aabb {
+//             if let Some(actor_name) = actor_name {
+//                 let mut query = <(Entity, Read<node::NodeName>)>::query();
+//                 if let Some(actor_entity) = query.iter(world)
+//                     .filter(|(_, node_name)| node_name.0 == actor_name.to_string())
+//                     .map(|(entity, _)| *entity)
+//                     .next() {
+
+//                         if let Ok(entry) = world.entry_mut(actor_entity) {
+//                             if let Ok(rotation) = entry.into_component_mut::<transform::rotation::Rotation>() {
+//                                 rotation.value = box_rotation
+//                             }
+//                         }
+
+//                         position_actor_helper(world, actor_entity, aabb);
+//                     }
+//             }
+//         }
+//     }
+// }
+
+/// Updates the selection box with the new chosen actor (new_entity should be newly duplicated into this world)
+pub fn update_chosen_actor(world: &mut World, selection_entity: Entity, actor_id: i64) {
+
+    // Check to see if there is an EntityRef which points to our old entity, and remove it
+    let old_entity = if let Some(entry) = world.entry(selection_entity) {
+        entry.get_component::<EntityRef>().map(|entity_ref| *entity_ref).ok()
     } else {
         None
     };
 
-    let aabb = if let Ok(entry) = world.entry_mut(selection_entity) {
-        if let Ok(selection_box) = entry.into_component_mut::<SelectionBox>() {
-            selection_box.aabb = selection_box.aabb.rotate(tool_rotation);
-            Some(selection_box.aabb)
-        } else {
-            None
+    if let Some(old_entity) = old_entity {
+
+        if let Some(actor_entry) = world.entry(old_entity.0) {
+            if let Ok(node_name) = actor_entry.get_component::<node::NodeName>() {
+                unsafe { node::remove_node(&node_name.0) };
+            }
         }
-    } else {
-        None
-    };
+    }
 
-    let actor_name = if let Some(entry) = world.entry(selection_entity) {
-        if let Ok(node_name) = entry.get_component::<node::NodeName>() {
-            let owner = unsafe { crate::OWNER_NODE.as_ref().unwrap().assume_safe() };
-            if let Some(node) = unsafe { node::get_node(&owner, node_name.0.clone(), false) } {
-                unsafe {
-                    let node = node.assume_safe();
-                    let children = node.get_children();
+    if let Some(actor_world) = &mut ActorPalette::get_world() {
+        let actor_world = &mut actor_world.borrow_mut();
+        if let Some(actor_world) = actor_world.as_mut() {
+            ENTITY_REFS.with(|e| {
+                let entity_refs = e.borrow();
 
-                    let child = children.get(0);
-                    if let Some(actor) = child.try_to_object::<Spatial>() {
-                        let actor = actor.assume_safe();
+                if let Some(actor_entity) = entity_refs.get(&actor_id) {
 
-                        Some(actor.name())
-                    } else {
-                        None
-                    }
-                }
-            } else { None }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+                    MERGER.with(|m| {
+                        let mut merger = m.borrow_mut();
+                        let new_entity = world.clone_from_single(actor_world, *actor_entity, &mut *merger);
 
-    if let Some(box_rotation) = box_rotation {
-        if let Some(aabb) = aabb {
-            if let Some(actor_name) = actor_name {
-                let mut query = <(Entity, Read<node::NodeName>)>::query();
-                if let Some(actor_entity) = query.iter(world)
-                    .filter(|(_, node_name)| node_name.0 == actor_name.to_string())
-                    .map(|(entity, _)| *entity)
-                    .next() {
+                            let bounds = if let Some(entry) = world.entry(new_entity) {
+                                entry.get_component::<actor::Bounds>().map(|b| *b).ok()
+                            } else {
+                                None
+                            };
 
-                        if let Ok(entry) = world.entry_mut(actor_entity) {
-                            if let Ok(rotation) = entry.into_component_mut::<transform::rotation::Rotation>() {
-                                rotation.value = box_rotation
+                            let (box_node_name, rotation, aabb) = if let Some(mut entry) = world.entry(selection_entity) {
+                                entry.add_component(EntityRef(new_entity));
+
+                                let rotation = if let Ok(box_rotation) = entry.get_component::<SelectionBoxRotation>() {
+                                    Some(box_rotation.value)
+                                } else {
+                                    None
+                                };
+
+                                //update selection box dimensions
+                                let aabb = if let Some(bounds) = bounds {
+                                    if let Ok(mut selection_box) = entry.get_component_mut::<SelectionBox>() {
+                                        if let Some(rotation) = rotation {
+                                            selection_box.aabb = bounds.get_scaled_and_rotated_aabb(rotation);  
+                                            Some(selection_box.aabb)
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                };
+
+                                //return selection box node name so we can initialize the actor's scene parented to it
+                                (entry.get_component::<node::NodeName>().map(|n| n.clone()).ok(), rotation, aabb)
+                            } else {
+                                (None, None, None)
+                            };
+
+                            if let Some(rotation) = rotation {
+                                if let Some(mut entry) = world.entry(new_entity) {
+                                    entry.add_component(transform::rotation::Rotation{
+                                        value: rotation
+                                    });
+                                }
                             }
-                        }
 
-                        position_actor_helper(world, actor_entity, aabb);
-                    }
-            }
+                            let owner = unsafe { crate::OWNER_NODE.as_ref().unwrap().assume_safe() };
+                            if let Some(box_node_name) = box_node_name {
+                                if let Some(box_node) = unsafe { node::get_node(&owner, &box_node_name.0, false) } {
+                                    initialize_actor_scene(world, unsafe { &box_node.assume_safe() }, new_entity);
+                                }
+                            }
+
+                            if let Some(aabb) = aabb {
+                                actor::position_actor_helper(world, new_entity, aabb);
+                            }
+
+                    })
+                }
+            })
         }
     }
-}
 
-pub fn set_chosen_actor(world: &mut World, box_entity: Entity, actor: &Actor) {
-
-    let box_components = if let Some(entry) = world.entry(box_entity) {
-        if let Ok(node_name) = entry.get_component::<node::NodeName>() {
-            if let Ok(selection_box_rot) = entry.get_component::<SelectionBoxRotation>() {
-                Some((node_name.clone(), *selection_box_rot))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    if let Some((node_name, selection_box_rot)) = box_components {
-
-        let owner = unsafe { crate::OWNER_NODE.as_mut().unwrap().assume_safe() };
-        let selection_box_node = unsafe { node::get_node(&owner, node_name.0.clone(), false) }.unwrap();
-
-        //erase previous actor selection
-        let children = unsafe { selection_box_node.assume_safe().get_children() };
-
-        if children.len() > 0 {
-            let child = children.get(0);
-
-            if let Some(node) = child.try_to_object::<Node>() {
-                let name = unsafe { node.assume_safe().name() };
-
-                node::free(world, &name.to_string());
-
-            }
-        }
-
-        let actor_entity = initialize_actor(world, unsafe {&selection_box_node.assume_safe()}, actor);
-
-        if let Ok(actor_entry) = world.entry_mut(actor_entity) {
-            if let Ok(rotation) = actor_entry.into_component_mut::<transform::rotation::Rotation>() {
-                rotation.value = selection_box_rot.value;
-            }
-        }
-
-        let new_components = if let Ok(actor_entry) = world.entry_mut(actor_entity) {
-
-            if let Ok(actor) = actor_entry.into_component_mut::<Actor>() {
-                let aabb = actor.get_bounds(selection_box_rot.value);
-                let actor = actor.clone();
-                position_actor_helper(world, actor_entity, aabb);
-
-                Some((aabb, actor))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        if let Some(mut entry) = world.entry(box_entity) {
-            if let Some((aabb, actor)) = new_components {
-                entry.add_component(SelectionBox::from_aabb(aabb));
-                entry.add_component(ActorToolBox(actor.get_definition_id() as u32));
-            }
-        }      
-    }
 }
 
 pub fn get_box_entity_by_client_id<T: legion::storage::Component>(world: &mut World, client_id: ClientID) -> Option<Entity> {
@@ -1489,7 +1521,7 @@ pub fn set_active_selection_box<T: legion::storage::Component>(world: &mut World
     for (entity, node_name) in results {
 
         let mesh = unsafe { 
-            node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0, false).unwrap()
+            node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &node_name.0, false).unwrap()
                 .assume_safe()
                 .cast::<Spatial>().unwrap()
             };
@@ -1513,7 +1545,7 @@ pub fn set_active_selection_box<T: legion::storage::Component>(world: &mut World
     for (entity, node_name) in results {
 
         let mesh = unsafe { 
-            node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.0, false).unwrap()
+            node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &node_name.0, false).unwrap()
                 .assume_safe()
                 .cast::<Spatial>().unwrap()
             };

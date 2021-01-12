@@ -27,7 +27,7 @@ pub fn create_animation_control_creation_system() -> impl legion::systems::Runna
 
             for (entity, node_name, _) in query.iter(world) {
                 
-                let scene_root = unsafe { node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), node_name.clone().0, true).unwrap() };
+                let scene_root = unsafe { node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &node_name.0, true).unwrap() };
 
                 let animation_trees = unsafe { get_animation_trees(&scene_root.assume_safe()) };
 

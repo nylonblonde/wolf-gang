@@ -1,40 +1,23 @@
-(
-    definitions: [
-        // Actor structs can have properties overridden by Character structs for essentially "inheritance"
-        (
-            name: "Player",
-            path: "res://characters/lucas.tscn", 
-            // size in actual units, ie: world space
-            bounds: [
-                2,
-                2,
-                1,
-            ],
-            actor_type: Player,
-        ),
-        (
-            name: "Monument",
-            path: "res://characters/lucas.tscn", 
-            // size in actual units, ie: world space
-            bounds: [
+{
+    entities: {
+        "Player": {
+            "actor": ("Player"),
+            "bounds": ([
                 1,
                 2,
                 1,
-            ],
-            actor_type: Monument,
-        ),
-        (
-            name: "Tree",
-            path: "res://models/alpinetree.escn", 
-            // size in actual units, ie: world space
-            bounds: [
+            ]),
+            "playable_character": (None),
+            "actor_scene_key": ("lucas"),
+        },
+        "Tree": {
+            "actor": ("Tree"),
+            "bounds": ([
                 1,
                 4.5,
-                1,
-            ],
-            actor_type: Actor,
-        ),
-    ]
-    
-)
-
+                1
+            ]),
+            "actor_scene_key": ("alpine_tree"),
+        }
+    },
+}

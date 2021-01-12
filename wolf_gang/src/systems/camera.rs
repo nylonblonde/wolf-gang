@@ -225,7 +225,7 @@ pub fn create_follow_selection_box_system() -> impl systems::Runnable {
                     let entity = *entity;
                     let focal_point = *focal_point;
 
-                    commands.exec_mut(move |world| {
+                    commands.exec_mut(move |world, _| {
                         if let Some(mut entry) = world.entry(entity) {
                             let smoothing = entry.get_component_mut::<Smoothing>();
                             match smoothing {

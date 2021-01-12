@@ -3,11 +3,6 @@ use crate::{
     collections::octree::Octree,
     game_state::{NewState, GameState, GameStateTraits},
     systems::{
-        actor::{
-            Definitions,
-            DefinitionsTrait,
-            ActorDefinition,
-        },
         camera,
         history::History,
         level_map,
@@ -41,9 +36,9 @@ impl GameStateTraits for Editor {
         resources.insert(PaletteSelection(0));
         resources.insert(SelectedTool(selection_box::ToolBoxType::TerrainToolBox));
 
-        if let Some(actor_definitions) = Definitions::<ActorDefinition>::from_config("res://config/actors.ron") {
-            resources.insert(actor_definitions);
-        }
+        // if let Some(actor_definitions) = ActorDefinitions::from_config("res://config/actors.ron") {
+            // resources.insert(actor_definitions);
+        // }
     }
 
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
@@ -190,23 +185,46 @@ impl GameStateTraits for Editor {
         //send all of the current map data as map inputs to the new client
         let mut query = <Read<level_map::MapChunkData>>::query();
 
-        let results = query.iter(world)
+        query.iter(world)
             .map(|map_data| map_data.clone().octree)
-            .collect::<Vec<Octree<i32, level_map::TileData>>>();
-        
-        results.into_iter().for_each(|octree| {
+            .collect::<Vec<Octree<i32, level_map::TileData>>>()
+            .into_iter().for_each(|octree| {
 
-            world.push(
-                (
-                    ServerMessageSender {
-                        client_id: connection_id,
-                        data_type: DataType::MapInput(octree),
-                        message_type: MessageType::Ordered,
-                    },
-                )
-            );
+                world.push(
+                    (
+                        ServerMessageSender {
+                            client_id: connection_id,
+                            data_type: DataType::MapInput(octree),
+                            message_type: MessageType::Ordered,
+                        },
+                    )
+                );
 
-        })
+            });
+
+        // //send all of the current actor data to new client
+        // let mut query = <(Read<Actor>, Read<ActorID>, Read<level_map::CoordPos>, Read<crate::systems::transform::rotation::Rotation>)>::query();
+
+        // query.iter(world)
+        //     .map(|(actor, actor_id, coord_pos, rotation)| (actor.clone(), *actor_id, *coord_pos, *rotation))
+        //     .collect::<Vec<(Actor, ActorID, level_map::CoordPos, crate::systems::transform::rotation::Rotation)>>()
+        //     .into_iter()
+        //     .for_each(|(actor, actor_id, coord_pos, rotation)| {
+        //         // world.push(
+        //         //     (
+        //         //         ServerMessageSender {
+        //         //             client_id: connection_id,
+        //         //             data_type: DataType::ActorChange {
+        //         //                 change: ActorChange::ActorInsertion {
+
+        //         //                 },
+        //         //                 store_history: None
+        //         //             },
+        //         //             message_type: MessageType::Ordered,
+        //         //         },
+        //         //     )
+        //         // );
+        //     });
     }
 
 }
@@ -249,15 +267,15 @@ impl PaletteSelection {
 }
 
 #[derive(Copy, Clone)]
-pub struct ActorPaletteSelection(u32);
+pub struct ActorPaletteSelection(i64);
 
 impl ActorPaletteSelection {
 
-    pub fn new(id: u32) -> ActorPaletteSelection {
+    pub fn new(id: i64) -> ActorPaletteSelection {
         ActorPaletteSelection(id)
     }
 
-    pub fn val(&self) -> u32 {
+    pub fn val(&self) -> i64 {
         self.0
     }
 }
