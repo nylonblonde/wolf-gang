@@ -123,7 +123,7 @@ impl<F: Signed + Scalar + Num + NumCast + Ord + Copy + Clone> AABB<F> {
             let mut max_y: F = NumCast::from(corner.y).unwrap();
             let mut max_z: F = NumCast::from(corner.z).unwrap();
 
-            while let Some(corner) = rotated_corners_iter.next() {
+            for corner in rotated_corners_iter {
                 min_x = std::cmp::min(min_x, NumCast::from(corner.x).unwrap());
                 min_y = std::cmp::min(min_y, NumCast::from(corner.y).unwrap());
                 min_z = std::cmp::min(min_z, NumCast::from(corner.z).unwrap());
