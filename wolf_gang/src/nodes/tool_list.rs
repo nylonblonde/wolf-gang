@@ -1,7 +1,6 @@
 use gdnative::prelude::*;
 use gdnative::api::{
     AtlasTexture,
-    ImageTexture,
     ItemList,
     ResourceLoader,
     ScrollContainer,
@@ -84,17 +83,6 @@ impl ToolList {
             populate_palette(&palette);
         }
         item_list.emit_signal("item_selected", &[Variant::from_i64(0)]);
-
-        let resources = crate::WolfGang::get_resources().unwrap();
-        let resources = &mut resources.as_ref().borrow_mut();
-
-        // if let Some(actor_definitions) = resources.get::<ActorDefinitions>() {
-        //     godot_print!("Got actor definitions");
-        //     unsafe {
-        //         let palette = get_actor_palette(item_list);
-        //         populate_actor_palette(&palette, &actor_definitions)
-        //     }
-        // };
 
     }
 

@@ -205,13 +205,8 @@ fn remove_range_tiny_max() {
 
     octree.remove_range(AABB::from_extents(Point::new(0,0,0), Point::new(0,0,0)));
 
-    assert_eq!(octree.clone().into_iter().count(), before-1);
+    assert_eq!(octree.into_iter().count(), before-1);
 
-    // let before = octree.clone().into_iter().count();
-
-    // octree.remove_range(AABB::from_extents(Point::new(1,1,1), Point::new(2,1,1)));
-
-    // assert_eq!(octree.into_iter().count(), before-2);
 }
 
 #[test]
@@ -295,7 +290,7 @@ fn remove_all() {
 
     let mut count = 0;
     fill_octree(aabb, &mut octree, &mut count);
-    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
+    assert_eq!(octree.clone().into_iter().count(), (aabb.dimensions.x * aabb.dimensions.y * aabb.dimensions.z) as usize);
 
     println!("removing...");
     octree.remove_range(aabb);
@@ -303,7 +298,7 @@ fn remove_all() {
     println!("filling...");
     fill_octree(aabb, &mut octree, &mut count);
 
-    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
+    assert_eq!(octree.clone().into_iter().count(), (aabb.dimensions.x * aabb.dimensions.y * aabb.dimensions.z) as usize);
 
     println!("removing...");
     octree.remove_range(aabb);
@@ -311,7 +306,7 @@ fn remove_all() {
     println!("filling...");
     fill_octree(aabb, &mut octree, &mut count);
 
-    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
+    assert_eq!(octree.clone().into_iter().count(), (aabb.dimensions.x * aabb.dimensions.y * aabb.dimensions.z) as usize);
 
     println!("removing...");
     octree.remove_range(aabb);
@@ -319,7 +314,7 @@ fn remove_all() {
     println!("filling...");
     fill_octree(aabb, &mut octree, &mut count);
 
-    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
+    assert_eq!(octree.clone().into_iter().count(), (aabb.dimensions.x * aabb.dimensions.y * aabb.dimensions.z) as usize);
 
     println!("removing...");
     octree.remove_range(aabb);
@@ -327,7 +322,7 @@ fn remove_all() {
     println!("filling...");
     fill_octree(aabb, &mut octree, &mut count);
 
-    assert_eq!(octree.clone().into_iter().count(), (&aabb.dimensions.x * &aabb.dimensions.y * &aabb.dimensions.z) as usize);
+    assert_eq!(octree.clone().into_iter().count(), (aabb.dimensions.x * aabb.dimensions.y * aabb.dimensions.z) as usize);
 
     println!("removing...");
     octree.remove_range(aabb);

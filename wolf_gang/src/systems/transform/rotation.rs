@@ -71,69 +71,65 @@ pub fn create_system() -> impl systems::Runnable {
                 
             };
 
-            match spatial_node {
-                Some(r) => {
+            if let Some(r) = spatial_node {
 
-                    commands.exec_mut(move |world, _|{
-                        if let Ok(entry) = world.entry_mut(entity) {
-                            if let Ok(mut direction) = entry.into_component_mut::<Direction>() {
-                                direction.right = rotation.value * Vector3D::x();
-                                direction.up = rotation.value * Vector3D::y();
-                                direction.forward = rotation.value * Vector3D::z();
-                            }
+                commands.exec_mut(move |world, _|{
+                    if let Ok(entry) = world.entry_mut(entity) {
+                        if let Ok(mut direction) = entry.into_component_mut::<Direction>() {
+                            direction.right = rotation.value * Vector3D::x();
+                            direction.up = rotation.value * Vector3D::y();
+                            direction.forward = rotation.value * Vector3D::z();
                         }
-                    });
-                    
-                    let unit_quat: nalgebra::UnitQuaternion<f32> = rotation.value.into();
-                    let quat = unit_quat.quaternion();
-
-                    //Create a basis from Quaternion, jacked from the Godot source since there are
-                    //no bindings
-                    let d = quat.norm_squared();
-                    let s = 2.0 / d;
-                    let xs = quat.coords.x * s;
-                    let ys = quat.coords.y * s;
-                    let zs = quat.coords.z * s;
-                    
-                    let wx = quat.coords.w * xs;
-                    let wy = quat.coords.w * ys;
-                    let wz = quat.coords.w * zs;
-
-                    let xx = quat.coords.x * xs;
-                    let xy = quat.coords.x * ys;
-                    let xz = quat.coords.x * zs;
-
-                    let yy = quat.coords.y * ys;
-                    let yz = quat.coords.y * zs;
-                    let zz = quat.coords.z * zs;
-
-                    let mut x_axis = Vector3::new(1.0 - (yy + zz), xy - wz, xz + wy);
-                    let mut y_axis = Vector3::new(xy + wz, 1.0 - (xx + zz), yz - wx);
-                    let mut z_axis = Vector3::new(xz - wy, yz + wx, 1.0 - (xx + yy));
-
-                    //orthonormalize the axes, again ripped from the Godot source
-                    x_axis = x_axis.normalize();
-                    y_axis = (y_axis - x_axis * (x_axis.dot(y_axis))).normalize();
-                    z_axis = (z_axis - x_axis * (x_axis.dot(z_axis)) - y_axis * y_axis.dot(z_axis)).normalize();
-
-                    unsafe {
-                        let spatial = r.assume_safe();
-
-                        let mut transform = spatial.transform();
-                        transform.basis = Basis{
-                            elements: [
-                                x_axis,
-                                y_axis,
-                                z_axis
-                            ]
-                        };
-                        
-                        spatial.set_transform(transform);
                     }
+                });
+                
+                let unit_quat: nalgebra::UnitQuaternion<f32> = rotation.value.into();
+                let quat = unit_quat.quaternion();
 
-                },
- 
-                None => {}
+                //Create a basis from Quaternion, jacked from the Godot source since there are
+                //no bindings
+                let d = quat.norm_squared();
+                let s = 2.0 / d;
+                let xs = quat.coords.x * s;
+                let ys = quat.coords.y * s;
+                let zs = quat.coords.z * s;
+                
+                let wx = quat.coords.w * xs;
+                let wy = quat.coords.w * ys;
+                let wz = quat.coords.w * zs;
+
+                let xx = quat.coords.x * xs;
+                let xy = quat.coords.x * ys;
+                let xz = quat.coords.x * zs;
+
+                let yy = quat.coords.y * ys;
+                let yz = quat.coords.y * zs;
+                let zz = quat.coords.z * zs;
+
+                let mut x_axis = Vector3::new(1.0 - (yy + zz), xy - wz, xz + wy);
+                let mut y_axis = Vector3::new(xy + wz, 1.0 - (xx + zz), yz - wx);
+                let mut z_axis = Vector3::new(xz - wy, yz + wx, 1.0 - (xx + yy));
+
+                //orthonormalize the axes, again ripped from the Godot source
+                x_axis = x_axis.normalize();
+                y_axis = (y_axis - x_axis * (x_axis.dot(y_axis))).normalize();
+                z_axis = (z_axis - x_axis * (x_axis.dot(z_axis)) - y_axis * y_axis.dot(z_axis)).normalize();
+
+                unsafe {
+                    let spatial = r.assume_safe();
+
+                    let mut transform = spatial.transform();
+                    transform.basis = Basis{
+                        elements: [
+                            x_axis,
+                            y_axis,
+                            z_axis
+                        ]
+                    };
+                    
+                    spatial.set_transform(transform);
+                }
+
             }
         });
     })

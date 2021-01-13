@@ -127,7 +127,7 @@ impl FileMenu {
 
         popup_menu.set_item_disabled(0, !is_host);
         popup_menu.set_item_disabled(1, !is_host);
-        popup_menu.set_item_disabled(2, !is_host || is_host && !can_quick_save);
+        popup_menu.set_item_disabled(2, !is_host || !can_quick_save);
         popup_menu.set_item_disabled(3, !is_host);
     }
 
@@ -151,7 +151,7 @@ impl FileMenu {
                             return
                         }
                     },
-                    _ => {} //TODO: error handling
+                    _ => { todo!() }
                 }
 
                 level_map::send_reset_message(world);
@@ -169,7 +169,7 @@ impl FileMenu {
                             }
                         }
                     },
-                    _ => {} //TODO: error handling
+                    _ => { todo!() }
                 }
 
                 menu_button.emit_signal("save_load_popup", &[Variant::from_i64(0)]); 
@@ -182,7 +182,7 @@ impl FileMenu {
                         doc.update_data(world);
                         doc.save();
                     },
-                    _ => {} //TODO: error handling
+                    _ => { todo!() }
                 }
 
             },

@@ -38,7 +38,7 @@ static mut OWNER_NODE: Option<Ref<Node>> = None;
 
 thread_local! {
    pub static STATE_MACHINE: RefCell<game_state::StateMachine> = RefCell::new(
-        game_state::StateMachine::new()
+        game_state::StateMachine::default()
     );
 }
 

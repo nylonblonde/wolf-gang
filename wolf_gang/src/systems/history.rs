@@ -2,8 +2,6 @@ use std::collections::VecDeque;
 
 use legion::*;
 
-use gdnative::godot_print;
-
 use serde::{Serialize, Deserialize};
 
 use crate::{
@@ -95,7 +93,7 @@ impl History {
         }
     }
 
-    fn determine_move<'a>(&'a self, amount: i32) -> Result<(&'a StepType, i32), Error> {
+    fn determine_move(&'_ self, amount: i32) -> Result<(&'_ StepType, i32), Error> {
         let mut next_step = self.current_step as i32 + amount;
 
         //since current_step was determined by the previous step, make an adjustment if we've actually changed direction in the history this time
@@ -114,12 +112,12 @@ impl History {
     }
 
     /// If there are steps further back than the current step
-    pub fn can_undo<'a>(&'a self) -> Result<&'a StepType, Error>  {
+    pub fn can_undo(&'_ self) -> Result<&'_ StepType, Error>  {
         self.determine_move(-1).map(|(x, _)| x)
     }
 
     /// If there are steps ahead of the current step
-    pub fn can_redo<'a>(&'a self) -> Result<&'a StepType, Error> {
+    pub fn can_redo(&'_ self) -> Result<&'_ StepType, Error> {
         self.determine_move(1).map(|(x, _)| x)
     }
 }
@@ -129,7 +127,7 @@ pub fn send_move_by_step(commands: &mut legion::systems::CommandBuffer, client_i
         (
             MessageSender{
                 data_type: DataType::HistoryStep{
-                    client_id: client_id,
+                    client_id,
                     amount
                 },
                 message_type: MessageType::Ordered

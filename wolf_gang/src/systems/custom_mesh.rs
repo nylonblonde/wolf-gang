@@ -133,8 +133,8 @@ pub fn create_draw_system() -> impl systems::Runnable {
                     
                     let uv2s_len = uv2s.len();
 
-                    for i in 0..indices.len() {
-                        let index = indices[i] as usize;
+                    for index in indices {
+                        let index = *index as usize;
 
                         immediate_geometry.set_normal(normals[index]);
                         immediate_geometry.set_uv(uvs[index]);

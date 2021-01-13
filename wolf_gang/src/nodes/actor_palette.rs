@@ -96,17 +96,15 @@ impl ActorPalette{
 
     #[export]
     fn _process(&self, item_list: &ItemList, _: f64) {
-        if !item_list.is_anything_selected() {
-            if item_list.get_item_count() > 0 {
-                item_list.select(0, true);
-            }
+        if !item_list.is_anything_selected() && item_list.get_item_count() > 0 {
+            item_list.select(0, true);
         }
     }
 
     fn deserialize_entities(&self) {
         let file = File::new();
 
-        if let Ok(_) = file.open("res://config/actors.ron", File::READ) {
+        if file.open("res://config/actors.ron", File::READ).is_ok() {
             let file_string = file.get_as_text().to_string();
 
             if let Ok(mut deserializer) = ron::de::Deserializer::from_str(file_string.as_str()) {
@@ -133,7 +131,7 @@ impl ActorPalette{
 
             let mut i = 0;
             query.iter(world)
-                .map(|entity| *entity)
+                .copied()
                 .collect::<Vec<Entity>>()
                 .into_iter()
                 .for_each(|entity| {

@@ -31,8 +31,8 @@ use std::{
 
 type Point = nalgebra::Vector3<i32>;
 
-pub const MULTICAST_ADDR_V4: &'static str = "234.2.2.2:12345";
-pub const LOOPBACK_ADDR_V4: &'static str = "127.0.0.1:12345";
+pub const MULTICAST_ADDR_V4: &str = "234.2.2.2:12345";
+pub const LOOPBACK_ADDR_V4: &str = "127.0.0.1:12345";
 // const LOBBY_ADDR_V4: &'static str = "";
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -152,8 +152,8 @@ impl Socket for UdpSocket {
         let buffer: Vec<u8> = std::iter::repeat(0).take(max_packet_size).collect();
 
         Ok(UdpSocket {
-            socket: socket,
-            buffer: buffer,
+            socket,
+            buffer,
             multicast_addr: None
         })
 
@@ -221,7 +221,7 @@ impl GameStateTraits for Networking {
         if let ConnectionType::Host = connection.conn_type {
             let entity = world.push(
                 (
-                    Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone()),
+                    Server::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config),
                 )
             );
 
@@ -277,7 +277,7 @@ impl GameStateTraits for Networking {
                     };
 
                     // Server binding silently fails if address is in use as a way of allowing multiple clients on the same machine
-                    if let Ok(_) = server.listen(server_addr) { 
+                    if server.listen(server_addr).is_ok() { 
                         println!("Server is listening at {}", server_addr);
 
                         if let Scope::Multicast = connection.scope {
@@ -290,7 +290,7 @@ impl GameStateTraits for Networking {
 
         let entity = world.push(
             (
-                Client::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config.clone()),
+                Client::<UdpSocket, BinaryRateLimiter, NoopPacketModifier>::new(config),
             )
         );
 
@@ -326,36 +326,30 @@ impl GameStateTraits for Networking {
                     // }
                 };
 
-                match client_addr {
-                    Some(client_addr) => {
-                        match connection.scope {
-                            Scope::Loopback => {
-                                client.connect(client_addr).expect("Couldn't connect to client address!");
-                                println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
-                            },
-                            Scope::Online(_) => {
-                                client.connect(client_addr).expect("Couldn't connect to online address!");
-                                println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
-                            },
-                            _ => {}
-                        }
-                    },
-                    None => {} //In the case of multicast, we wouldn't have set our client address yet
+                if let Some(client_addr) = client_addr {
+                    match connection.scope {
+                        Scope::Loopback => {
+                            client.connect(client_addr).expect("Couldn't connect to client address!");
+                            println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
+                        },
+                        Scope::Online(_) => {
+                            client.connect(client_addr).expect("Couldn't connect to online address!");
+                            println!("[Client] {:?} Connecting to {:?}...", client.socket().unwrap().local_addr().unwrap(), client.peer_addr().unwrap());
+                        },
+                        _ => {}
+                    }
                 }
             }
         }  
 
         //In the case of Multicast's scope, we wouldn't have connected yet because we need to get the host's IP Address. Offload IP
         // address retrieval to systems
-        match connection.scope {
-            Scope::Multicast => {
-                if let Some(mut entry) = world.entry(entity) {
-                    let socket = net::UdpSocket::bind("0.0.0.0:0").unwrap();
-                    socket.set_nonblocking(true).ok();
-                    entry.add_component(socket);
-                }
-            },
-            _ => {}
+        if let Scope::Multicast = connection.scope {
+            if let Some(mut entry) = world.entry(entity) {
+                let socket = net::UdpSocket::bind("0.0.0.0:0").unwrap();
+                socket.set_nonblocking(true).ok();
+                entry.add_component(socket);
+            }
         }
     }
 

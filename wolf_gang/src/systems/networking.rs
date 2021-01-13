@@ -248,7 +248,7 @@ pub fn create_server_system() -> impl systems::ParallelRunnable {
                             );
     
                             //Let everyone know this client has connected
-                            for (_, conn) in server.connections() {
+                            for conn in server.connections().values_mut() {
                                 conn.send(MessageKind::Reliable, encoder.compress_vec(
                                     &bincode::serialize(&MessageSender{
                                         data_type: DataType::NewConnection(crate::systems::networking::NewConnection::new(id.0)),
@@ -272,7 +272,7 @@ pub fn create_server_system() -> impl systems::ParallelRunnable {
                             let payload = encoder.compress_vec(&serialize(&message).unwrap()).unwrap();
     
                             // Send a message to all connected clients
-                            for (_, conn) in server.connections() {
+                            for conn in server.connections().values_mut() {
                                 conn.send(message.message_type.as_kind(), payload.clone());
                             }
     
@@ -287,7 +287,7 @@ pub fn create_server_system() -> impl systems::ParallelRunnable {
                             );
     
                             // Let everyone know this client has disconnected
-                            for (_, conn) in server.connections() {
+                            for conn in server.connections().values_mut() {
                                 conn.send(MessageKind::Reliable, encoder.compress_vec(
                                     &bincode::serialize(&MessageSender{
                                         data_type: DataType::Disconnection(crate::systems::networking::Disconnection::new(id.0)),
@@ -296,7 +296,7 @@ pub fn create_server_system() -> impl systems::ParallelRunnable {
                                 ).unwrap());
                             }
     
-                            if server.connections().len() == 0 {
+                            if server.connections().is_empty() {
                                 println!("[Server] Closing out server as there are no more connections");
                                 commands.remove(*entity);
                             }
@@ -702,7 +702,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 }
             }
         },
-        DataType::ActorChange{ change, store_history } => {
+        DataType::ActorChange{ change: _, store_history: _ } => {
         //     use crate::systems::{
         //         actor::{
         //             ActorDefinitions, 
@@ -763,7 +763,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
 
             let mut commands = legion::systems::CommandBuffer::new(world);
 
-            if let Some((history, _)) = query.iter_mut(world).filter(|(_, id)| id.val() == client_id).next() {
+            if let Some((history, _)) = query.iter_mut(world).find(|(_, id)| id.val() == client_id) {
                 history.move_by_step(&mut commands, resources, amount);
             }
 

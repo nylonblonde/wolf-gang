@@ -114,14 +114,16 @@ pub struct StateMachine {
     schedules: Schedules
 }
 
-impl StateMachine {
-
-    pub fn new() -> Self {
+impl Default for StateMachine {
+    fn default() -> Self {
         StateMachine {
             states: Vec::new(),
             schedules: Schedules::new(),
-        }
+        }    
     }
+}
+
+impl StateMachine {
 
     pub fn add_state(&mut self, mut game_state: impl GameStateTraits + 'static, schedule: Schedule, world: &mut World, resources: &mut Resources) -> &RefCell<Box<dyn GameStateTraits>> {
 

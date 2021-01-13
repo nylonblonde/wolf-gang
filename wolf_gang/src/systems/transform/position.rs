@@ -46,10 +46,8 @@ pub fn create_system() -> impl systems::Runnable {
                 
             };
 
-            match spatial_node {
-                Some(r) => { 
-                    unsafe { r.assume_safe().set_translation(position.value); } }
-                None => {}
+            if let Some(r) = spatial_node { 
+                unsafe { r.assume_safe().set_translation(position.value); } 
             }
         
         })

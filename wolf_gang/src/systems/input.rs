@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::{ HashMap, HashSet };
 
-const USER_CONFIG_PATH: &'static str = "user://input_map.ron";
-const RESOURCE_CONFIG_PATH: &'static str = "res://config/input_map.ron";
+const USER_CONFIG_PATH: &str = "user://input_map.ron";
+const RESOURCE_CONFIG_PATH: &str = "res://config/input_map.ron";
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub enum InputType {
@@ -30,7 +30,7 @@ pub struct InputData {
     code: i64
 }
 
-pub const MODIFIER_SUFFIX: &'static str = "_modifier";
+pub const MODIFIER_SUFFIX: & str = "_modifier";
 
 #[derive(Deserialize, Serialize)]
 pub struct InputConfig {
@@ -64,9 +64,9 @@ impl InputConfig {
             for input in inputs {
                 let (input_type, input_data) = input;
 
-                for i in 0..input_data.len() {
+                for (i, input_data) in input_data.iter().enumerate() {
 
-                    match &input_data[i] {
+                    match &input_data {
                         Some(r) => {
                             let name = match i {
                                 0 => format!("{}{}", name, MODIFIER_SUFFIX),
@@ -89,7 +89,9 @@ impl InputConfig {
                                         }
                                     );
                                 }
-                                _ => {}
+                                _ => {
+                                    unimplemented!();
+                                }
                             }
                         },
                         None => {}
@@ -128,7 +130,7 @@ pub fn initialize_input_config(world: &mut legion::world::World) {
     let input_config = match InputConfig::from_file(USER_CONFIG_PATH) {
         Some(input_config) => input_config,
         None => {
-            let input_config = InputConfig::from_file(RESOURCE_CONFIG_PATH).expect(format!("Failed to load {}", RESOURCE_CONFIG_PATH).as_str());
+            let input_config = InputConfig::from_file(RESOURCE_CONFIG_PATH).unwrap_or_else(|| panic!("Failed to load {}", RESOURCE_CONFIG_PATH));
 
             input_config.save(USER_CONFIG_PATH);
 
@@ -227,61 +229,56 @@ pub fn create_input_system() -> impl systems::Runnable {
 
                 //Check if this input config requires a modifier
                 //Grab a modifier associated with this action, if there is one
-                let modifier = modifiers.iter().filter(|(_, _, a)| a == action).next();                
+                let modifier = modifiers.iter().find(|(_, _, a)| a == action);                
 
-                match input_component_query.iter_mut(world).filter(|(_, _, a)| *a == action).next() {
-                    Some((entity, mut input_component, _)) => {
+                if let Some((entity, mut input_component, _)) = input_component_query.iter_mut(world).find(|(_, _, a)| *a == action) {
 
-                        let mut pressed = inputs.is_action_pressed(GodotString::from(action.0.clone()));
+                    let mut pressed = inputs.is_action_pressed(GodotString::from(action.0.clone()));
 
-                        pressed = match modifier {
-                            Some(_) if pressed => inputs.is_action_pressed(GodotString::from(format!("{}{}", action.0.clone(), MODIFIER_SUFFIX))),
-                            _ => pressed
-                        };
+                    pressed = match modifier {
+                        Some(_) if pressed => inputs.is_action_pressed(GodotString::from(format!("{}{}", action.0.clone(), MODIFIER_SUFFIX))),
+                        _ => pressed
+                    };
 
-                        pressed = {
-        
-                            //check to see if another modifier conflicts
-                            for (_, _, other_action) in modifiers.iter().filter(|(_,_,a)| a != action) {
-        
-                                for (_, other_input, _) in non_modifiers.iter().filter(|(_,_,a)| a == other_action) {
-                                    if other_input.code == input_data.code {
-                                        pressed = {
-                                            if inputs.is_action_pressed(GodotString::from(format!("{}{}", other_action.0.clone(), MODIFIER_SUFFIX))) {
-                                                false
-                                            } else {
-                                                pressed
-                                            }
-                                        };
-                                        break
-                                    } 
-                                }
-        
-                                if pressed == false {
+                    pressed = {
+    
+                        //check to see if another modifier conflicts
+                        for (_, _, other_action) in modifiers.iter().filter(|(_,_,a)| a != action) {
+    
+                            for (_, other_input, _) in non_modifiers.iter().filter(|(_,_,a)| a == other_action) {
+                                if other_input.code == input_data.code {
+                                    pressed = {
+                                        if inputs.is_action_pressed(GodotString::from(format!("{}{}", other_action.0.clone(), MODIFIER_SUFFIX))) {
+                                            false
+                                        } else {
+                                            pressed
+                                        }
+                                    };
                                     break
-                                }
+                                } 
                             }
-        
-                            pressed  
-                        };
-
-                        if pressed && !already_pressed.contains(&action.0) {
-                            already_pressed.insert(action.0.clone());
-
-                            input_component.strength = inputs.get_action_strength(GodotString::from(&action.0));
-                            input_component.repeater += time.delta;
-                        } else {
-                            if input_component.strength < std::f32::EPSILON.into() { 
-                                // If strength is already 0.0, then we've already passed on "on release" frame
-                                delete_entities.push(*entity);
-                            } else {
-                                // If action is no longer pressed, set strength to zero. If a component has a strength of 0.0, we can confirm that it has been released.
-                                input_component.strength = 0.0;
-                                
+    
+                            if !pressed {
+                                break
                             }
                         }
-                    },
-                    _ => {}
+    
+                        pressed  
+                    };
+
+                    if pressed && !already_pressed.contains(&action.0) {
+                        already_pressed.insert(action.0.clone());
+
+                        input_component.strength = inputs.get_action_strength(GodotString::from(&action.0));
+                        input_component.repeater += time.delta;
+                    } else if input_component.strength < std::f32::EPSILON.into() { 
+                        // If strength is already 0.0, then we've already passed on "on release" frame
+                        delete_entities.push(*entity);
+                    } else {
+                        // If action is no longer pressed, set strength to zero. If a component has a strength of 0.0, we can confirm that it has been released.
+                        input_component.strength = 0.0;
+                        
+                    }
                 }
 
             }
@@ -296,7 +293,7 @@ pub fn create_input_system() -> impl systems::Runnable {
             for (_, input_data, action) in not_modifier_config_query.iter(world) {
 
                 //check to see if this action has a modifier
-                let modifier_input = modifiers.iter().filter(|(_,_,a)| a == action).next();
+                let modifier_input = modifiers.iter().find(|(_,_,a)| a == action);
 
                 let mut pressed = inputs.is_action_pressed(GodotString::from(action.0.clone()));
 
@@ -310,7 +307,7 @@ pub fn create_input_system() -> impl systems::Runnable {
                     // check to see if another modifier conflicts
                     for (_, _, other_action) in modifiers.iter().filter(|(_,_,a)| a != action) {
                         
-                        if let Some((_, _, _)) = non_modifiers.iter().filter(|(_,input,a)| a == other_action && input.code == input_data.code).next() {
+                        if let Some((_, _, _)) = non_modifiers.iter().find(|(_,input,a)| a == other_action && input.code == input_data.code) {
                             pressed = {
                                 if inputs.is_action_pressed(GodotString::from(format!("{}{}", other_action.0.clone(), MODIFIER_SUFFIX))) {
                                     false

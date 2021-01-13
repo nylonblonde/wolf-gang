@@ -137,9 +137,11 @@ impl ConnectMenu {
     fn item_handler(&mut self, _: &MenuButton, id: i64) {
         match id {
             3 => { // Disconnect
-
+                unimplemented!()
             }, 
-            _ => {}, //0 is join submenu, 1 is host submenu, 2 is a separator
+            _ => {
+                unimplemented!()
+            }, //0 is join submenu, 1 is host submenu, 2 is a separator
         }
     }
 }

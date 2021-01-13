@@ -64,7 +64,7 @@ impl <'de, N: Sync + Send + Bounded + Signed + Scalar + NumCast + Ord + AddAssig
 
         let items = iter.into_iter().collect::<Vec<T>>();
 
-        if items.len() == 0 {
+        if items.is_empty() {
             smallest = Vector3::zeros();
             largest = Vector3::zeros();
         } else {
@@ -296,14 +296,14 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
 
         let mut total_volume = zero;
         for child in &self.children {
-            total_volume = total_volume + child.aabb.dimensions.x * child.aabb.dimensions.y * child.aabb.dimensions.z;
+            total_volume += child.aabb.dimensions.x * child.aabb.dimensions.y * child.aabb.dimensions.z;
         }
 
         let volume = dimensions.x * dimensions.y * dimensions.z;
 
         if cfg!(debug_assertions) {
             if total_volume == volume {
-                Ok({})
+                Ok(())
             } else {
                 Err(
                     SubdivisionError{
@@ -312,14 +312,14 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
                 )
             }
         } else {
-            Ok({})
+            Ok(())
         }
     }
 
     /// Removes the element which matches item exactly
     pub fn remove_item(&mut self, item: &T) {
         if let Paternity::ChildFree = self.paternity {
-            if self.elements.len() == 0 {
+            if self.elements.is_empty() {
                 return;
             }
         }
@@ -353,7 +353,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
     pub fn remove_range(&mut self, range: AABB<N>) {
 
         if let Paternity::ChildFree = self.paternity {
-            if self.elements.len() == 0 {
+            if self.elements.is_empty() {
                 return;
             }
         }
@@ -410,7 +410,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
                 self.elements.push(element);
                 // println!("Inserted {:?} between {:?} and {:?} at position {}", element.get_point(), self.aabb.get_min(), self.aabb.get_max(), self.num_elements);
 
-                return Ok({});
+                return Ok(());
             }
 
             Paternity::ChildFree => { 
@@ -426,7 +426,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
 
         };
 
-        return match &self.paternity {
+        match &self.paternity {
 
             Paternity::ProudParent => {
 
@@ -441,7 +441,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
                 self.children.par_iter_mut().for_each_with(tx, |tx, child| {
                     // println!("Inserting into child");                    
                     match child.insert(element) {
-                        Ok(_) => tx.send(Ok({})),
+                        Ok(_) => tx.send(Ok(())),
                         Err(err) => tx.send(Err(err))
                     }.unwrap();               
                 });
@@ -467,7 +467,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
     pub fn count(&self) -> usize{
         let mut count: usize = self.elements.len();
 
-        return match &self.paternity {
+        match &self.paternity {
             Paternity::ChildFree => count,
             Paternity::ProudParent => {
                 for child in &self.children {
@@ -520,7 +520,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
         }
 
         if let Paternity::ChildFree = self.paternity {
-            if self.elements.len() == 0 {
+            if self.elements.is_empty() {
                 return elements_in_range
             }
         }
@@ -550,7 +550,7 @@ impl<N: Sync + Send + Signed + Scalar + Num + NumCast + Ord + AddAssign + SubAss
             elements_in_range.append(&mut received)
         }
 
-        return elements_in_range
+        elements_in_range
     }
 }
 

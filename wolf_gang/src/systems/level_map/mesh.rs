@@ -8,8 +8,6 @@ use crate::collections::octree::PointData;
 
 use gdnative::prelude::*;
 
-use nalgebra;
-
 use legion::*;
 
 type AABB = aabb::AABB<i32>;
@@ -58,7 +56,7 @@ pub fn create_add_components_system() -> impl systems::Runnable {
         )
         .build(|commands, world, _, query| {
 
-            let entities = query.iter(world).map(|entity| *entity).collect::<Vec<Entity>>();
+            let entities = query.iter(world).copied().collect::<Vec<Entity>>();
 
             for entity in entities {
 
@@ -71,7 +69,7 @@ pub fn create_add_components_system() -> impl systems::Runnable {
         })
 }
 
-pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
+#[allow(clippy::many_single_char_names)] pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
     let mut batch_index: u32 = 0;
 
@@ -86,8 +84,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
             .map(|(entity, map_data, point)| (*entity, (*map_data).clone(), *point))
             .collect::<Vec<(Entity, MapChunkData, Point)>>();
 
-        let unbatched_entities = changed_query.iter(world)
-            .map(|entity| *entity)
+        let unbatched_entities = changed_query.iter(world).copied()
             .collect::<Vec<Entity>>();
 
         let unbatched_iter = unbatched_entities.into_iter();
@@ -170,7 +167,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                 let checked: Arc<Mutex<HashSet<Point>>> = Arc::new(Mutex::new(HashSet::new()));
                 let (vert_data_tx, vert_data_rx) = mpsc::channel::<(usize, VertexData)>();
 
-                (0..0+area).collect::<Vec<i32>>().par_iter().for_each_with(vert_data_tx, |vert_data_tx, i| {
+                (0..area).collect::<Vec<i32>>().par_iter().for_each_with(vert_data_tx, |vert_data_tx, i| {
 
                     let x = (i % change_aabb.dimensions.x) + change_min.x;
                     let z = (i / change_aabb.dimensions.x) + change_min.z;
@@ -249,8 +246,8 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                                         let chunk_point_above = map_data.get_chunk_point()+Point::y();
 
-                                        if let Some((_, map_data, _)) = map_datas.iter().filter(|(_,_,pt)| *pt == chunk_point_above).next() {
-                                            if let Some(_) = map_data.octree.query_point(point_above) {
+                                        if let Some((_, map_data, _)) = map_datas.iter().find(|(_,_,pt)| *pt == chunk_point_above) {
+                                            if map_data.octree.query_point(point_above).is_some() {
 
                                                 let curr_sides = get_open_sides(&map_datas, &map_data, point_above, &checked);
 
@@ -276,7 +273,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                                 // We do this as a SLIGHT optimization, there's no sense in calculating this for EVERY tile if it's not going to be worked on
                                 // but it's possible it was already calculated when determining the top. If it wasn't, we have to do it now
-                                if let None = true_top {
+                                if true_top.is_none() {
                                     true_top = Some(super::map_coords_to_world(get_true_top(point, &map_datas, &map_data, &checked)));
                                 }
 
@@ -321,9 +318,9 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                                             let chunk_point_below = map_data.get_chunk_point() - Point::y();
 
-                                            if let Some((_, map_data, _)) = map_datas.iter().filter(|(_,_,pt)| *pt == chunk_point_below).next() {
+                                            if let Some((_, map_data, _)) = map_datas.iter().find(|(_,_,pt)| *pt == chunk_point_below) {
 
-                                                if let Some(_) = map_data.octree.query_point(point_below) {
+                                                if map_data.octree.query_point(point_below).is_some() {
                                                     let curr_sides = get_open_sides(&map_datas, &map_data, point_below, &checked);
                                                                                             
                                                     if curr_sides.symmetric_difference(&point_sides).count() > 0 {
@@ -485,7 +482,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                                     let mut connect_points_final: Vec<Vector3> = Vec::with_capacity(connect_points_len * 2);
 
                                     if let Some(sides) = &must_connect {
-                                        (0..connect_points_len).into_iter().for_each(|i| {
+                                        (0..connect_points_len).for_each(|i| {
                                             let right_index = i;
                                             let left_index = (i + 1) % connect_points_len;
 
@@ -648,7 +645,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
             let combined: HashMap<usize, VertexData> = combined_vert_data_rx.into_iter().collect();
 
-            if combined.len() > 0 {
+            if !combined.is_empty() {
                 map_mesh_tx.send((*entity, combined)).ok();
             }
 
@@ -659,7 +656,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
         let mut map_vert_datas = map_mesh_rx.into_iter().collect::<HashMap<Entity, HashMap<usize, VertexData>>>();
 
-        if map_vert_datas.len() > 0 {
+        if !map_vert_datas.is_empty() {
 
             let mut meshes_to_change: Vec<Entity> = Vec::with_capacity(entities.len());
 
@@ -737,12 +734,12 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
         to_change_rx.into_iter().for_each(|(neighbor_entity, entity, map_aabb, change)| {
 
             let batched: Option<Batched> = world.entry(entity).and_then(|entry| {
-                entry.get_component::<Batched>().ok().map(|batched| *batched)
+                entry.get_component::<Batched>().ok().copied()
             });
 
             if let Some(mut neighbor_entry) = world.entry(neighbor_entity) {
 
-                let neighbor_batched = neighbor_entry.get_component::<Batched>().map(|batched| *batched).ok();
+                let neighbor_batched = neighbor_entry.get_component::<Batched>().ok().copied();
 
                 if batched == neighbor_batched {
                     return {}
@@ -792,12 +789,12 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
                     manually_change.ranges = manually_change.ranges.iter().filter(|c| {
                         match c {
-                            ChangeType::Indirect(_) if done_changes.iter().find(|(_, d)| d == *c).is_some() => false,
+                            ChangeType::Indirect(_) if done_changes.iter().any(|(_, d)| d == *c) => false,
                             _ => true
                         }
                     }).map(|c| {
                         match c {
-                            ChangeType::Direct(aabb) if done_changes.iter().find(|(_, d)| d == c).is_some() => ChangeType::Changed(*aabb),
+                            ChangeType::Direct(aabb) if done_changes.iter().any(|(_, d)| d == c) => ChangeType::Changed(*aabb),
                             _ => *c
                         }
                     }).collect();
@@ -810,7 +807,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
                         }
                     }
 
-                    if manually_change.ranges.len() == 0 {
+                    if manually_change.ranges.is_empty() {
                         entry.remove_component::<ManuallyChange>();
                         entry.remove_component::<Batched>();
                     }
@@ -823,7 +820,7 @@ pub fn create_drawing_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 } 
 
 /// Get the true top of this vertical column of tiles regardless of chunk subdivisions
-fn get_true_top(pt: Point, map_datas: &Vec<(Entity, MapChunkData, Point)>, map_data: &MapChunkData, _checked: &HashSet<Point>) -> Point {
+fn get_true_top(pt: Point, map_datas: &[(Entity, MapChunkData, Point)], map_data: &MapChunkData, _checked: &HashSet<Point>) -> Point {
     let mut true_top = pt;
 
     let chunk_max = map_data.octree.get_aabb().get_max();
@@ -842,7 +839,7 @@ fn get_true_top(pt: Point, map_datas: &Vec<(Entity, MapChunkData, Point)>, map_d
             None if true_top.y > chunk_max.y => {
                 let chunk_pt_above = map_data.get_chunk_point()+Point::y();
 
-                match map_datas.iter().filter(|(_,_,pt)| *pt == chunk_pt_above).next() {
+                match map_datas.iter().find(|(_,_,pt)| *pt == chunk_pt_above) {
                     Some((_, map_data, _)) => {
                         true_top = get_true_top(true_top, map_datas, &map_data, _checked);
                         return true_top;
@@ -864,9 +861,8 @@ fn get_true_top(pt: Point, map_datas: &Vec<(Entity, MapChunkData, Point)>, map_d
 fn get_aabb_change_in_range(change: AABB, aabb: AABB) -> AABB {
     let expand_aabb = AABB::from_extents(change.get_min() - Point::new(1,1,1), change.get_max() + Point::new(1,1,1));
 
-    let in_range = expand_aabb.get_intersection(aabb);
-                        
-    in_range
+    expand_aabb.get_intersection(aabb)
+
 }
 
 pub fn scale_from_origin(pt: Vector3, origin: Vector3, scale_amount: f32) -> Vector3 {
@@ -876,7 +872,7 @@ pub fn scale_from_origin(pt: Vector3, origin: Vector3, scale_amount: f32) -> Vec
     pt + origin
 } 
 
-pub fn get_open_sides(map_datas: &Vec<(Entity, MapChunkData, Point)>, map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
+pub fn get_open_sides(map_datas: &[(Entity, MapChunkData, Point)], map_data: &MapChunkData, point: Point, checked: &HashSet<Point>) -> HashSet<Point> {
     let chunk_max = map_data.octree.get_aabb().get_max();
     let chunk_min = map_data.octree.get_aabb().get_min();
     
@@ -892,50 +888,48 @@ pub fn get_open_sides(map_datas: &Vec<(Entity, MapChunkData, Point)>, map_data: 
             return {}
         }
 
-        match map_data.octree.query_point(neighbor) {
-            Some(_) => return {},
-            None => {
+        if map_data.octree.query_point(neighbor).is_none() {
 
-                match map_data.octree.get_aabb().contains_point(neighbor) {
-                    false => {
+            match map_data.octree.get_aabb().contains_point(neighbor) {
+                false => {
 
-                        let mut adj_dir = *dir;
+                    let mut adj_dir = *dir;
 
-                        if neighbor.x > chunk_max.x {
-                            adj_dir.x = 1;    
-                        } else if neighbor.x < chunk_min.x {
-                            adj_dir.x = -1;
-                        } else {
-                            adj_dir.x = 0;
-                        }
-                        
-                        if neighbor.z > chunk_max.z {
-                            adj_dir.z = 1;
-                        } else if neighbor.z < chunk_min.z {
-                            adj_dir.z = -1; 
-                        } else {
-                            adj_dir.z = 0;
-                        }
+                    if neighbor.x > chunk_max.x {
+                        adj_dir.x = 1;    
+                    } else if neighbor.x < chunk_min.x {
+                        adj_dir.x = -1;
+                    } else {
+                        adj_dir.x = 0;
+                    }
+                    
+                    if neighbor.z > chunk_max.z {
+                        adj_dir.z = 1;
+                    } else if neighbor.z < chunk_min.z {
+                        adj_dir.z = -1; 
+                    } else {
+                        adj_dir.z = 0;
+                    }
 
-                        let chunk_point_dir = map_data.get_chunk_point() + adj_dir;
+                    let chunk_point_dir = map_data.get_chunk_point() + adj_dir;
 
-                        match map_datas.iter().filter(|(_, _, pt)| *pt == chunk_point_dir).next() {
-                            Some((_, map_data, _)) => {
-                                
-                                match map_data.octree.query_point(neighbor) {
-                                    Some(_) => return {},
-                                    None => {
-                                        tx.send(*dir).unwrap();
-                                    }
+                    match map_datas.iter().find(|(_, _, pt)| *pt == chunk_point_dir) {
+                        Some((_, map_data, _)) => {
+                            
+                            match map_data.octree.query_point(neighbor) {
+                                Some(_) => return {},
+                                None => {
+                                    tx.send(*dir).unwrap();
                                 }
+                            }
 
-                            },
-                            None => { tx.send(*dir).unwrap(); }
-                        }
-                    },
-                    true => { tx.send(*dir).unwrap(); }
-                }
+                        },
+                        None => { tx.send(*dir).unwrap(); }
+                    }
+                },
+                true => { tx.send(*dir).unwrap(); }
             }
+            
         }
     });
 
@@ -990,7 +984,8 @@ fn get_direction_of_edge(pt1: Vector3, pt2: Vector3, center: Vector3) -> Point {
     Point::new(dir.x as i32, dir.y as i32, dir.z as i32)
 }
 
-fn adjust_scaled_pts(open_sides: &HashSet<Point>, 
+//allowed because this is just a function that gets called here
+#[allow(clippy::too_many_arguments)] fn adjust_scaled_pts(open_sides: &HashSet<Point>, 
     dir: Point, 
     right_dir: Point,
     left_dir: Point,
@@ -1021,39 +1016,35 @@ fn adjust_scaled_pts(open_sides: &HashSet<Point>,
 
         scaled_right = scale_from_origin(right, middle,  1./(1.-BEVEL_SIZE));
 
-    } else if open_sides.contains(&dir) && !open_sides.contains(&right_dir) {
-        if (left-right).length() > 0.5 {
+    } else if open_sides.contains(&dir) && !open_sides.contains(&right_dir) && (left-right).length() > 0.5 {
 
-            let middle = if dir.x.abs() > dir.z.abs() {
-                Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.x / 2.
-            } else {
-                Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.z / 2.
-            };
+        let middle = if dir.x.abs() > dir.z.abs() {
+            Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.x / 2.
+        } else {
+            Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.z / 2.
+        };
 
-            let middle = right_rot * Vector3D::new(middle.x, middle.y, middle.z);
+        let middle = right_rot * Vector3D::new(middle.x, middle.y, middle.z);
 
-            let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
+        let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
 
-            scaled_right = scale_from_origin(right, middle, 1./(1.-BEVEL_SIZE));
+        scaled_right = scale_from_origin(right, middle, 1./(1.-BEVEL_SIZE));
 
-        }
     }
 
-    if open_sides.contains(&dir) && !open_sides.contains(&left_dir) {
-        if (left-right).length() > 0.5 {
+    if open_sides.contains(&dir) && !open_sides.contains(&left_dir) && (left-right).length() > 0.5 {
 
-            let middle = if dir.x.abs() > dir.z.abs() {
-                Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.x / 2.
-            } else {
-                Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.z / 2.
-            };
+        let middle = if dir.x.abs() > dir.z.abs() {
+            Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.x / 2.
+        } else {
+            Vector3::new(dir.x as f32, dir.y as f32, dir.z as f32) * TILE_DIMENSIONS.z / 2.
+        };
 
-            let middle = left_rot * Vector3D::new(middle.x, middle.y, middle.z);
+        let middle = left_rot * Vector3D::new(middle.x, middle.y, middle.z);
 
-            let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
+        let middle = Vector3::new(middle.x, middle.y, middle.z) + center;
 
-            scaled_left = scale_from_origin(left, middle,  1./(1.-BEVEL_SIZE));
-        }
+        scaled_left = scale_from_origin(left, middle,  1./(1.-BEVEL_SIZE));
     }
 
     (scaled_left, scaled_right)
@@ -1163,12 +1154,22 @@ fn define_verts_from_sides(sides: &HashSet<Point>, left: Vector3, right: Vector3
     }
 }
 
-fn draw_walls(points: &Vec<Vector3>, sides: &HashSet<Point>, vertex_data: &mut VertexData, center: Vector3, point: Point, world_point: Vector3D, bottom: f32, true_top: f32, offset: &mut i32) {
+//allowed because this is just a function that gets called here
+#[allow(clippy::too_many_arguments)] fn draw_walls(
+    points: &[Vector3], 
+    sides: &HashSet<Point>, 
+    vertex_data: &mut VertexData, 
+    center: Vector3, 
+    point: Point, 
+    world_point: Vector3D, 
+    bottom: f32, 
+    true_top: f32, 
+    offset: &mut i32
+) {
     //define the vertices for the walls
     let border_points_len = points.len();
 
     if border_points_len > 0 {
-        // let bottom = map_coords_to_world(bottom).y;
 
         let top = points[0].y;
         let height = top - bottom;
@@ -1249,15 +1250,13 @@ fn draw_walls(points: &Vec<Vector3>, sides: &HashSet<Point>, vertex_data: &mut V
                     }
                 }
                 
-                // let true_top = true_top.unwrap().y;
-
                 let mut vert_offset = if bottom < START_REPEAT_BELOW_HEIGHT  {
                     (bottom / REPEAT_AMOUNT_BELOW).floor() * REPEAT_AMOUNT_BELOW * TILE_SIZE
                 } else if bottom - START_REPEAT_ABOVE_HEIGHT >= START_REPEAT_BELOW_HEIGHT {
                     ((((bottom - START_REPEAT_ABOVE_HEIGHT) / REPEAT_AMOUNT_ABOVE).floor() * REPEAT_AMOUNT_ABOVE) - REPEAT_AMOUNT_BELOW) * TILE_SIZE
                 } else {
                     - REPEAT_AMOUNT_BELOW * TILE_SIZE
-                }; //height * TILE_SIZE;
+                }; 
 
                 vert_offset -= WALL_VERTICAL_OFFSET * TILE_SIZE;
 

@@ -16,9 +16,6 @@ use std::io::{Error, ErrorKind};
 use crate::{ 
     collections::{
         octree,
-        octree::{ 
-            Octree
-        }
     },
     systems::{
         custom_mesh,
@@ -33,6 +30,7 @@ use crate::{
 use crate::systems::custom_mesh::MeshData;
 
 type AABB = crate::geometry::aabb::AABB<i32>;
+type Octree = octree::Octree<i32, TileData>;
 type Point = nalgebra::Vector3<i32>;
 type Vector3D = nalgebra::Vector3<f32>;
 
@@ -117,7 +115,7 @@ impl Default for Map {
 impl Map {
 
     /// Executes changes to the world map in octree. Takes an optional u32 as a client_id for store_history
-    pub fn change(&self, world: &mut legion::world::World, octree: Octree<i32, TileData>, store_history: Option<u32>) {
+    pub fn change(&self, world: &mut legion::world::World, octree: Octree, store_history: Option<u32>) {
 
         match self.can_change(world, octree.clone()) {
             Err(_) => return,
@@ -126,7 +124,7 @@ impl Map {
 
                     let mut query = <(Write<History>, Read<ClientID>)>::query();
 
-                    if let Some((history, _)) = query.iter_mut(world).filter(|(_, id)| id.val() == client_id).next() {
+                    if let Some((history, _)) = query.iter_mut(world).find(|(_, id)| id.val() == client_id) {
                         history.add_step(StepType::MapChange((original_state, new_state)));
                     }
                     
@@ -144,13 +142,10 @@ impl Map {
     
             let mut exists = false;
     
-            match map_chunk_exists_query.iter(world).filter(|(_, _, chunk_pt)| **chunk_pt == pt).next() {
-                Some((entity, map_chunk, _)) => {
-                    println!("Map chunk exists already");
-                    entities.insert(*entity, map_chunk.clone());
-                    exists = true;
-                },
-                _ => {}
+            if let Some((entity, map_chunk, _)) = map_chunk_exists_query.iter(world).find(|(_, _, chunk_pt)| **chunk_pt == pt) {
+                println!("Map chunk exists already");
+                entities.insert(*entity, map_chunk.clone());
+                exists = true;
             }
     
             if !exists {
@@ -269,7 +264,7 @@ impl Map {
     }
 
     /// Does a query range on every chunk that fits within the range
-    pub fn query_chunk_range<'a, T: IntoIterator<Item=(Entity, MapChunkData, Point)> + Clone>(&self, map_datas: T, range: AABB) -> Vec<TileData> {
+    pub fn query_chunk_range<T: IntoIterator<Item=(Entity, MapChunkData, Point)> + Clone>(&self, map_datas: T, range: AABB) -> Vec<TileData> {
     
         let mut results = Vec::new();
 
@@ -280,7 +275,7 @@ impl Map {
         results
     }
 
-    pub fn chunks_in_range<'a, T: IntoIterator<Item=(Entity, MapChunkData, Point)> + Clone>(&self, map_datas: T, range: AABB) -> Vec<(Entity, MapChunkData)> {
+    pub fn chunks_in_range<T: IntoIterator<Item=(Entity, MapChunkData, Point)> + Clone>(&self, map_datas: T, range: AABB) -> Vec<(Entity, MapChunkData)> {
         
         let min = range.get_min();
         let max = range.get_max();
@@ -318,7 +313,7 @@ impl Map {
     }
 
     /// Inserts a new mapchunk with the octree data into world
-    pub fn insert_mapchunk_with_octree(self, octree: &Octree<i32, TileData>, world: &mut World, changed: bool) -> (Entity, MapChunkData) {
+    pub fn insert_mapchunk_with_octree(self, octree: &Octree, world: &mut World, changed: bool) -> (Entity, MapChunkData) {
         let map_data = MapChunkData{
             octree: octree.clone(),
         };
@@ -356,7 +351,7 @@ impl Map {
     }
 
     /// Returns two octrees: the original state of the map that it compared against on the left, and the new octree input on the right
-    pub fn can_change(&self, world: &mut World, octree: Octree<i32, TileData>) -> Result<(Octree<i32, TileData>, Octree<i32, TileData>), Error> {
+    pub fn can_change(&self, world: &mut World, octree: Octree) -> Result<(Octree, Octree), Error> {
 
         let aabb = octree.get_aabb();
 
@@ -383,7 +378,7 @@ impl Map {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapChunkData {
-    pub octree: Octree<i32, TileData>,
+    pub octree: Octree,
 }
 
 impl MapChunkData {
@@ -433,7 +428,7 @@ impl crate::collections::octree::PointData<i32> for TileData {
     }
 }
 
-pub fn fill_octree_from_aabb(aabb: AABB, tile_data: Option<TileData>) -> Octree<i32, TileData> {
+pub fn fill_octree_from_aabb(aabb: AABB, tile_data: Option<TileData>) -> Octree {
     let mut octree = Octree::new(aabb, octree::DEFAULT_MAX);
 
     let min = aabb.get_min();
@@ -466,9 +461,11 @@ pub fn fill_octree_from_aabb(aabb: AABB, tile_data: Option<TileData>) -> Octree<
 }
 
 pub fn send_reset_message(world: &mut World) {
-    let connections = <Write<Server<UdpSocket, BinaryRateLimiter, NoopPacketModifier>>>::query().iter_mut(world).next().and_then(|server|
-        Some(server.connections().iter().map(|(conn_id, _)| conn_id.0))
-    );
+    let connections = <Write<Server<UdpSocket, BinaryRateLimiter, NoopPacketModifier>>>::query()
+        .iter_mut(world).next()
+        .map(|server|
+            server.connections().iter().map(|(conn_id, _)| conn_id.0)
+        );
 
     let mut extension = Vec::new();
 

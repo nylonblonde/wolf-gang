@@ -60,7 +60,7 @@ impl SaveLoadDialog {
 
                     file_dialog.set_current_dir(maps_dir);
 
-                    return SaveLoadDialog{
+                    SaveLoadDialog{
                         confirm_dialog: None
                     }
                 },

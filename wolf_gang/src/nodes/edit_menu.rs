@@ -54,11 +54,11 @@ impl EditMenu {
         if let Some(client_id) = resources.get::<ClientID>().map(|client_id| client_id.val()) {
             let mut query = <(Read<History>, Read<ClientID>)>::query();
 
-            if let Some((history, _)) = query.iter(&mut **world).filter(|(_, id)| id.val() == client_id).next() {
+            if let Some((history, _)) = query.iter(&**world).find(|(_, id)| id.val() == client_id) {
                 let popup_menu = unsafe { self.popup_menu.assume_safe() };
-                popup_menu.set_item_disabled(0,!history.can_undo().is_ok());
+                popup_menu.set_item_disabled(0,history.can_undo().is_err());
 
-                popup_menu.set_item_disabled(1,!history.can_redo().is_ok());
+                popup_menu.set_item_disabled(1,history.can_redo().is_err());
             }
         }
     }
@@ -76,7 +76,7 @@ impl EditMenu {
 
             let mut commands = legion::systems::CommandBuffer::new(world);
 
-            if let Some((history, _)) = query.iter_mut(&mut **world).filter(|(_, id)| id.val() == client_id).next() {
+            if let Some((history, _)) = query.iter_mut(&mut **world).find(|(_, id)| id.val() == client_id) {
                 match id {
                     0 => { //undo
                         history.move_by_step(&mut commands, resources, -1);

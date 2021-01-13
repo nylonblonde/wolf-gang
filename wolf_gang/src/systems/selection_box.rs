@@ -256,7 +256,7 @@ pub fn create_actor_selection_chooser_system() -> Box<dyn FnMut(&mut World, &mut
             .map(|(entity, _)| *entity)
             .collect::<Vec<Entity>>();
 
-        if let Some(_) = results.iter().next() {
+        if results.get(0).is_some() {
 
             if let Some(actor_selection) = resources.get::<editor::ActorPaletteSelection>() {
                 if let Some(client_id) = resources.get::<ClientID>() {
@@ -304,7 +304,7 @@ pub fn create_terrain_tool_activate_system() -> impl systems::Runnable {
         .build(move |command, world, client_id, (selection_box_query, query)| {
 
             //kinda hacky, but we can ensure this never runs if connection hasn't been established and selection boxes haven't initialized
-            if let None = selection_box_query.iter(world).next() {
+            if selection_box_query.iter(world).next().is_none() {
                 return
             }
             
@@ -341,7 +341,7 @@ pub fn create_actor_tool_activate_system() -> impl systems::Runnable {
         .build(move |command, world, client_id, (selection_box_query, query)| {
 
             //kinda hacky, but we can ensure this never runs if connection hasn't been established and selection boxes haven't initialized
-            if let None = selection_box_query.iter(world).next() {
+            if selection_box_query.iter(world).next().is_none() {
                 return
             }
             
@@ -383,25 +383,20 @@ pub fn create_orthogonal_dir_system() -> impl systems::Runnable {
 
                 let node_name = node::NodeName(relative_cam.0.clone());
 
-                match cameras.iter().filter(|(_,name)| *name == node_name).next() {
-                    Some((dir, _)) => {
+                if let Some((dir, _)) = cameras.iter().find(|(_,name)| *name == node_name) {
 
-                        // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
-                        // view.
-                        let mut forward = dir.forward;
-                        let mut right = dir.right;
+                    // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
+                    // view.
+                    let mut forward = dir.forward;
+                    let mut right = dir.right;
 
-                        forward.y = 0.;
-                        
-                        let adjustment_angle = std::f32::consts::FRAC_PI_8;
+                    forward.y = 0.;
+                    
+                    let adjustment_angle = std::f32::consts::FRAC_PI_8;
 
-                        forward = std::cmp::min_by(Vector3D::z(), 
-                            std::cmp::min_by(-Vector3D::z(), 
-                                std::cmp::min_by(Vector3D::x(), -Vector3D::x(),
-                                    |lh: &Vector3D, rh: &Vector3D| {
-                                        get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
-                                    }
-                                ), 
+                    forward = std::cmp::min_by(Vector3D::z(), 
+                        std::cmp::min_by(-Vector3D::z(), 
+                            std::cmp::min_by(Vector3D::x(), -Vector3D::x(),
                                 |lh: &Vector3D, rh: &Vector3D| {
                                     get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
                                 }
@@ -409,18 +404,21 @@ pub fn create_orthogonal_dir_system() -> impl systems::Runnable {
                             |lh: &Vector3D, rh: &Vector3D| {
                                 get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
                             }
-                        );
+                        ), 
+                        |lh: &Vector3D, rh: &Vector3D| {
+                            get_forward_closest_axis(lh, rh, &forward, &right, &Vector3D::y_axis(), adjustment_angle)
+                        }
+                    );
 
-                        //calculate right from up and forward by just rotating forward by -90 degrees
-                        right =  nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2) * forward;
+                    //calculate right from up and forward by just rotating forward by -90 degrees
+                    right =  nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3D::y_axis(), -std::f32::consts::FRAC_PI_2) * forward;
 
-                        forward = forward.normalize();
-                        right = right.normalize();
+                    forward = forward.normalize();
+                    right = right.normalize();
 
-                        camera_adjusted_dir.forward = forward;
-                        camera_adjusted_dir.right = right;
-                    },
-                    None => {}
+                    camera_adjusted_dir.forward = forward;
+                    camera_adjusted_dir.right = right;
+                
                 }
             }
     })
@@ -516,7 +514,7 @@ pub fn create_movement_system() -> impl systems::Runnable {
 
                         let mut existing_movement: Option<Point> = None;
 
-                        if let Some((update_to, _)) = query.iter_mut(world).filter(|(_, id)| **id == client_id).next() {
+                        if let Some((update_to, _)) = query.iter_mut(world).find(|(_, id)| **id == client_id) {
                             update_to.coord_pos += combined_movement;
                             existing_movement = Some(update_to.coord_pos);
                         }
@@ -577,7 +575,7 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
     SystemBuilder::new("actor_tool_system")
         .read_resource::<ClientID>()
         .read_resource::<editor::ActorPaletteSelection>()
-        .with_query(<(Read<SelectionBoxRotation>, Read<level_map::CoordPos>, Read<ClientID>)>::query() 
+        .with_query(<(Read<level_map::CoordPos>, Read<ClientID>)>::query() 
             .filter(component::<SelectionBox>() & component::<ActorToolBox>() & component::<Active>()))
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
         .build(move |command, world, resources, queries| {
@@ -588,18 +586,18 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
                 *a == &insertion || *a == &removal
             }).for_each(|(input_component, action)|  {
                 // Insertion tool should check whether or not this is a valid placement for the actor
-                selection_box_query.iter(world).filter(|(_, _, id)| **id == **client_id).for_each(|(selection_box_rot, coord_pos, _)| {
+                selection_box_query.iter(world).filter(|(_, id)| **id == **client_id).for_each(|(coord_pos, _)| {
 
                     if input_component.just_pressed() {
 
                         if action == &insertion {
                             
-                            let client_id = client_id.val();
-                            let actor_selection = actor_selection.val();
-                            let coord_pos = coord_pos.value;
-                            let rotation = selection_box_rot.value;
+                            // let client_id = client_id.val();
+                            let _actor_selection = actor_selection.val();
+                            let _coord_pos = coord_pos.value;
+                            // let rotation = selection_box_rot.value;
 
-                            command.exec_mut(move |world, _| {
+                            command.exec_mut(move |_world, _| {
                             
                                 // world.push(
                                 //     (
@@ -652,9 +650,9 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
             input_query.iter(world).filter(|(_, a)| {
                 *a == &insertion || *a == &removal
             }).for_each(|(input_component, action)|  {
-                selection_box_query.iter(world).filter(|(_, _, id)| **id == **client_id).for_each(|(selection_box, coord_pos, _)| {
+                selection_box_query.iter(world).filter(|(_, _, id)| id.val() == client_id.val()).for_each(|(selection_box, coord_pos, _)| {
                     
-                    let moved = selection_box_moved_query.iter(world).filter(|(_, _, id)| **id == **client_id).next().is_some();
+                    let moved = selection_box_moved_query.iter(world).any(|(_, _, id)| id.val() == client_id.val());
 
                     if input_component.just_pressed() 
                     || (input_component.is_held() && moved) 
@@ -670,7 +668,7 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
                 
                                 let tile_data = level_map::TileData::new(tile_selection.val(), Point::zeros());
             
-                                if let Ok(_) = map.can_change(world, level_map::fill_octree_from_aabb(aabb, Some(tile_data))) {
+                                if map.can_change(world, level_map::fill_octree_from_aabb(aabb, Some(tile_data))).is_ok() {
                                     world.push(
                                         (
                                             MessageSender{
@@ -691,7 +689,7 @@ pub fn create_tile_tool_system() -> impl systems::Runnable {
                             let aabb = AABB::new(coord_pos.value, selection_box.aabb.dimensions);
 
                             commands.exec_mut(move |world, _|{
-                                if let Ok(_) = map.can_change(world, level_map::fill_octree_from_aabb(aabb, None)) {
+                                if map.can_change(world, level_map::fill_octree_from_aabb(aabb, None)).is_ok() {
                                     world.push(
                                         (
                                             MessageSender{
@@ -863,13 +861,13 @@ pub fn create_expansion_system() -> impl systems::Runnable {
 
                         let mut existing_expansion: Option<(Point, AABB)> = None;
 
-                        let mut new_aabb = aabb.clone();
+                        let mut new_aabb = aabb;
                                     
                         let diff = expansion_movement_helper(combined_expansion, camera_adjusted_dir, &mut new_aabb);
 
                         let move_to_pos = coord_pos_value - diff;
 
-                        if let Some((update_to, _)) = query.iter_mut(world).filter(|(_, id)| **id == client_id).next() {
+                        if let Some((update_to, _)) = query.iter_mut(world).find(|(_, id)| **id == client_id) {
                             
                             update_to.coord_pos -= diff;
                             update_to.aabb.dimensions += combined_expansion;
@@ -941,7 +939,7 @@ pub fn create_update_bounds_system() -> impl systems::Runnable {
                             }
 
                             if selection_box.aabb != update_to.aabb { //only write to SelectionBox if there is an actual change
-                                if let Ok(_) = entry.get_component::<Active>() { //only update bounds if this is the active toolbox
+                                if entry.get_component::<Active>().is_ok() { //only update bounds if this is the active toolbox
                                     if let Ok(selection_box) = entry.get_component_mut::<SelectionBox>() {
                                         selection_box.aabb = update_to.aabb;
                                     }
@@ -1276,7 +1274,7 @@ pub fn create_system() -> impl systems::Runnable {
 
 fn expansion_movement_helper(expansion: Point, camera_adjusted_dir: CameraAdjustedDirection, new_aabb: &mut AABB) -> Point {
 
-    let original = new_aabb.clone();
+    let original = *new_aabb;
 
     new_aabb.dimensions += expansion;
     
@@ -1316,39 +1314,36 @@ fn expansion_movement_helper(expansion: Point, camera_adjusted_dir: CameraAdjust
         new_max.z = tmp_new_min;
     }
 
-    let diff = Point::new(
+    Point::new(
         if new_aabb.dimensions.x < 0 { new_max.x - max.x } else { new_min.x - min.x },
         if new_aabb.dimensions.y < 0 { new_max.y - max.y } else { new_min.y - min.y },
         if new_aabb.dimensions.z < 0 { new_max.z - max.z } else { new_min.z - min.z },
-    );
-
-    diff
+    )
 } 
 
 pub fn actor_tool_rotation(world: &mut World, selection_entity: Entity, tool_rotation: Rotation3<f32>) {
 
-    world.entry(selection_entity).map(|mut entry| {
+    if let Some(Some((actor_entity, rotation, aabb))) = world.entry(selection_entity).map(|mut entry| {
         entry.get_component_mut::<SelectionBoxRotation>().map(|selection_box_rot| {
-            selection_box_rot.value = selection_box_rot.value * tool_rotation;
+            selection_box_rot.value *= tool_rotation;
             selection_box_rot.value
         }).ok().and_then(|rotation| {
             entry.get_component_mut::<SelectionBox>().map(|selection_box| {
                 selection_box.aabb = selection_box.aabb.rotate(tool_rotation);
                 selection_box.aabb
             }).ok().and_then(|aabb| {
-                entry.get_component_mut::<EntityRef>().map(|entity_ref| entity_ref.0).ok().and_then(|entity| {
-                    Some((entity, rotation, aabb))
-                })
+                entry.get_component_mut::<EntityRef>().map(|entity_ref| entity_ref.0)
+                    .ok().map(|entity| (entity, rotation, aabb))
             })
         })
-    }).flatten().map(|(actor_entity, rotation, aabb)| {
-        world.entry(actor_entity).map(|mut entry| {
+    }) {
+        if let Some(mut entry) = world.entry(actor_entity) { 
             entry.add_component(transform::rotation::Rotation{
                 value: rotation
-            });
-        });
+            }); 
+        }
         actor::position_actor_helper(world, actor_entity, aabb);
-    });
+    }
 }
 
 /// Updates the selection box with the new chosen actor (new_entity should be newly duplicated into this world)
@@ -1365,23 +1360,22 @@ pub fn update_chosen_actor(world: &mut World, selection_entity: Entity, actor_id
         })
     });
 
-    ActorPalette::get_world().map(|actor_world| {
+    if let Some(actor_world) = ActorPalette::get_world() {
         let actor_world = &mut actor_world.borrow_mut();
-        actor_world.as_mut().map(|actor_world| {
+        if let Some(actor_world) = actor_world.as_mut() {
             ENTITY_REFS.with(|e| {
                 let entity_refs = e.borrow();
 
-                entity_refs.get(&actor_id).map(|actor_entity| {
+                if let Some(actor_entity) = entity_refs.get(&actor_id) {
 
                     MERGER.with(|m| {
                         let mut merger = m.borrow_mut();
                         let new_entity = world.clone_from_single(actor_world, *actor_entity, &mut *merger);
 
-                        world.entry(new_entity).map(|entry| {
+                        if let Some(bounds) = world.entry(new_entity).map(|entry| {
                             entry.get_component::<actor::Bounds>().map(|b| *b).ok()
-                        }).flatten().map(|bounds| {
-
-                            world.entry(selection_entity).map(|mut entry| {
+                        }).flatten() { 
+                            if let Some(Some((node_name, rotation, aabb))) = world.entry(selection_entity).map(|mut entry| {
                                 entry.add_component(EntityRef(new_entity));
                                 entry.get_component::<SelectionBoxRotation>()
                                     .map(|box_rotation| box_rotation.value)
@@ -1390,38 +1384,35 @@ pub fn update_chosen_actor(world: &mut World, selection_entity: Entity, actor_id
                                             selection_box.aabb = bounds.get_scaled_and_rotated_aabb(rotation);
                                             selection_box.aabb
                                         }).ok().and_then(|aabb| {
-                                            entry.get_component::<node::NodeName>().map(|n| n.clone()).ok().and_then(|node_name|
-                                                Some((node_name, rotation, aabb))
-                                            )
+                                            entry.get_component::<node::NodeName>().map(|n| n.clone()).ok()
+                                                .map(|node_name| (node_name, rotation, aabb))
                                         })
                                     })
-                            }).flatten().map(|(node_name, rotation, aabb)| {
+                            }) {
 
-                                world.entry(new_entity).map(|mut entry| {
+                                if let Some(mut entry) = world.entry(new_entity) {
                                     entry.add_component(transform::rotation::Rotation{
                                         value: rotation
                                     })
-                                });
+                                }
 
                                 let owner = unsafe { crate::OWNER_NODE.as_ref().unwrap().assume_safe() };
                                     if let Some(box_node) = unsafe { node::get_node(&owner, &node_name.0, false) } {
                                         initialize_actor_scene(world, unsafe { &box_node.assume_safe() }, new_entity);
                                     }
                                     actor::position_actor_helper(world, new_entity, aabb);
-                            });
-                        });
+                            }
+                        }
                     });
-                });
+                }
             });
-        });
-    });
+        }
+    }
 }
 
 pub fn get_box_entity_by_client_id<T: legion::storage::Component>(world: &mut World, client_id: ClientID) -> Option<Entity> {
 
-    let component_filter = component::<T>();
-
-    let mut query = <(Entity, Read<ClientID>)>::query().filter(component::<SelectionBox>() & component_filter.clone());
+    let mut query = <(Entity, Read<ClientID>)>::query().filter(component::<SelectionBox>() & component::<T>());
 
     query.iter(world)
         .filter(|(_, id)| id.val() == client_id.val())
@@ -1431,10 +1422,9 @@ pub fn get_box_entity_by_client_id<T: legion::storage::Component>(world: &mut Wo
 }
 
 pub fn set_active_selection_box<T: legion::storage::Component>(world: &mut World, client_id: ClientID) {
-    let component_filter = component::<T>();
 
     //disable active selection box that is not this component type
-    let mut query = <(Entity, Read<ClientID>, Read<node::NodeName>)>::query().filter(component::<SelectionBox>() & component::<Active>() & !component_filter.clone());
+    let mut query = <(Entity, Read<ClientID>, Read<node::NodeName>)>::query().filter(component::<SelectionBox>() & component::<Active>() & !component::<T>());
     let results = query.iter(world)
         .filter(|(_, id, _)| client_id == **id)
         .map(|(entity, _, node_name)| (*entity, node_name.clone()))
@@ -1456,7 +1446,7 @@ pub fn set_active_selection_box<T: legion::storage::Component>(world: &mut World
     }
 
     //enable selection box that is not yet active and that is this component type
-    let mut query = <(Entity, Read<ClientID>, Read<node::NodeName>)>::query().filter(component::<SelectionBox>() & !component::<Active>() & component_filter);
+    let mut query = <(Entity, Read<ClientID>, Read<node::NodeName>)>::query().filter(component::<SelectionBox>() & !component::<Active>() & component::<T>());
     let results = query.iter(world)
         .filter(|(_, id, _)| {
             client_id == **id

@@ -1,14 +1,14 @@
 use legion::*;
 use legion::{
     world::{Allocate},
-    serialize::{CustomEntitySerializer, WorldSerializer}
+    serialize::{CustomEntitySerializer}
 };
 use gdnative::prelude::*;
 use gdnative::api::{
     File
 };
 
-use serde::{Serialize, Deserialize, de::DeserializeSeed};
+use serde::{Serialize, Deserialize};
 
 type Point = nalgebra::Vector3<i32>;
 
@@ -16,10 +16,9 @@ use crate::{
     node, 
     node::NodeName,
     systems::{
-        level_map::{CoordPos, TILE_DIMENSIONS, map_coords_to_world},
+        level_map::{TILE_DIMENSIONS, map_coords_to_world},
         transform::{
             position::Position,
-            rotation::Rotation,
         }
     },
 };
@@ -30,8 +29,6 @@ use std::{
     collections::HashMap,
     cell::RefCell,
 };
-
-use ron::de::Deserializer;
 
 thread_local! {
     pub static REGISTRY: RefCell<Registry<String>> = RefCell::new(
@@ -166,7 +163,7 @@ pub fn initialize_actor_scene(world: &mut World, parent: &Node, actor_entity: En
     ACTOR_SCENE_MAP.with(|a| {
         let actor_scene_map = a.borrow();
 
-        world.entry(actor_entity).map(|entry| {
+        if let Some(actor_node) = world.entry(actor_entity).map(|entry| {
             entry.get_component::<ActorSceneKey>().map(|actor_key| {
 
                 match actor_scene_map.get(&actor_key.0) {
@@ -175,17 +172,17 @@ pub fn initialize_actor_scene(world: &mut World, parent: &Node, actor_entity: En
                 }
 
             }).ok()
-        }).flatten().map(|actor_node| {
-            world.entry(actor_entity).map(|mut entry| {
-                entry.add_component(NodeName(unsafe { actor_node.assume_safe().name() }.to_string()));
-            });
-        });
+        }).flatten() { 
+            if let Some(mut entry) = world.entry(actor_entity) { 
+                entry.add_component(NodeName(unsafe { actor_node.assume_safe().name() }.to_string())); 
+            } 
+        }
 
     });
 }
 
 pub fn position_actor_helper(world: &mut World, actor_entity: Entity, aabb: AABB) {
-    world.entry(actor_entity).map(|mut entry| {
+    if let Some(mut entry) = world.entry(actor_entity) {
 
         let min = map_coords_to_world(aabb.get_min());
 
@@ -198,5 +195,5 @@ pub fn position_actor_helper(world: &mut World, actor_entity: Entity, aabb: AABB
 
         entry.add_component(position);
         
-    });
+    }
 }

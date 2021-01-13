@@ -1,5 +1,4 @@
 use crate::geometry::aabb;
-use nalgebra;
 
 type AABB = aabb::AABB<i32>;
 type Point = nalgebra::Vector3<i32>;

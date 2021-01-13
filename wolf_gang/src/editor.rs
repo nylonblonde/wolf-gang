@@ -131,13 +131,13 @@ impl GameStateTraits for Editor {
             let history = query.iter(world)
                 .filter(|(_, id)| client_id.val() == id.val())
                 .map(|(history, _)| history.clone())
-                .next().unwrap_or(History::new());
+                .next().unwrap_or_else(History::new);
 
             if let Some(entry) = world.entry(entity) {
 
                 let box_type: Option<selection_box::ToolBoxType> = if let Ok(actor_tool) = entry.get_component::<selection_box::ActorToolBox>() {
                     Some(selection_box::ToolBoxType::ActorToolBox(actor_tool.get_selection()))
-                } else if let Ok(_) = entry.get_component::<selection_box::TerrainToolBox>() {
+                } else if entry.get_component::<selection_box::TerrainToolBox>().is_ok() {
                     Some(selection_box::ToolBoxType::TerrainToolBox)
                 } else {
                     None

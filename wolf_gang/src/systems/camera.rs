@@ -6,8 +6,6 @@ use gdnative::api::{
 
 use legion::*;
 
-use nalgebra;
-
 use crate::systems::{
     selection_box,
     smoothing::Smoothing,
@@ -184,14 +182,8 @@ pub fn create_focal_point_system() -> impl systems::Runnable {
             for relative_cam in selection_boxes.iter() {
                 let node_name = node::NodeName(relative_cam.0.clone());
 
-                match cam_query.iter_mut(world).filter(|(_,name,_)| **name == node_name).next() {
-                    Some((smoothing, _, mut focal_point)) => {
-
-                        focal_point.0 = smoothing.current;
-                    },
-                    None => {
-                    }
-                    
+                if let Some((smoothing, _, mut focal_point)) = cam_query.iter_mut(world).find(|(_,name,_)| **name == node_name) {
+                    focal_point.0 = smoothing.current;
                 }
             }
         })

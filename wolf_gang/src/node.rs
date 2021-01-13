@@ -53,9 +53,9 @@ pub unsafe fn add_node(parent: &Node, node: Ref<Node, Unique>) -> Option<NodeNam
 }
 
 /// Removes the Godot Node, and removes the associated legion Entity
-pub fn free(world: &mut legion::World, name: &String) {
+pub fn free(world: &mut legion::World, name: &str) {
 
-    let node_name = NodeName(name.clone());
+    let node_name = NodeName(name.to_string());
     let mut query = <(Entity, Read<NodeName>)>::query();
 
     let results = query.iter(world)
@@ -72,7 +72,7 @@ pub fn free(world: &mut legion::World, name: &String) {
 } 
 
 /// Removes the node from the scene as well as from the node cache
-pub unsafe fn remove_node(name: &String) {
+pub unsafe fn remove_node(name: &str) {
     
     if let Some(node_cache) = NODE_CACHE.as_mut() {
 
@@ -93,7 +93,7 @@ unsafe fn create_node_cache() {
 }
 
 /// Retrieves the node from cache if possible, otherwise uses the gdnative bindings to find it.
-pub unsafe fn get_node(node: &Node, name: &String, child_lookup: bool) -> Option<Ref<Node, Shared>> {
+pub unsafe fn get_node(node: &Node, name: &str, child_lookup: bool) -> Option<Ref<Node, Shared>> {
 
     if NODE_CACHE.is_none() {
         create_node_cache();
@@ -102,30 +102,25 @@ pub unsafe fn get_node(node: &Node, name: &String, child_lookup: bool) -> Option
     let node_cache = NODE_CACHE.as_mut().unwrap();
 
     match node_cache.cache.get(name) {
-        Some(r) => {
-            return Some(*r)
-        },
+        Some(r) => Some(*r),
         None => {
-
             if child_lookup {
                 let children = node.get_children();
 
                 for i in 0..children.len() {
                     let child = children.get(i).try_to_object::<Node>().unwrap();
 
-                    if child.assume_safe().name() == GodotString::from(name.clone()){
-                        node_cache.cache.insert(name.clone(), child);
-                        return Some(child);
-                    } else {
-                        if let Some(val) = get_node(&child.assume_safe(), name, true) {
-                            node_cache.cache.insert(name.clone(), val);
-                            return Some(val);
-                        }
+                    if child.assume_safe().name() == GodotString::from(name.to_string()){
+                        node_cache.cache.insert(name.to_string(), child);
+                        return Some(child)
+                    } else if let Some(val) = get_node(&child.assume_safe(), name, true) {
+                        node_cache.cache.insert(name.to_string(), val);
+                        return Some(val);
                     }
                 }
-            }   
+            } 
 
-            return None;
+            None
         }
     }
 }
@@ -153,7 +148,7 @@ pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node, recursive: bool) ->
             _ => {}
         }
 
-        if let Some(_) = ret_val {
+        if ret_val.is_some() {
             return ret_val
         }
         
@@ -162,7 +157,7 @@ pub unsafe fn get_child_by_type<T: GodotObject>(node: &Node, recursive: bool) ->
     None
 }
 
-pub fn init_scene(parent: &Node, path: &String) -> Ref<Node> {
+pub fn init_scene(parent: &Node, path: &str) -> Ref<Node> {
     let scene = ResourceLoader::godot_singleton().load(path, "PackedScene", false).unwrap().cast::<PackedScene>().unwrap();
     let scene_instance = unsafe { scene.assume_safe().instance(0).unwrap() };
 

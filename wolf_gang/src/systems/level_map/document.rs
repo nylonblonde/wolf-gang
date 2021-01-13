@@ -14,8 +14,6 @@ use gdnative::api::{
     File,
 };
 
-use bincode;
-
 use serde::{Serialize, Deserialize};
 
 use std::collections::HashSet;
@@ -83,17 +81,6 @@ impl Document {
         encoded
     }
 
-    /// Helper function to get a ByteArray for use in Godot's buffer and file classes
-    pub fn to_byte_array(original: Vec<u8>) -> ByteArray {
-        let mut byte_array = ByteArray::new();
-
-        for byte in original {
-            byte_array.push(byte);
-        }
-
-        byte_array
-    }
-
     pub fn save(&self) {
 
         match self.file_path.clone() {
@@ -108,10 +95,10 @@ impl Document {
 
                 let file = File::new();
 
-                if let Ok(_) = file.open(GodotString::from(file_path), File::WRITE) {
+                if file.open(GodotString::from(file_path), File::WRITE).is_ok() {
                     let encoded = self.to_raw();
 
-                    let byte_array = Self::to_byte_array(encoded);
+                    let byte_array = vec_to_byte_array(encoded);
 
                     file.store_buffer(byte_array);
                     file.close();
@@ -192,15 +179,24 @@ impl Document {
 
         let raw = Self::raw_from_file(file_path);
 
-        let result = bincode::deserialize::<Self>(&raw);
-
-        result 
+        bincode::deserialize::<Self>(&raw)
         
     }
 
-    pub fn from_raw(raw: &Vec<u8>) -> Result<Self, Box<bincode::ErrorKind>> {
+    pub fn from_raw(raw: &[u8]) -> Result<Self, Box<bincode::ErrorKind>> {
         bincode::deserialize::<Self>(raw)
     }
+}
+
+/// Helper function to get a ByteArray for use in Godot's buffer and file classes
+pub fn vec_to_byte_array(original: Vec<u8>) -> ByteArray {
+    let mut byte_array = ByteArray::new();
+
+    for byte in original {
+        byte_array.push(byte);
+    }
+
+    byte_array
 }
 
 impl Default for Document {
