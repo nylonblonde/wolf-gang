@@ -1,7 +1,9 @@
 language: rust
 rust:
   - nightly-2020-02-16
+before_script:
+  - rustup component add clippy-preview
 script:
-  - cargo install clippy
   - cargo build
-  - cargo clippy
+  - cargo clippy --all-targets --all-features -- -D warnings
+  - cargo test
