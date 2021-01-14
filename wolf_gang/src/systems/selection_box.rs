@@ -568,8 +568,8 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
     SystemBuilder::new("actor_tool_system")
         .read_resource::<ClientID>()
         // .read_resource::<editor::ActorPaletteSelection>()
-        .with_query(<(Read<level_map::CoordPos>, Read<EntityRef>, Read<ClientID>)>::query() 
-            .filter(component::<SelectionBox>() & component::<ActorToolBox>() & component::<Active>()))
+        .with_query(<(Read<SelectionBox>, Read<level_map::CoordPos>, Read<EntityRef>, Read<ClientID>)>::query() 
+            .filter(component::<ActorToolBox>() & component::<Active>()))
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
         .build(move |command, world, resources, queries| {
             let (selection_box_query, input_query) = queries;
@@ -579,7 +579,7 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
                 *a == &insertion || *a == &removal
             }).for_each(|(input_component, action)|  {
                 // Insertion tool should check whether or not this is a valid placement for the actor
-                selection_box_query.iter(world).filter(|(_, _, id)| **id == **client_id).for_each(|(coord_pos, entity_ref, _)| {
+                selection_box_query.iter(world).filter(|(_, _, _, id)| **id == **client_id).for_each(|(selection_box, coord_pos, entity_ref, _)| {
 
                     if input_component.just_pressed() {
 
@@ -632,11 +632,34 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
                             });
 
                         } else if action == &removal {
-                            unimplemented!();
+                            
+                            let coord_pos = coord_pos.value;
+                            let dimensions = selection_box.aabb.dimensions;
+                            let client_id = client_id.val();
+                            command.exec_mut(move |world, _| {
+                                actor::select_actors_from_range(world, AABB::new(coord_pos, dimensions))
+                                    .into_iter().for_each(|entity| {
+                                        if let Some(Some(actor_id)) = world.entry(entity).map(|entry| {
+                                                entry.get_component::<actor::ActorID>().ok().copied()
+                                            }
+                                        ) {
+                                            world.push(
+                                                (
+                                                    MessageSender{
+                                                        data_type: DataType::ActorChange {
+                                                            change: actor::ActorChange::ActorRemoval(actor_id.val()),
+                                                            store_history: Some(client_id)
+                                                        },
+                                                        message_type: MessageType::Ordered
+                                                    },
+                                                )
+                                            );
+                                        }
+                                    });
+                            })
+                            
                         }
-
                     }
-
                 })
             })
         })

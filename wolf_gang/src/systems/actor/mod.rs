@@ -274,6 +274,24 @@ pub fn serialize_actors_in_world(world: &mut World) -> Result<Vec<u8>, bincode::
     })
 }
 
+pub fn serialize_single_actor_in_world(world: &mut World, entity: Entity) -> Result<Vec<u8>, bincode::Error> {
+    let mut actor_world = World::default();
+    MERGER.with(|m| {
+        let mut merger = m.borrow_mut();
+        actor_world.clone_from_single(world, entity, &mut *merger);
+
+        REGISTRY.with(|r| {
+            let registry = r.borrow();
+
+            CANON.with(|c| {
+                let canon = c.borrow();
+
+                bincode::serialize(&actor_world.as_serializable(component::<ActorID>(), & *registry, & *canon))
+            })
+        })
+    })
+}
+
 pub fn change(world: &mut World, change: &ActorChange, store_history: Option<u32>) {
     match change {
 
@@ -330,19 +348,27 @@ pub fn change(world: &mut World, change: &ActorChange, store_history: Option<u32
         },
         ActorChange::ActorRemoval(actor_id) => {
 
-            if let Some(store_history) = store_history {
-                todo!("get the current state of the actor for undo history {} by serializing and creating a change for actor_entity", store_history);
-            }
-            
-            let mut query = <(Read<ActorID>, Read<NodeRef>)>::query();
-            query.iter(world)
-                .filter(|(id, _)| id.val() == *actor_id)
-                .map(|(_, node_ref)| node_ref.val())
-                .collect::<Vec<Ref<Node>>>()
-                .into_iter()
-                .for_each(|node| {
+            let mut query = <(Entity, Read<ActorID>, Read<NodeRef>)>::query();
+            if let Some((entity, node)) = query.iter(world)
+                .find(|(_, id, _)| id.val() == *actor_id)
+                .map(|(entity, _, node_ref)| (*entity, node_ref.val())) {
+
+                    if let Some(store_history) = store_history {
+                        let mut history_query = <(Write<History>, Read<ClientID>)>::query();
+                        if let Ok(serialized) = serialize_single_actor_in_world(world, entity) {
+                            if let Some((history, _)) = history_query.iter_mut(world).find(|(_, id)| id.val() == store_history) {
+                                history.add_step(
+                                    StepType::ActorChange(
+                                        (ActorChange::ActorInsertion{
+                                            serialized: serialized.to_vec()
+                                        }, change.clone())
+                                    )
+                                )
+                            }
+                        }
+                    }
                     node::free(world, node);
-                })
+                }
         }
     }
 }
@@ -357,5 +383,18 @@ pub fn free_all(world: &mut World) {
         .for_each(|node| {
             node::free(world, node);
         })
-    
+}
+
+pub fn select_actors_from_range(world: &mut World, range: AABB) -> Vec<Entity> {
+    let mut actor_query = <(Entity, Read<Bounds>, Read<Rotation>, Read<CoordPos>)>::query().filter(component::<ActorID>());
+
+    actor_query.iter(world)
+        .filter(|(_, bounds, rotation, coord_pos)| {
+            let mut aabb = bounds.get_scaled_and_rotated_aabb(rotation.value);
+            aabb.center = coord_pos.value;
+
+            range.intersects_bounds(aabb)
+        })
+        .map(|(entity, _, _, _)| *entity)
+        .collect::<Vec<Entity>>()
 }
