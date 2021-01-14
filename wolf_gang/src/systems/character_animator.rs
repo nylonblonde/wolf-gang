@@ -7,7 +7,6 @@ use gdnative::api::{
 };
 
 use crate::{
-    node,
     node::NodeRef
 };
 

@@ -1,6 +1,7 @@
 use crate::{
     collections::octree,
     systems::{
+        actor,
         level_map,
         networking::{
             DataType, MessageSender, MessageType
@@ -26,7 +27,8 @@ pub struct ResetMap{}
 pub struct Document {
     pub file_path: Option<String>,
     pub title: String,
-    data: Vec<Octree>
+    map_chunks: Vec<Octree>,
+    actor_data: Option<Vec<u8>>,
 }
 
 impl Document {
@@ -42,7 +44,8 @@ impl Document {
                 None => None
             },
             title,
-            data: Vec::new()
+            map_chunks: Vec::new(),
+            actor_data: None,
         }
     }
 
@@ -56,18 +59,39 @@ impl Document {
             data.push(map_data.octree.clone());
         }
 
-        self.data = data;
+        self.map_chunks = data;
+
+        //get actor data
+        if let Ok(serialized) = actor::serialize_actors_in_world(world) {
+            self.actor_data = Some(serialized);
+        }
     }
 
     /// Populate the world with the required entities from self's document data
     pub fn populate_world(&self, world: &mut legion::world::World, _resources: &mut Resources) {
 
-        for octree in &self.data {
+        for octree in &self.map_chunks {
             world.push(
                 (
                     MessageSender{
                         data_type: DataType::MapInput(octree.clone()),
                         message_type: MessageType::Ordered
+                    },
+                )
+            );
+        }
+
+        if let Some(actor_data) = &self.actor_data {
+            world.push(
+                (
+                    MessageSender{
+                        data_type: DataType::ActorChange {
+                            change: actor::ActorChange::ActorInsertion {
+                                serialized: actor_data.to_vec()
+                            },
+                            store_history: None,
+                        },
+                        message_type: MessageType::Ordered,
                     },
                 )
             );
@@ -128,13 +152,13 @@ impl Document {
 
                         let mut working_data = HashSet::new();
 
-                        working_file.data.iter().for_each(|octree| {
+                        working_file.map_chunks.iter().for_each(|octree| {
                             working_data.extend(octree.clone().into_iter())
                         });
 
                         let mut opened_data = HashSet::new();
 
-                        opened_file.data.iter().for_each(|octree| {
+                        opened_file.map_chunks.iter().for_each(|octree| {
                             opened_data.extend(octree.clone().into_iter())
                         });
 

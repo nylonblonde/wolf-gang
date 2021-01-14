@@ -50,12 +50,12 @@ pub fn create_system() -> impl systems::Runnable {
     .build(move |commands, world, _, query| {
 
         let results = query.iter(world)
-            .map(|(entity, rotation, node_name)| (*entity, *rotation, node_name.clone()))
-            .collect::<Vec<(Entity, Rotation, node::NodeRef)>>();
+            .map(|(entity, rotation, node_ref)| (*entity, *rotation, node_ref.val()))
+            .collect::<Vec<(Entity, Rotation, Ref<Node>)>>();
         
-        results.into_iter().for_each(|(entity, rotation, node_ref)| {
+        results.into_iter().for_each(|(entity, rotation, node)| {
 
-            let spatial_node = unsafe { node_ref.val().assume_safe().cast::<Spatial>().unwrap().as_ref().assume_shared() };
+            let spatial_node = unsafe { node.assume_safe().cast::<Spatial>().unwrap().as_ref().assume_shared() };
 
             commands.exec_mut(move |world, _|{
                 if let Ok(entry) = world.entry_mut(entity) {

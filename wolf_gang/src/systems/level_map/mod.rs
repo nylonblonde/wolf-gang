@@ -253,15 +253,15 @@ impl Map {
     /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache
     pub fn free(&self, world: &mut legion::world::World) {
 
-        let mut map_chunk_query = <(Entity, Read<NodeRef>)>::query()
+        let mut map_chunk_query = <Read<NodeRef>>::query()
             .filter(component::<MapChunkData>());
 
         let results = map_chunk_query.iter(world)
-            .map(|(entity, node_ref)| (*entity, node_ref.val()))
-            .collect::<Vec<(Entity, Ref<Node>)>>();
+            .map(|node_ref| node_ref.val())
+            .collect::<Vec<Ref<Node>>>();
 
-        for (entity, node) in results {
-            unsafe { node::free(world, node) }; 
+        for node in results {
+            node::free(world, node); 
         }
     }
 

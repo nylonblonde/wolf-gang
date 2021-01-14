@@ -704,93 +704,12 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
         },
         DataType::ActorChange{ change, store_history } => {
 
-            use serde::de::DeserializeSeed;
-
-            use bincode::{
-                Options,
-            };
-
             use crate::systems::{
-                actor::{
-                    Actor, ActorChange, ActorID,
-                    CANON, MERGER, REGISTRY,
-                },
+                actor,
             };
 
-            match change {
-                ActorChange::ActorInsertion{serialized} => {
-                REGISTRY.with(|r| {
-                    let registry = r.borrow();
-    
-                    CANON.with(move |c| {
-                        let canon = c.borrow();
-                        
-                        let mut deserialized = bincode::de::Deserializer::from_slice(
-                            &serialized[..], 
-                            bincode::config::DefaultOptions::new()
-                                .with_fixint_encoding()
-                                .allow_trailing_bytes()
-                        );
+            actor::change(world, &change, store_history);
 
-                        let actor_world: World = registry.as_deserialize(& *canon).deserialize(&mut deserialized).unwrap();
-
-                        let mut query = <(Entity, Read<ActorID>)>::query();
-                        query.iter(&actor_world)
-                            .map(|(actor_entity, actor_id)| (*actor_entity, *actor_id))
-                            .collect::<Vec<(Entity, ActorID)>>()
-                            .into_iter()
-                            .for_each(|(actor_entity, actor_id)| {
-
-                                let world_actors = query.iter(world)
-                                    .map(|(actor_entity, actor_id)| (*actor_entity, *actor_id))
-                                    .collect::<Vec<(Entity, ActorID)>>();
-
-                                if world_actors.is_empty() || !world_actors.into_iter().any(|(_,id)| id.val() == actor_id.val()) {
-        
-                                    MERGER.with(|m| {
-                                        let mut merger = m.borrow_mut();
-
-                                        world.clone_from_single(&actor_world, actor_entity, &mut *merger);
-
-                                        let mut query = <Read<Actor>>::query();
-                
-                                    });
-                                }
-                        });
-                    });
-                });
-                },
-                ActorChange::ActorRemoval(actor_id) => {
-                    unimplemented!()
-                }
-            }
-            
-        //     use crate::systems::{
-        //         actor::{
-        //             ActorDefinitions, 
-        //             ActorChange,
-        //             actor_change, 
-        //             remove_actor,
-        //         },
-        //     };
-
-        //     match change {
-        //         ActorChange::ActorInsertion { 
-        //             uuid: _, 
-        //             coord_pos: _, 
-        //             rotation: _, 
-        //             definition_id: _, 
-        //         } => {
-
-        //             let actor_definitions = resources.get::<ActorDefinitions>().unwrap();
-
-        //             actor_change(world, &change, &actor_definitions, store_history);
-
-        //         },
-        //         ActorChange::ActorRemoval(uuid) => {
-        //             remove_actor(world, uuid);
-        //         }
-        //     }
         },
         DataType::MapInput(r) => {
             if let Some(map) = resources.get::<crate::systems::level_map::Map>().map(|map| *map) {
@@ -819,6 +738,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
         },
         DataType::MapNew => {
             crate::systems::level_map::map_reset(world, resources);
+            crate::systems::actor::free_all(world);
         },
         DataType::HistoryStep{ amount, client_id } => {
             let mut query = <(Write<crate::systems::history::History>, Read<ClientID>)>::query();

@@ -373,12 +373,12 @@ pub fn create_orthogonal_dir_system() -> impl systems::Runnable {
             let (selection_box_query, cam_query) = queries;
 
             let cameras = cam_query.iter(world)
-                .map(|(dir, name)| (*dir, (*name).clone()))
-                .collect::<Vec<(transform::rotation::Direction, node::NodeRef)>>();
+                .map(|(dir, node_ref)| (*dir, node_ref.val()))
+                .collect::<Vec<(transform::rotation::Direction, Ref<Node>)>>();
 
             for (mut camera_adjusted_dir, relative_cam) in selection_box_query.iter_mut(world) {
 
-                if let Some((dir, _)) = cameras.iter().find(|(_,node_ref)| node_ref.val() == relative_cam.0) {
+                if let Some((dir, _)) = cameras.iter().find(|(_,node)| *node == relative_cam.0) {
 
                     // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
                     // view.
@@ -555,9 +555,7 @@ pub fn create_coord_to_pos_system() -> impl systems::Runnable {
         .build(move |_, world, _, query| {
 
             query.for_each_mut(world, |(coord_pos, mut position)| {
-
-                let coord_pos = level_map::map_coords_to_world(coord_pos.value);
-                position.value = Vector3::new(coord_pos.x, coord_pos.y, coord_pos.z); 
+                position.value = level_map::map_coords_to_world(coord_pos.value); 
             })
         })
 }
@@ -588,7 +586,7 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
                         if action == &insertion {
                             
                             let client_id = client_id.val();
-                            let _coord_pos = coord_pos.value;
+                            let coord_pos = *coord_pos;
                             let actor_entity = entity_ref.0;
 
                             command.exec_mut(move |world, _| {
@@ -609,6 +607,7 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
                                             if let Some(mut entry) = actor_world.entry(new_entity) {
                                                 let actor_id = actor::ActorID::new();
                                                 entry.add_component(actor_id);
+                                                entry.add_component(coord_pos);
                                             }
                                             
                                             if let Ok(serialized) = bincode::serialize(&actor_world.as_serializable(component::<actor::Actor>(), & *registry, & *canon)) {
@@ -633,7 +632,7 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
                             });
 
                         } else if action == &removal {
-
+                            unimplemented!();
                         }
 
                     }

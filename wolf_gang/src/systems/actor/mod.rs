@@ -8,7 +8,9 @@ use gdnative::api::{
     File
 };
 
-use serde::{Serialize, Deserialize};
+use serde::{Serialize, Deserialize, de::DeserializeSeed};
+
+use bincode::Options;
 
 type Point = nalgebra::Vector3<i32>;
 
@@ -19,10 +21,13 @@ use crate::{
         NodeRef,
     },
     systems::{
-        level_map::{TILE_DIMENSIONS, map_coords_to_world},
+        history::{History, StepType},
+        level_map::{CoordPos, TILE_DIMENSIONS, map_coords_to_world},
         transform::{
             position::Position,
-        }
+            rotation::Rotation,
+        },
+        networking::ClientID,
     },
 };
 
@@ -44,6 +49,8 @@ thread_local! {
             registry.register::<PlayableCharacter>("playable_character".to_string());
             registry.register::<ActorSceneKey>("actor_scene_key".to_string());
             registry.register::<Health>("health".to_string());
+            registry.register::<CoordPos>("coord_pos".to_string());
+            registry.register::<Rotation>("rotation".to_string());
             
             registry
         }
@@ -59,6 +66,8 @@ thread_local! {
             merger.register_clone::<PlayableCharacter>();
             merger.register_clone::<ActorSceneKey>();
             merger.register_copy::<Health>();
+            merger.register_copy::<CoordPos>();
+            merger.register_copy::<Rotation>();
 
             merger
         }
@@ -162,7 +171,7 @@ pub enum ActorChange {
     ActorInsertion {
         serialized: Vec<u8>
     },
-    ActorRemoval(Entity)
+    ActorRemoval(u128)
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -210,19 +219,143 @@ pub fn create_initialize_actor_scene_fn() -> Box<dyn FnMut(&mut World, &mut Reso
     }) 
 }
 
+pub fn create_move_to_coord_system() -> impl systems::Runnable {
+    SystemBuilder::new("actor_move_to_coord_system")
+        .with_query(<(Entity, Read<Bounds>, Read<Rotation>, Read<CoordPos>)>::query()
+            .filter(component::<ActorID>() & maybe_changed::<CoordPos>() | maybe_changed::<Rotation>()))
+        .build(move |commands, world, _, query| {
+            query.iter(world)
+                .map(|(entity, bounds, rotation, coord_pos)| (*entity, *bounds, *rotation, *coord_pos))
+                .collect::<Vec<(Entity, Bounds, Rotation, CoordPos)>>()
+                .into_iter()
+                .for_each(|(entity, bounds, rotation, coord_pos)| {
+                    let mut aabb = bounds.get_scaled_and_rotated_aabb(rotation.value);
+
+                    aabb.center = coord_pos.value;
+
+                    commands.exec_mut(move |world, _| {
+                        position_actor_helper(world, entity, aabb);
+                    });
+                })
+        })
+}
+
 pub fn position_actor_helper(world: &mut World, actor_entity: Entity, aabb: AABB) {
     if let Some(mut entry) = world.entry(actor_entity) {
 
         let min = map_coords_to_world(aabb.get_min());
 
         let bounds = map_coords_to_world(aabb.dimensions);
-        let bounds = Vector3::new(bounds.x, bounds.y, bounds.z);
         
         let position = Position {
-            value: Vector3::new(min.x, min.y, min.z) + Vector3::new(bounds.x/2., 0., bounds.z/2.)
+            value: nalgebra::Vector3::new(min.x, min.y, min.z) + nalgebra::Vector3::new(bounds.x/2., 0., bounds.z/2.)
         };
 
         entry.add_component(position);
         
     }
+}
+
+pub fn serialize_actors_in_world(world: &mut World) -> Result<Vec<u8>, bincode::Error> {
+    let mut actor_world = World::default();
+    MERGER.with(|m| {
+        let mut merger = m.borrow_mut();
+        actor_world.clone_from(world, &component::<ActorID>(), &mut *merger);
+
+        REGISTRY.with(|r| {
+            let registry = r.borrow();
+
+            CANON.with(|c| {
+                let canon = c.borrow();
+
+                bincode::serialize(&actor_world.as_serializable(component::<ActorID>(), & *registry, & *canon))
+            })
+        })
+    })
+}
+
+pub fn change(world: &mut World, change: &ActorChange, store_history: Option<u32>) {
+    match change {
+
+        ActorChange::ActorInsertion{serialized} => {
+        REGISTRY.with(|r| {
+            let registry = r.borrow();
+
+            CANON.with(move |c| {
+                let canon = c.borrow();
+                
+                let mut deserialized = bincode::de::Deserializer::from_slice(
+                    &serialized[..], 
+                    bincode::config::DefaultOptions::new()
+                        .with_fixint_encoding()
+                        .allow_trailing_bytes()
+                );
+
+                let actor_world: World = registry.as_deserialize(& *canon).deserialize(&mut deserialized).unwrap();
+
+                let mut query = <(Entity, Read<ActorID>)>::query();
+                query.iter(&actor_world)
+                    .map(|(actor_entity, actor_id)| (*actor_entity, *actor_id))
+                    .collect::<Vec<(Entity, ActorID)>>()
+                    .into_iter()
+                    .for_each(|(actor_entity, actor_id)| {
+
+                        let world_actors = query.iter(world)
+                            .map(|(actor_entity, actor_id)| (*actor_entity, *actor_id))
+                            .collect::<Vec<(Entity, ActorID)>>();
+
+                        if world_actors.is_empty() || !world_actors.into_iter().any(|(_,id)| id.val() == actor_id.val()) {
+                            
+                            if let Some(store_history) = store_history {
+                                let mut history_query = <(Write<History>, Read<ClientID>)>::query();
+
+                                history_query.iter_mut(world).filter(|(_, id)| id.val() == store_history).for_each(|(history, _)| {
+                                    history.add_step(
+                                        StepType::ActorChange(
+                                            (ActorChange::ActorRemoval(actor_id.val()), change.clone())
+                                        )
+                                    );
+                                });
+                            }
+
+                            MERGER.with(|m| {
+                                let mut merger = m.borrow_mut();
+                                world.clone_from_single(&actor_world, actor_entity, &mut *merger);
+
+                            });
+                        }
+                });
+            });
+        });
+        },
+        ActorChange::ActorRemoval(actor_id) => {
+
+            if let Some(store_history) = store_history {
+                todo!("get the current state of the actor for undo history {} by serializing and creating a change for actor_entity", store_history);
+            }
+            
+            let mut query = <(Read<ActorID>, Read<NodeRef>)>::query();
+            query.iter(world)
+                .filter(|(id, _)| id.val() == *actor_id)
+                .map(|(_, node_ref)| node_ref.val())
+                .collect::<Vec<Ref<Node>>>()
+                .into_iter()
+                .for_each(|node| {
+                    node::free(world, node);
+                })
+        }
+    }
+}
+
+pub fn free_all(world: &mut World) {
+    let mut actor_query = <Read<NodeRef>>::query().filter(component::<ActorID>());
+
+    actor_query.iter(world)
+        .map(|node_ref| node_ref.val())
+        .collect::<Vec<Ref<Node>>>()
+        .into_iter()
+        .for_each(|node| {
+            node::free(world, node);
+        })
+    
 }

@@ -5,6 +5,7 @@ use crate::{
     collections::octree::Octree,
     game_state::{NewState, GameState, GameStateTraits},
     systems::{
+        actor,
         camera,
         history::History,
         level_map,
@@ -51,6 +52,8 @@ impl GameStateTraits for Editor {
             node::free(world, camera);
         }
         self.map.free(world);
+
+        actor::free_all(world);
     }
 
     fn on_connection(&self, connection_id: u32, world: &mut World, resources: &mut Resources) {
@@ -104,7 +107,7 @@ impl GameStateTraits for Editor {
 
         let mut query = <(Read<ClientID>, Read<NodeRef>)>::query().filter(component::<SelectionBox>());
 
-        if let Some(mut node) = query.iter(world)
+        if let Some(node) = query.iter(world)
             .filter(|(id, _)| connection_id == id.val())
             .map(|(_, node_ref)| node_ref.val())
             .next() {
@@ -206,29 +209,23 @@ impl GameStateTraits for Editor {
 
             });
 
-        // //send all of the current actor data to new client
-        // let mut query = <(Read<Actor>, Read<ActorID>, Read<level_map::CoordPos>, Read<crate::systems::transform::rotation::Rotation>)>::query();
-
-        // query.iter(world)
-        //     .map(|(actor, actor_id, coord_pos, rotation)| (actor.clone(), *actor_id, *coord_pos, *rotation))
-        //     .collect::<Vec<(Actor, ActorID, level_map::CoordPos, crate::systems::transform::rotation::Rotation)>>()
-        //     .into_iter()
-        //     .for_each(|(actor, actor_id, coord_pos, rotation)| {
-        //         // world.push(
-        //         //     (
-        //         //         ServerMessageSender {
-        //         //             client_id: connection_id,
-        //         //             data_type: DataType::ActorChange {
-        //         //                 change: ActorChange::ActorInsertion {
-
-        //         //                 },
-        //         //                 store_history: None
-        //         //             },
-        //         //             message_type: MessageType::Ordered,
-        //         //         },
-        //         //     )
-        //         // );
-        //     });
+        //send all of the current actor data
+        if let Ok(serialized) = actor::serialize_actors_in_world(world) {
+            world.push(
+                (
+                    ServerMessageSender{
+                        client_id: connection_id,
+                        data_type: DataType::ActorChange {
+                            change: actor::ActorChange::ActorInsertion {
+                                serialized
+                            },
+                            store_history: None, 
+                        },
+                        message_type: MessageType::Ordered,
+                    },
+                )
+            );
+        }
     }
 
 }

@@ -7,6 +7,8 @@ use serde::{Serialize, Deserialize};
 use crate::{
     collections::octree::Octree,
     systems::{ 
+        actor,
+        actor::ActorChange,
         input::{
             InputActionComponent, Action
         },
@@ -23,8 +25,7 @@ use std::io::{ Error, ErrorKind };
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StepType {
     MapChange((Octree<i32, TileData>, Octree<i32, TileData>)),
-    // "previous" state must be an option to capture the state where the actor did not exist
-    // ActorChange((ActorChange, ActorChange)),
+    ActorChange((ActorChange, ActorChange)),
 }
 
 /// Resource which holds chnages as a VecDeque
@@ -73,19 +74,13 @@ impl History {
                         })
                     }
                 },
-                // StepType::ActorChange((undo_actor, redo_actor)) => {
-                //     if let Some(actor_definitions) = resources.get::<ActorDefinitions>() {
-                        
-                //         let change = if amount > 0 { *redo_actor } else { *undo_actor };
-            
-                //         let actor_definitions = actor_definitions.clone();
-                        
-                //         commands.exec_mut(move |world| {
-                //             actor_change(world, &change, &actor_definitions, None);
-                //         })
-                //     }
-                    
-                // },
+                StepType::ActorChange((undo_actor, redo_actor)) => {
+                    let change = if amount > 0 { redo_actor.clone() } else { undo_actor.clone() };
+                                
+                    commands.exec_mut(move |world, _| {
+                        actor::change(world, &change, None);
+                    })
+                },
             }
 
             self.current_step = std::cmp::max(0, std::cmp::min(self.history.len() as i32 - 1, next_step));

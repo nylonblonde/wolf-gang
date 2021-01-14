@@ -76,13 +76,11 @@ pub fn create_movement_system() -> impl systems::Runnable {
     .build(move |_, world, _, query|{
         query.for_each_mut(world, |(focal_point, focal_angle, zoom, mut position)| {
 
-            let new_position = focal_point.0 + (Rotation3D::from_euler_angles(
+            position.value = focal_point.0 + (Rotation3D::from_euler_angles(
                 focal_angle.0, 
                 focal_angle.1, 
                 focal_angle.2
             ) * (Vector3D::z() * zoom.0));
-
-            position.value = Vector3::new(new_position.x, new_position.y, new_position.z);
         })
     })
 }
@@ -168,12 +166,12 @@ pub fn create_focal_point_system() -> impl systems::Runnable {
             let (selection_box_query, cam_query) = queries;
 
             let selection_boxes = selection_box_query.iter(world)
-                .map(|relative_cam| (*relative_cam).clone())
-                .collect::<Vec<selection_box::RelativeCamera>>();
+                .map(|relative_cam| relative_cam.val())
+                .collect::<Vec<Ref<Node>>>();
 
             for relative_cam in selection_boxes.iter() {
 
-                if let Some((smoothing, _, mut focal_point)) = cam_query.iter_mut(world).find(|(_,node_ref,_)| node_ref.val() == relative_cam.val()) {
+                if let Some((smoothing, _, mut focal_point)) = cam_query.iter_mut(world).find(|(_,node_ref,_)| node_ref.val() == *relative_cam) {
                     focal_point.0 = smoothing.current;
                 }
             }
