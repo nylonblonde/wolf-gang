@@ -156,3 +156,11 @@ pub fn create_history_input_system() -> impl systems::Runnable {
             }
         })
 }
+
+pub fn empty_all(world: &mut World) {
+    let mut query = <Write<History>>::query();
+
+    query.for_each_mut(world, |history| {
+        *history = History::new();
+    })
+}

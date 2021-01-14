@@ -739,6 +739,7 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
         DataType::MapNew => {
             crate::systems::level_map::map_reset(world, resources);
             crate::systems::actor::free_all(world);
+            crate::systems::history::empty_all(world);
         },
         DataType::HistoryStep{ amount, client_id } => {
             let mut query = <(Write<crate::systems::history::History>, Read<ClientID>)>::query();
