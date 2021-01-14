@@ -14,7 +14,10 @@ type Point = nalgebra::Vector3<i32>;
 
 use crate::{
     node, 
-    node::NodeName,
+    node::{
+        NodeParent,
+        NodeRef,
+    },
     systems::{
         level_map::{TILE_DIMENSIONS, map_coords_to_world},
         transform::{
@@ -36,6 +39,7 @@ thread_local! {
             let mut registry = Registry::default();
 
             registry.register::<Actor>("actor".to_string());
+            registry.register::<ActorID>("actor_id".to_string());
             registry.register::<Bounds>("bounds".to_string());
             registry.register::<PlayableCharacter>("playable_character".to_string());
             registry.register::<ActorSceneKey>("actor_scene_key".to_string());
@@ -50,6 +54,7 @@ thread_local! {
             let mut merger = legion::world::Duplicate::default();
 
             merger.register_clone::<Actor>();
+            merger.register_copy::<ActorID>();
             merger.register_copy::<Bounds>();
             merger.register_clone::<PlayableCharacter>();
             merger.register_clone::<ActorSceneKey>();
@@ -67,6 +72,8 @@ thread_local! {
             ron::de::from_str::<HashMap<String, String>>(file_string.as_str()).expect("Failed to deserialize the config/actor_paths.ron file")
         }
     );
+
+    pub static CANON: RefCell<legion::serialize::Canon> = RefCell::new(legion::serialize::Canon::default());
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,27 +165,49 @@ pub enum ActorChange {
     ActorRemoval(Entity)
 }
 
-pub fn initialize_actor_scene(world: &mut World, parent: &Node, actor_entity: Entity) {
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct ActorID(u128);
 
-    ACTOR_SCENE_MAP.with(|a| {
-        let actor_scene_map = a.borrow();
+impl ActorID {
 
-        if let Some(actor_node) = world.entry(actor_entity).map(|entry| {
-            entry.get_component::<ActorSceneKey>().map(|actor_key| {
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4().as_u128())
+    }
 
-                match actor_scene_map.get(&actor_key.0) {
-                    Some(path) => node::init_scene(&parent, path),
-                    None => todo!("Proper error handling for nonexistent data, maybe load a default actor")
-                }
+    pub fn val(&self) -> u128 {
+        self.0
+    }
+}
 
-            }).ok()
-        }).flatten() { 
-            if let Some(mut entry) = world.entry(actor_entity) { 
-                entry.add_component(NodeName(unsafe { actor_node.assume_safe().name() }.to_string())); 
-            } 
-        }
+pub fn create_initialize_actor_scene_fn() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
-    });
+    let mut query = <(Entity, Read<ActorSceneKey>)>::query().filter(!component::<NodeRef>());
+
+    Box::new(move |world, _| {
+        ACTOR_SCENE_MAP.with(|a| {
+            let actor_scene_map = a.borrow();
+    
+            query.iter(world).map(|(entity, actor_key)| (*entity, actor_key.clone()))
+                .collect::<Vec<(Entity, ActorSceneKey)>>()
+                .into_iter()
+                .for_each(|(entity, actor_key)| {
+
+                    if let Some(mut entry) = world.entry(entity) { 
+
+                        let parent = entry.get_component::<NodeParent>().map(|node_parent| node_parent.val()).unwrap_or(
+                            unsafe { crate::OWNER_NODE.unwrap() }
+                        );
+                        
+                        let actor_node = match actor_scene_map.get(&actor_key.0) {
+                            Some(path) => node::init_scene(unsafe { &parent.assume_safe() }, path),
+                            None => todo!("Proper error handling for nonexistent data, maybe load a default actor")
+                        };
+
+                        entry.add_component(NodeRef::new(actor_node)); 
+                    } 
+                });  
+        });
+    }) 
 }
 
 pub fn position_actor_helper(world: &mut World, actor_entity: Entity, aabb: AABB) {

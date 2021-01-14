@@ -43,27 +43,19 @@ impl Default for Zoom {
 
 const SPEED : f32 = 4.;
 
-pub fn initialize_camera(world: &mut legion::world::World) -> String {
+pub fn initialize_camera(world: &mut legion::world::World) -> Ref<Node> {
     
-    //into_shared to avoid cloning
-    let camera: Ref<Camera> = Camera::new().into_shared();
+    let camera = Camera::new();
 
-    let owner = unsafe { crate::OWNER_NODE.as_mut().unwrap().assume_safe() };
+    let owner = unsafe { crate::OWNER_NODE.unwrap().assume_safe() };
 
-    // This is okay as we have literally just created this
-    let node_name = unsafe { 
-        node::add_node(&owner, camera.assume_safe().upcast::<Node>().as_ref().assume_unique())
-    };
+    let node = unsafe { node::add_node(&owner, camera.upcast()) };
 
-    unsafe {
-        camera.assume_safe().make_current();
-    }
-
-    let node_name = node_name.unwrap();
+    unsafe { node.assume_safe().cast::<Camera>().unwrap().make_current(); }
 
     world.push(
         (
-            node_name.clone(),
+            node::NodeRef::new(node),
             Position::default(),
             FocalAngle(-45.0f32.to_radians(),225.0f32.to_radians(), 0.0),
             Rotation::default(),
@@ -73,7 +65,7 @@ pub fn initialize_camera(world: &mut legion::world::World) -> String {
         )
     );
 
-    node_name.0
+    node
 }
 
 pub fn create_movement_system() -> impl systems::Runnable {
@@ -170,7 +162,7 @@ pub fn create_focal_point_system() -> impl systems::Runnable {
     SystemBuilder::new("camera_focal_point_system")
         .with_query(<Read<selection_box::RelativeCamera>>::query()
             .filter(component::<selection_box::Active>()))
-        .with_query(<(Read<Smoothing>, Read<node::NodeName>, Write<FocalPoint>)>::query())
+        .with_query(<(Read<Smoothing>, Read<node::NodeRef>, Write<FocalPoint>)>::query())
         .build(|_, world, _, queries| {
 
             let (selection_box_query, cam_query) = queries;
@@ -180,9 +172,8 @@ pub fn create_focal_point_system() -> impl systems::Runnable {
                 .collect::<Vec<selection_box::RelativeCamera>>();
 
             for relative_cam in selection_boxes.iter() {
-                let node_name = node::NodeName(relative_cam.0.clone());
 
-                if let Some((smoothing, _, mut focal_point)) = cam_query.iter_mut(world).find(|(_,name,_)| **name == node_name) {
+                if let Some((smoothing, _, mut focal_point)) = cam_query.iter_mut(world).find(|(_,node_ref,_)| node_ref.val() == relative_cam.val()) {
                     focal_point.0 = smoothing.current;
                 }
             }
@@ -196,15 +187,14 @@ pub fn create_follow_selection_box_system() -> impl systems::Runnable {
         .with_query(<(Read<selection_box::RelativeCamera>, Read<level_map::CoordPos>)>::query()
             .filter(maybe_changed::<level_map::CoordPos>())
         )
-        .with_query(<(Entity, Read<FocalPoint>, Read<node::NodeName>)>::query())
+        .with_query(<(Entity, Read<FocalPoint>, Read<node::NodeRef>)>::query())
         .build(|commands, world, _, queries| {
 
             let (selection_box_query, cam_query) = queries;
 
             selection_box_query.for_each(world, |(relative_cam, coord_pos)| {
-                let node_name = node::NodeName(relative_cam.0.clone());
 
-                for (entity, focal_point, _) in cam_query.iter(world).filter(|(_, _, name)| **name == node_name) {
+                for (entity, focal_point, _) in cam_query.iter(world).filter(|(_, _, node_ref)| node_ref.val() == relative_cam.val()) {
                     let center = level_map::map_coords_to_world(coord_pos.value);
 
                     let min = Vector3D::zeros();

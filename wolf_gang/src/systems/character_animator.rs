@@ -8,7 +8,7 @@ use gdnative::api::{
 
 use crate::{
     node,
-    node::NodeName
+    node::NodeRef
 };
 
 pub struct AnimationControlCreator {}
@@ -22,14 +22,12 @@ pub struct PlayAnimationState(pub String);
 
 pub fn create_animation_control_creation_system() -> impl legion::systems::Runnable {
     SystemBuilder::new("animation_control_creation_system")
-        .with_query(<(Entity, Read<NodeName>, Read<AnimationControlCreator>)>::query())
+        .with_query(<(Entity, Read<NodeRef>, Read<AnimationControlCreator>)>::query())
         .build(move |command, world, _, query| {
 
-            for (entity, node_name, _) in query.iter(world) {
+            for (entity, node_ref, _) in query.iter(world) {
                 
-                let scene_root = unsafe { node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &node_name.0, true).unwrap() };
-
-                let animation_trees = unsafe { get_animation_trees(&scene_root.assume_safe()) };
+                let animation_trees = unsafe { get_animation_trees(&node_ref.val().assume_safe()) };
 
                 command.add_component(*entity, AnimationControl{
                     animation_trees

@@ -122,6 +122,7 @@ impl WolfGang {
             state_machine.add_state(
                 game_state::BasicGameState::new("SceneManager", true),
                 Schedule::builder()
+                    .add_thread_local_fn(systems::actor::create_initialize_actor_scene_fn())
                     .add_thread_local(systems::character_animator::create_animation_control_creation_system())
                     .add_thread_local(systems::character_animator::create_animation_control_system())
                     .build(),

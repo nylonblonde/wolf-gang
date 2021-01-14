@@ -1,3 +1,5 @@
+use gdnative::prelude::*;
+
 use legion::*;
 use crate::{
     collections::octree::Octree,
@@ -7,6 +9,7 @@ use crate::{
         history::History,
         level_map,
         selection_box,
+        selection_box::SelectionBox,
         networking::{
             ClientID,
             ServerMessageSender,
@@ -15,14 +18,14 @@ use crate::{
         }
     },
     node,
-    node::NodeName
+    node::NodeRef,
 };
 
 type AABB = crate::geometry::aabb::AABB<i32>;
 
 pub struct Editor {
     game_state: GameState,
-    camera: String,
+    camera: Option<Ref<Node>>,
     map: level_map::Map,
 }
 
@@ -30,7 +33,7 @@ impl GameStateTraits for Editor {
 
     fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
         
-        self.camera = camera::initialize_camera(world);
+        self.camera = Some(camera::initialize_camera(world));
         resources.insert(self.map);
         resources.insert(level_map::document::Document::default());
         resources.insert(PaletteSelection(0));
@@ -44,7 +47,9 @@ impl GameStateTraits for Editor {
     fn free(&mut self, world: &mut World, resources: &mut Resources) {
         resources.remove::<level_map::document::Document>();
 
-        node::free(world, &self.camera);
+        if let Some(camera) = self.camera {
+            node::free(world, camera);
+        }
         self.map.free(world);
     }
 
@@ -53,9 +58,9 @@ impl GameStateTraits for Editor {
         let client_id = resources.get::<ClientID>().map(|client_id| *client_id);
 
         //Only pass the camera name if this selection box belongs to the client
-        let camera: Option<String> = match client_id {
+        let camera: Option<Ref<Node>> = match client_id {
             Some(r) if r.val() == connection_id => {
-                Some(self.camera.clone())
+                self.camera
             },
             _ => None
         };
@@ -65,7 +70,7 @@ impl GameStateTraits for Editor {
            History::new() 
         ));
 
-        selection_box::initialize_selection_box(world, resources, connection_id, selection_box::ToolBoxType::TerrainToolBox, camera.clone());
+        selection_box::initialize_selection_box(world, resources, connection_id, selection_box::ToolBoxType::TerrainToolBox, camera);
         selection_box::initialize_selection_box(world, resources, connection_id, selection_box::ToolBoxType::ActorToolBox(0), camera);
 
         if let Some(client_id) = client_id {
@@ -97,15 +102,14 @@ impl GameStateTraits for Editor {
 
     fn on_disconnection(&self, connection_id: u32, world: &mut World, _: &mut Resources) {
 
-        let mut query = <(Read<ClientID>, Read<NodeName>)>::query();
+        let mut query = <(Read<ClientID>, Read<NodeRef>)>::query().filter(component::<SelectionBox>());
 
-        let mut name = query.iter(world)
+        if let Some(mut node) = query.iter(world)
             .filter(|(id, _)| connection_id == id.val())
-            .map(|(_, name)| (*name).clone());
-
-        if let Some(name) = name.next() {
-            node::free(world, &name.0);
-        }
+            .map(|(_, node_ref)| node_ref.val())
+            .next() {
+                node::free(world, node);
+            }
 
         let mut query = <(Entity, Read<ClientID>)>::query().filter(component::<History>());
         query.iter(world).filter(|(_, id)| id.val() == connection_id)
@@ -245,7 +249,7 @@ impl NewState for Editor {
     fn new(name: &'static str, active: bool) -> Self {
 
         Self {
-            camera: String::default(),
+            camera: None,
             game_state: GameState::new(name, active),
             map: level_map::Map::default()
         }

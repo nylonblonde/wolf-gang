@@ -702,7 +702,69 @@ fn client_handle_data(data: DataType, world: &mut World, resources: &mut Resourc
                 }
             }
         },
-        DataType::ActorChange{ change: _, store_history: _ } => {
+        DataType::ActorChange{ change, store_history } => {
+
+            use serde::de::DeserializeSeed;
+
+            use bincode::{
+                Options,
+            };
+
+            use crate::systems::{
+                actor::{
+                    Actor, ActorChange, ActorID,
+                    CANON, MERGER, REGISTRY,
+                },
+            };
+
+            match change {
+                ActorChange::ActorInsertion{serialized} => {
+                REGISTRY.with(|r| {
+                    let registry = r.borrow();
+    
+                    CANON.with(move |c| {
+                        let canon = c.borrow();
+                        
+                        let mut deserialized = bincode::de::Deserializer::from_slice(
+                            &serialized[..], 
+                            bincode::config::DefaultOptions::new()
+                                .with_fixint_encoding()
+                                .allow_trailing_bytes()
+                        );
+
+                        let actor_world: World = registry.as_deserialize(& *canon).deserialize(&mut deserialized).unwrap();
+
+                        let mut query = <(Entity, Read<ActorID>)>::query();
+                        query.iter(&actor_world)
+                            .map(|(actor_entity, actor_id)| (*actor_entity, *actor_id))
+                            .collect::<Vec<(Entity, ActorID)>>()
+                            .into_iter()
+                            .for_each(|(actor_entity, actor_id)| {
+
+                                let world_actors = query.iter(world)
+                                    .map(|(actor_entity, actor_id)| (*actor_entity, *actor_id))
+                                    .collect::<Vec<(Entity, ActorID)>>();
+
+                                if world_actors.is_empty() || !world_actors.into_iter().any(|(_,id)| id.val() == actor_id.val()) {
+        
+                                    MERGER.with(|m| {
+                                        let mut merger = m.borrow_mut();
+
+                                        world.clone_from_single(&actor_world, actor_entity, &mut *merger);
+
+                                        let mut query = <Read<Actor>>::query();
+                
+                                    });
+                                }
+                        });
+                    });
+                });
+                },
+                ActorChange::ActorRemoval(actor_id) => {
+                    unimplemented!()
+                }
+            }
+            
         //     use crate::systems::{
         //         actor::{
         //             ActorDefinitions, 

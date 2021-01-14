@@ -21,7 +21,6 @@ use crate::{
     systems::{
         actor,
         actor::{
-            initialize_actor_scene, 
             MERGER,
         },
         camera,
@@ -124,11 +123,17 @@ pub struct SelectionBoxRotation {
     pub value: Rotation3<f32>
 }
 
-#[derive(Default, Clone)]
-pub struct RelativeCamera(pub String);
+#[derive(Copy, Clone)]
+pub struct RelativeCamera(Ref<Node>);
+
+impl RelativeCamera {
+    pub fn val(&self) -> Ref<Node> {
+        self.0
+    }
+}
 
 /// Initializes and returns the entities for the different kinds of tool boxes
-pub fn initialize_selection_box(world: &mut World, _: &mut Resources, client_id: u32, tool_type: ToolBoxType, camera_name: Option<String>) -> Entity {
+pub fn initialize_selection_box(world: &mut World, _: &mut Resources, client_id: u32, tool_type: ToolBoxType, camera_node: Option<Ref<Node>>) -> Entity {
 
     // TerrainTool selection box
     let mesh: Ref<ImmediateGeometry, Unique> = ImmediateGeometry::new();
@@ -136,15 +141,13 @@ pub fn initialize_selection_box(world: &mut World, _: &mut Resources, client_id:
 
     let owner = unsafe { crate::OWNER_NODE.as_mut().unwrap().assume_safe() };
 
-    let node_name = unsafe { 
-        node::add_node(&owner, mesh.upcast())
-    }.unwrap();
+    let node = unsafe { node::add_node(&owner, mesh.upcast()) };
     
     match tool_type {
         ToolBoxType::TerrainToolBox => {
             let entity = world.push(
                 (
-                    node_name,
+                    node::NodeRef::new(node),
                     ClientID::new(client_id),
                     SelectionBox::new(),
                     custom_mesh::MeshData::new(),
@@ -158,8 +161,8 @@ pub fn initialize_selection_box(world: &mut World, _: &mut Resources, client_id:
             if let Some(mut entry) = world.entry(entity) {
                 entry.add_component(TerrainToolBox{});
         
-                if let Some(camera_name) = &camera_name {
-                    entry.add_component(RelativeCamera(camera_name.clone()))
+                if let Some(camera_node) = camera_node {
+                    entry.add_component(RelativeCamera(camera_node))
                 }
             }
 
@@ -168,7 +171,7 @@ pub fn initialize_selection_box(world: &mut World, _: &mut Resources, client_id:
         ToolBoxType::ActorToolBox(actor_id) => {
             let entity = world.push(
                 (
-                    node_name,
+                    node::NodeRef::new(node),
                     ClientID::new(client_id),
                     custom_mesh::MeshData::new(),
                     level_map::CoordPos::default(),
@@ -186,8 +189,8 @@ pub fn initialize_selection_box(world: &mut World, _: &mut Resources, client_id:
                 entry.add_component(SelectionBox::new());
                 entry.add_component(ActorToolBox(actor_id));
         
-                if let Some(camera_name) = &camera_name {
-                    entry.add_component(RelativeCamera(camera_name.clone()))
+                if let Some(camera_node) = camera_node {
+                    entry.add_component(RelativeCamera(camera_node))
                 }
             }
         
@@ -199,22 +202,16 @@ pub fn initialize_selection_box(world: &mut World, _: &mut Resources, client_id:
 
 /// Removes all SelectionBox entities from the world, and frees and removes the related Godot nodes
 pub fn free_all(world: &mut World) {
-    let mut selection_box_query = <(Entity, Read<node::NodeName>)>::query()
+    let mut selection_box_query = <Read<node::NodeRef>>::query()
         .filter(component::<SelectionBox>());
 
-    let mut entities: Vec<Entity> = Vec::new();
-
-    selection_box_query.for_each(world, |(entity, node_name)| {
-        unsafe {
-            node::remove_node(&node_name.0);
-        }
-
-        entities.push(*entity);
-    });
-
-    for entity in entities {
-        world.remove(entity);
-    }
+    selection_box_query.iter(world)
+        .map(|node_ref| node_ref.val())
+        .collect::<Vec<Ref<Node>>>()
+        .into_iter()
+        .for_each(|node_ref| {
+            node::free(world, node_ref);
+        });
 }
 
 /// Gets the axis closest to forward from a or b, adjusted by adjust_angle around the up axis. We adjust it so that we can smooth out the comparison at 45
@@ -247,7 +244,7 @@ fn get_forward_closest_axis(a: &Vector3D, b: &Vector3D, forward: &Vector3D, righ
 pub fn create_actor_selection_chooser_system() -> Box<dyn FnMut(&mut World, &mut Resources)> {
 
     let mut selection_box_query = <(Entity, Read<ClientID>)>::query()
-        .filter(component::<SelectionBox>() & component::<node::NodeName>() & component::<ActorToolBox>() & component::<SelectionBoxRotation>());
+        .filter(component::<SelectionBox>() & component::<node::NodeRef>() & component::<ActorToolBox>() & component::<SelectionBoxRotation>());
     let mut query = <(Entity, Read<MakeActorSelectionChosen>)>::query();
 
     Box::new(move |world, resources| {
@@ -369,7 +366,7 @@ pub fn create_orthogonal_dir_system() -> impl systems::Runnable {
 
     SystemBuilder::new("orthogonal_dir_system")
         .with_query(<(Write<CameraAdjustedDirection>, Read<RelativeCamera>)>::query())
-        .with_query(<(Read<transform::rotation::Direction>, Read<node::NodeName>)>::query()
+        .with_query(<(Read<transform::rotation::Direction>, Read<node::NodeRef>)>::query()
             .filter(maybe_changed::<transform::rotation::Direction>() & component::<camera::FocalPoint>()))
         .build(|_, world, _, queries| {
 
@@ -377,13 +374,11 @@ pub fn create_orthogonal_dir_system() -> impl systems::Runnable {
 
             let cameras = cam_query.iter(world)
                 .map(|(dir, name)| (*dir, (*name).clone()))
-                .collect::<Vec<(transform::rotation::Direction, node::NodeName)>>();
+                .collect::<Vec<(transform::rotation::Direction, node::NodeRef)>>();
 
             for (mut camera_adjusted_dir, relative_cam) in selection_box_query.iter_mut(world) {
 
-                let node_name = node::NodeName(relative_cam.0.clone());
-
-                if let Some((dir, _)) = cameras.iter().find(|(_,name)| *name == node_name) {
+                if let Some((dir, _)) = cameras.iter().find(|(_,node_ref)| node_ref.val() == relative_cam.0) {
 
                     // Get whichever cartesian direction in the grid is going to act as "forward" based on its closeness to the camera's forward
                     // view.
@@ -574,47 +569,67 @@ pub fn create_actor_tool_system() -> impl systems::Runnable {
 
     SystemBuilder::new("actor_tool_system")
         .read_resource::<ClientID>()
-        .read_resource::<editor::ActorPaletteSelection>()
-        .with_query(<(Read<level_map::CoordPos>, Read<ClientID>)>::query() 
+        // .read_resource::<editor::ActorPaletteSelection>()
+        .with_query(<(Read<level_map::CoordPos>, Read<EntityRef>, Read<ClientID>)>::query() 
             .filter(component::<SelectionBox>() & component::<ActorToolBox>() & component::<Active>()))
         .with_query(<(Read<input::InputActionComponent>, Read<input::Action>)>::query())
         .build(move |command, world, resources, queries| {
             let (selection_box_query, input_query) = queries;
-            let (client_id, actor_selection) = resources;
+            let client_id = resources;
 
             input_query.iter(world).filter(|(_, a)| {
                 *a == &insertion || *a == &removal
             }).for_each(|(input_component, action)|  {
                 // Insertion tool should check whether or not this is a valid placement for the actor
-                selection_box_query.iter(world).filter(|(_, id)| **id == **client_id).for_each(|(coord_pos, _)| {
+                selection_box_query.iter(world).filter(|(_, _, id)| **id == **client_id).for_each(|(coord_pos, entity_ref, _)| {
 
                     if input_component.just_pressed() {
 
                         if action == &insertion {
                             
-                            // let client_id = client_id.val();
-                            let _actor_selection = actor_selection.val();
+                            let client_id = client_id.val();
                             let _coord_pos = coord_pos.value;
-                            // let rotation = selection_box_rot.value;
+                            let actor_entity = entity_ref.0;
 
-                            command.exec_mut(move |_world, _| {
-                            
-                                // world.push(
-                                //     (
-                                //         MessageSender{
-                                //             data_type: DataType::ActorChange{
-                                //                 store_history: Some(client_id),
-                                //                 change: ActorChange::ActorInsertion{
-                                //                     uuid: uuid::Uuid::new_v4().as_u128(),
-                                //                     coord_pos: coord_pos,
-                                //                     rotation: rotation,
-                                //                     definition_id: actor_selection,
-                                //                 }
-                                //             },
-                                //             message_type: MessageType::Ordered,
-                                //         },
-                                //     )
-                                // );
+                            command.exec_mut(move |world, _| {
+
+                                actor::CANON.with(move |c| {
+                                    let canon = c.borrow();
+
+                                    actor::REGISTRY.with(move |r| {
+                                        let registry = r.borrow();
+
+                                        actor::MERGER.with(move |m| {
+
+                                            let mut merger = m.borrow_mut();
+
+                                            let mut actor_world = World::default();
+                                            let new_entity = actor_world.clone_from_single(world, actor_entity, &mut *merger);
+
+                                            if let Some(mut entry) = actor_world.entry(new_entity) {
+                                                let actor_id = actor::ActorID::new();
+                                                entry.add_component(actor_id);
+                                            }
+                                            
+                                            if let Ok(serialized) = bincode::serialize(&actor_world.as_serializable(component::<actor::Actor>(), & *registry, & *canon)) {
+                                                world.push(
+                                                    (
+                                                        MessageSender{
+                                                            data_type: DataType::ActorChange{
+                                                                store_history: Some(client_id),
+                                                                change: actor::ActorChange::ActorInsertion {
+                                                                    serialized
+                                                                },
+                                                            },
+                                                            message_type: MessageType::Ordered,
+                                                        },
+                                                    )
+                                                );
+                                            }
+                                            
+                                        });
+                                    });
+                                });
                             });
 
                         } else if action == &removal {
@@ -1350,15 +1365,15 @@ pub fn actor_tool_rotation(world: &mut World, selection_entity: Entity, tool_rot
 pub fn update_chosen_actor(world: &mut World, selection_entity: Entity, actor_id: i64) {
 
     // Check to see if there is an EntityRef which points to our old entity, and remove it
-    world.entry(selection_entity).map(|entry| {
+    if let Some(Some(old_entity)) = world.entry(selection_entity).map(|entry| {
         entry.get_component::<EntityRef>().map(|entity_ref| entity_ref.0).ok()
-    }).flatten().and_then(|old_entity| {
-        world.entry(old_entity).map(|actor_entry| {
-            actor_entry.get_component::<node::NodeName>().map(|node_name| {
-                unsafe { node::remove_node(&node_name.0) };
-            })
-        })
-    });
+    }) {
+        if let Some(Some(node)) = world.entry(old_entity).map(|actor_entry| {
+            actor_entry.get_component::<node::NodeRef>().map(|node_ref| node_ref.val()).ok()
+        }) {
+            node::free(world, node)
+        }
+    }
 
     if let Some(actor_world) = ActorPalette::get_world() {
         let actor_world = &mut actor_world.borrow_mut();
@@ -1375,7 +1390,7 @@ pub fn update_chosen_actor(world: &mut World, selection_entity: Entity, actor_id
                         if let Some(bounds) = world.entry(new_entity).map(|entry| {
                             entry.get_component::<actor::Bounds>().map(|b| *b).ok()
                         }).flatten() { 
-                            if let Some(Some((node_name, rotation, aabb))) = world.entry(selection_entity).map(|mut entry| {
+                            if let Some(Some((node_ref, rotation, aabb))) = world.entry(selection_entity).map(|mut entry| {
                                 entry.add_component(EntityRef(new_entity));
                                 entry.get_component::<SelectionBoxRotation>()
                                     .map(|box_rotation| box_rotation.value)
@@ -1384,8 +1399,8 @@ pub fn update_chosen_actor(world: &mut World, selection_entity: Entity, actor_id
                                             selection_box.aabb = bounds.get_scaled_and_rotated_aabb(rotation);
                                             selection_box.aabb
                                         }).ok().and_then(|aabb| {
-                                            entry.get_component::<node::NodeName>().map(|n| n.clone()).ok()
-                                                .map(|node_name| (node_name, rotation, aabb))
+                                            entry.get_component::<node::NodeRef>().map(|n| n.val()).ok()
+                                                .map(|node_ref| (node_ref, rotation, aabb))
                                         })
                                     })
                             }) {
@@ -1393,14 +1408,12 @@ pub fn update_chosen_actor(world: &mut World, selection_entity: Entity, actor_id
                                 if let Some(mut entry) = world.entry(new_entity) {
                                     entry.add_component(transform::rotation::Rotation{
                                         value: rotation
-                                    })
-                                }
+                                    });
 
-                                let owner = unsafe { crate::OWNER_NODE.as_ref().unwrap().assume_safe() };
-                                    if let Some(box_node) = unsafe { node::get_node(&owner, &node_name.0, false) } {
-                                        initialize_actor_scene(world, unsafe { &box_node.assume_safe() }, new_entity);
-                                    }
-                                    actor::position_actor_helper(world, new_entity, aabb);
+                                    entry.add_component(node::NodeParent::new(node_ref));
+
+                                }
+                                actor::position_actor_helper(world, new_entity, aabb);
                             }
                         }
                     });
@@ -1424,19 +1437,15 @@ pub fn get_box_entity_by_client_id<T: legion::storage::Component>(world: &mut Wo
 pub fn set_active_selection_box<T: legion::storage::Component>(world: &mut World, client_id: ClientID) {
 
     //disable active selection box that is not this component type
-    let mut query = <(Entity, Read<ClientID>, Read<node::NodeName>)>::query().filter(component::<SelectionBox>() & component::<Active>() & !component::<T>());
+    let mut query = <(Entity, Read<ClientID>, Read<node::NodeRef>)>::query().filter(component::<SelectionBox>() & component::<Active>() & !component::<T>());
     let results = query.iter(world)
         .filter(|(_, id, _)| client_id == **id)
-        .map(|(entity, _, node_name)| (*entity, node_name.clone()))
-        .collect::<Vec<(Entity, node::NodeName)>>();
+        .map(|(entity, _, node_ref)| (*entity, node_ref.val()))
+        .collect::<Vec<(Entity, Ref<Node>)>>();
 
-    for (entity, node_name) in results {
+    for (entity, node_ref) in results {
 
-        let mesh = unsafe { 
-            node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &node_name.0, false).unwrap()
-                .assume_safe()
-                .cast::<Spatial>().unwrap()
-            };
+        let mesh = unsafe { node_ref.assume_safe().cast::<Spatial>().unwrap()};
 
         mesh.set_visible(false);
 
@@ -1446,21 +1455,17 @@ pub fn set_active_selection_box<T: legion::storage::Component>(world: &mut World
     }
 
     //enable selection box that is not yet active and that is this component type
-    let mut query = <(Entity, Read<ClientID>, Read<node::NodeName>)>::query().filter(component::<SelectionBox>() & !component::<Active>() & component::<T>());
+    let mut query = <(Entity, Read<ClientID>, Read<node::NodeRef>)>::query().filter(component::<SelectionBox>() & !component::<Active>() & component::<T>());
     let results = query.iter(world)
         .filter(|(_, id, _)| {
             client_id == **id
         })
-        .map(|(entity, _, node_name)| (*entity, node_name.clone()))
-        .collect::<Vec<(Entity, node::NodeName)>>();
+        .map(|(entity, _, node_ref)| (*entity, node_ref.val()))
+        .collect::<Vec<(Entity, Ref<Node>)>>();
 
-    for (entity, node_name) in results {
+    for (entity, node_ref) in results {
 
-        let mesh = unsafe { 
-            node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &node_name.0, false).unwrap()
-                .assume_safe()
-                .cast::<Spatial>().unwrap()
-            };
+        let mesh = unsafe { node_ref.assume_safe().cast::<Spatial>().unwrap()};
 
         mesh.set_visible(true);
 

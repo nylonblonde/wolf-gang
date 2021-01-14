@@ -1,6 +1,8 @@
 pub mod mesh;
 pub mod document;
 
+use gdnative::prelude::*;
+
 use std::sync::mpsc;
 use std::collections::HashSet;
 use std::collections::HashMap;
@@ -23,7 +25,8 @@ use crate::{
         history::{History, StepType},
     },
     networking::UdpSocket,
-    node::{NodeName}
+    node,
+    node::{NodeRef}
 };
 
 #[cfg(not(test))]
@@ -250,16 +253,15 @@ impl Map {
     /// Deletes all entities for the map chunks, removes the mesh nodes from the node cache
     pub fn free(&self, world: &mut legion::world::World) {
 
-        let mut map_chunk_query = <(Entity, Read<NodeName>)>::query()
+        let mut map_chunk_query = <(Entity, Read<NodeRef>)>::query()
             .filter(component::<MapChunkData>());
 
         let results = map_chunk_query.iter(world)
-            .map(|(entity, node_name)| (*entity, (*node_name).clone()))
-            .collect::<Vec<(Entity, NodeName)>>();
+            .map(|(entity, node_ref)| (*entity, node_ref.val()))
+            .collect::<Vec<(Entity, Ref<Node>)>>();
 
-        for (entity, node_name) in results {
-            unsafe { crate::node::remove_node(&node_name.0); }
-            world.remove(entity);
+        for (entity, node) in results {
+            unsafe { node::free(world, node) }; 
         }
     }
 

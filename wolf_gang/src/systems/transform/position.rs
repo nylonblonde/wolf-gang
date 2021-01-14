@@ -22,33 +22,16 @@ impl Default for Position {
 
 pub fn create_system() -> impl systems::Runnable {
     SystemBuilder::new("transform_position_system")
-    .with_query(<(Read<Position>, Read<node::NodeName>)>::query()
+    .with_query(<(Read<Position>, Read<node::NodeRef>)>::query()
         .filter(maybe_changed::<Position>())
     )
     .build(move |_, world, _, query| {
 
-        query.for_each(world, |(position, node_name)| {
-            // godot_print!("Move {:?}", node_name.name);
+        query.for_each(world, |(position, node_ref)| {
 
-            let spatial_node : Option<Ref<Spatial>> = {
-                    unsafe {
-                        match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &node_name.0, false) {
-                            Some(r) => {
-                                Some(r.assume_safe().cast::<Spatial>().unwrap().as_ref().assume_shared())
-                            },
-                            None => {
-                                godot_print!("Can't find {:?}", node_name.0);                            
+            let spatial_node = unsafe { node_ref.val().assume_safe().cast::<Spatial>().unwrap().as_ref().assume_shared() };
 
-                                None
-                            }
-                        }
-                    }
-                
-            };
-
-            if let Some(r) = spatial_node { 
-                unsafe { r.assume_safe().set_translation(position.value); } 
-            }
+            unsafe { spatial_node.assume_safe().set_translation(position.value); } 
         
         })
 

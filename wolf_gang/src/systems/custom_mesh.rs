@@ -10,7 +10,6 @@ use gdnative::api::{
 use crate::node;
 
 use legion::*;
-use crate::node::NodeName;  
 
 pub struct MeshData {
     pub verts: Vec<Vector3>,
@@ -68,17 +67,17 @@ pub fn create_tag_system() -> impl systems::Runnable {
     SystemBuilder::new("custom_mesh_system")
         .read_component::<Material>()
         .with_query(<Entity>::query()
-            .filter(!component::<node::NodeName>() & component::<MeshData>())
+            .filter(!component::<node::NodeRef>() & component::<MeshData>())
         )
         .build(move |commands, world, _, query|{
             query.for_each(world, |entity| {
                 let immediate_geometry = ImmediateGeometry::new();
 
                 let owner = unsafe { crate::OWNER_NODE.as_mut().unwrap().assume_safe() };
+                
+                let node = unsafe { node::add_node(&owner, immediate_geometry.upcast()) };
 
-                let node_name = unsafe { node::add_node(&owner, immediate_geometry.upcast()) }.unwrap();
-
-                commands.add_component(*entity, node_name);
+                commands.add_component(*entity, node::NodeRef::new(node));
             })
         })
 }
@@ -86,7 +85,7 @@ pub fn create_tag_system() -> impl systems::Runnable {
 pub fn create_draw_system() -> impl systems::Runnable {
     SystemBuilder::new("custom_mesh_system")
         .read_component::<Material>()
-        .with_query(<(Entity, Read<MeshData>, Read<NodeName>)>::query()
+        .with_query(<(Entity, Read<MeshData>, Read<node::NodeRef>)>::query()
             .filter(
                 (component::<RequiresManualChange>() & component::<ManuallyChange>()) |
                 (!component::<RequiresManualChange>() & maybe_changed::<MeshData>())
@@ -96,9 +95,9 @@ pub fn create_draw_system() -> impl systems::Runnable {
 
             let mut entities: HashMap<Entity, Ref<ImmediateGeometry>> = HashMap::new();
 
-            query.for_each(world, |(entity, mesh_data, mesh_name)| {
+            query.for_each(world, |(entity, mesh_data, node_ref)| {
 
-                godot_print!("Drawing {:?}", mesh_name.0);
+                godot_print!("Drawing {:?}", unsafe { node_ref.val().assume_safe().name() });
 
                 let verts = &mesh_data.verts;
                 let uvs = &mesh_data.uvs;
@@ -106,27 +105,15 @@ pub fn create_draw_system() -> impl systems::Runnable {
                 let normals = &mesh_data.normals;
                 let indices = &mesh_data.indices;
                 
-                let immediate_geometry: Option<Ref<ImmediateGeometry>> = unsafe { 
-                    match node::get_node(&crate::OWNER_NODE.as_ref().unwrap().assume_safe(), &mesh_name.0, false) {
-                        Some(r) => {
-                            Some(r.assume_safe().cast::<ImmediateGeometry>().unwrap().assume_shared())
-                        },
-                        None => {
-                            godot_print!("Couldn't find mesh instance");
-                            None
-                        }
-                    }
+                let immediate_geometry: Ref<ImmediateGeometry> = unsafe { 
+                    node_ref.val().assume_safe().cast::<ImmediateGeometry>().unwrap().assume_shared()
                 };
 
-                if immediate_geometry.is_none() {
-                    return {}
-                }
-
-                entities.insert(*entity, immediate_geometry.unwrap());
+                entities.insert(*entity, immediate_geometry);
 
                 unsafe {
 
-                    let immediate_geometry = immediate_geometry.unwrap().assume_safe();            
+                    let immediate_geometry = immediate_geometry.assume_safe();            
 
                     immediate_geometry.clear();
                     immediate_geometry.begin(Mesh::PRIMITIVE_TRIANGLES, Null::null());
